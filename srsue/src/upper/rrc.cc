@@ -52,7 +52,6 @@ rrc::rrc() :
   state(RRC_STATE_IDLE),
   last_state(RRC_STATE_CONNECTED),
   drb_up(false),
-  serving_cell(NULL),
   rlc_flush_timeout(2000),
   rlc_flush_counter(0)
 {
@@ -739,7 +738,7 @@ bool rrc::si_acquire(uint32_t sib_index)
             bool found = false;
             for (uint32_t i = 0; i < sib1->sched_info_list.size() && !found; i++) {
               for (uint32_t j = 0; j < sib1->sched_info_list[i].sib_map_info.size() && !found; j++) {
-                if (sib1->sched_info_list[i].sib_map_info[j].to_number() == sib_index - 2) {
+                if (sib1->sched_info_list[i].sib_map_info[j].to_number() == sib_index + 1) {
                   period      = sib1->sched_info_list[i].si_periodicity.to_number();
                   sched_index = i;
                   found       = true;
