@@ -1,19 +1,14 @@
-/**
- *
- * \section COPYRIGHT
- *
- * Copyright 2013-2017 Software Radio Systems Limited
- *
- * \section LICENSE
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -35,11 +30,15 @@ int prach_worker::init(srslte_cell_t *cell_, srslte_prach_cfg_t *prach_cfg_, mac
   mac   = mac_; 
   memcpy(&prach_cfg, prach_cfg_, sizeof(srslte_prach_cfg_t));
   memcpy(&cell, cell_, sizeof(srslte_cell_t));
-  
-  max_prach_offset_us = 50; 
-  
-  if (srslte_prach_init_cfg(&prach, &prach_cfg, cell.nof_prb)) {
-    fprintf(stderr, "Error initiating PRACH\n");
+
+  max_prach_offset_us = 50;
+
+  if (srslte_prach_init(&prach, srslte_symbol_sz(cell.nof_prb))) {
+    return -1;
+  }
+
+  if (srslte_prach_set_cfg(&prach, &prach_cfg, cell.nof_prb)) {
+    ERROR("Error initiating PRACH\n");
     return -1; 
   }
 

@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -24,16 +19,15 @@
  *
  */
 
-
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
-#include <srslte/phy/fec/crc.h>
 
 #include "srslte/phy/fec/cbsegm.h"
 #include "srslte/phy/fec/turbocoder.h"
 #include "srslte/phy/utils/bit.h"
+#include "srslte/phy/utils/debug.h"
 #include "srslte/phy/utils/vector.h"
 
 #define NOF_REGS 3
@@ -89,14 +83,13 @@ int srslte_tcod_encode(srslte_tcod_t *h, uint8_t *input, uint8_t *output, uint32
   uint16_t *per;
 
   if (long_cb > h->max_long_cb) {
-    fprintf(stderr, "Turbo coder initiated for max_long_cb=%d\n",
-        h->max_long_cb);
+    ERROR("Turbo coder initiated for max_long_cb=%d\n", h->max_long_cb);
     return -1;
   }
 
   int longcb_idx = srslte_cbsegm_cbindex(long_cb);
   if (longcb_idx < 0) {
-    fprintf(stderr, "Invalid CB size %d\n", long_cb);
+    ERROR("Invalid CB size %d\n", long_cb);
     return -1;
   }
  
@@ -205,8 +198,8 @@ int srslte_tcod_encode_lut(srslte_tcod_t *h,
     uint32_t long_cb = (uint32_t) srslte_cbsegm_cbsize(cblen_idx);
     
     if (long_cb % 8) {
-      fprintf(stderr, "Turbo coder LUT implementation long_cb must be multiple of 8\n");
-      return -1; 
+      ERROR("Turbo coder LUT implementation long_cb must be multiple of 8\n");
+      return -1;
     }
 
     /* Reset CRC */
@@ -381,14 +374,14 @@ void srslte_tcod_gentable() {
   srslte_tc_interl_t interl; 
 
   if (srslte_tc_interl_init(&interl, 6144)) {
-    fprintf(stderr, "Error initiating interleave\n");
+    ERROR("Error initiating interleave\n");
     return;
   }
   
   for (uint32_t len=0;len<188;len++) {
     uint32_t long_cb = srslte_cbsegm_cbsize(len);
     if (srslte_tc_interl_LTE_gen(&interl, long_cb)) {
-      fprintf(stderr, "Error initiating TC interleaver for long_cb=%d\n", long_cb);
+      ERROR("Error initiating TC interleaver for long_cb=%d\n", long_cb);
       return;
     }
     // Save fw/bw permutation tables

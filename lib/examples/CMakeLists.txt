@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2017 Software Radio Systems Limited
+# Copyright 2013-2019 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -10,7 +10,7 @@
 #
 # srsLTE is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU Affero General Public License for more details.
 #
 # A copy of the GNU Affero General Public License can be found in
@@ -51,8 +51,7 @@ find_package(SRSGUI)
 if(SRSGUI_FOUND)
   include_directories(${SRSGUI_INCLUDE_DIRS})
   target_link_libraries(pdsch_ue ${SRSGUI_LIBRARIES})
-else(SRSGUI_FOUND)
-  add_definitions(-DDISABLE_GRAPHICS)
+  add_definitions(-DENABLE_GUI)
 endif(SRSGUI_FOUND)
 
 
@@ -64,9 +63,6 @@ if(RF_FOUND)
 
   add_executable(cell_search cell_search.c)
   target_link_libraries(cell_search srslte_phy srslte_common srslte_rf)
-
-  add_executable(cell_measurement cell_measurement.c)
-  target_link_libraries(cell_measurement srslte_phy srslte_common srslte_rf)
 
   add_executable(usrp_capture usrp_capture.c)
   target_link_libraries(usrp_capture srslte_phy srslte_rf)

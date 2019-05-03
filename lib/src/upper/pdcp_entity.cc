@@ -1,19 +1,14 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -23,7 +18,6 @@
  * and at http://www.gnu.org/licenses/.
  *
  */
-
 
 #include "srslte/upper/pdcp_entity.h"
 #include "srslte/common/security.h"
@@ -85,7 +79,7 @@ void pdcp_entity::init(srsue::rlc_interface_pdcp      *rlc_,
     sn_len_bytes = 2;
   }
 
-  log->debug("Init %s\n", rrc->get_rb_name(lcid).c_str());
+  log->info("Init %s with bearer ID: %d\n", rrc->get_rb_name(lcid).c_str(), cfg.bearer_id);
 }
 
 // Reestablishment procedure: 36.323 5.2
@@ -157,15 +151,17 @@ void pdcp_entity::write_sdu(byte_buffer_t *sdu, bool blocking)
   rlc->write_sdu(lcid, sdu, blocking);
 }
 
-void pdcp_entity::config_security(uint8_t *k_enc_,
-                                  uint8_t *k_int_,
+void pdcp_entity::config_security(uint8_t *k_rrc_enc_,
+                                  uint8_t *k_rrc_int_,
+                                  uint8_t *k_up_enc_,
                                   CIPHERING_ALGORITHM_ID_ENUM cipher_algo_,
                                   INTEGRITY_ALGORITHM_ID_ENUM integ_algo_)
 {
   for(int i=0; i<32; i++)
   {
-    k_enc[i] = k_enc_[i];
-    k_int[i] = k_int_[i];
+    k_rrc_enc[i] = k_rrc_enc_[i];
+    k_rrc_int[i] = k_rrc_int_[i];
+    k_up_enc[i] = k_up_enc_[i];
   }
   cipher_algo = cipher_algo_;
   integ_algo  = integ_algo_;
@@ -203,7 +199,7 @@ void pdcp_entity::write_pdu(byte_buffer_t *pdu)
                      rx_count,
                      pdu->N_bytes - sn_len_bytes,
                      &(pdu->msg[sn_len_bytes]));
-      log->info_hex(pdu->msg, pdu->N_bytes, "RX %s PDU (decrypted)", rrc->get_rb_name(lcid).c_str());
+      log->debug_hex(pdu->msg, pdu->N_bytes, "RX %s PDU (decrypted)", rrc->get_rb_name(lcid).c_str());
     }
     if(12 == cfg.sn_len)
     {
@@ -255,7 +251,7 @@ void pdcp_entity::integrity_generate( uint8_t  *msg,
   case INTEGRITY_ALGORITHM_ID_EIA0:
     break;
   case INTEGRITY_ALGORITHM_ID_128_EIA1:
-    security_128_eia1(&k_int[16],
+    security_128_eia1(&k_rrc_int[16],
                       tx_count,
                       cfg.bearer_id - 1,
                       cfg.direction,
@@ -264,7 +260,7 @@ void pdcp_entity::integrity_generate( uint8_t  *msg,
                       mac);
     break;
   case INTEGRITY_ALGORITHM_ID_128_EIA2:
-    security_128_eia2(&k_int[16],
+    security_128_eia2(&k_rrc_int[16],
                       tx_count,
                       cfg.bearer_id - 1,
                       cfg.direction,
@@ -277,7 +273,7 @@ void pdcp_entity::integrity_generate( uint8_t  *msg,
   }
 
   log->debug("Integrity gen input:\n");
-  log->debug_hex(&k_int[16], 16, "  K_int");
+  log->debug_hex(&k_rrc_int[16], 16, "  K_rrc_int");
   log->debug("  Local count: %d\n", tx_count);
   log->debug("  Bearer ID: %d\n", cfg.bearer_id);
   log->debug("  Direction: %s\n", (cfg.direction == SECURITY_DIRECTION_DOWNLINK) ? "Downlink" : "Uplink");
@@ -299,7 +295,7 @@ bool pdcp_entity::integrity_verify(uint8_t  *msg,
   case INTEGRITY_ALGORITHM_ID_EIA0:
     break;
   case INTEGRITY_ALGORITHM_ID_128_EIA1:
-    security_128_eia1(&k_int[16],
+    security_128_eia1(&k_rrc_int[16],
                       count,
                       cfg.bearer_id - 1,
                       (cfg.direction == SECURITY_DIRECTION_DOWNLINK) ? (SECURITY_DIRECTION_UPLINK) : (SECURITY_DIRECTION_DOWNLINK),
@@ -308,7 +304,7 @@ bool pdcp_entity::integrity_verify(uint8_t  *msg,
                       mac_exp);
     break;
   case INTEGRITY_ALGORITHM_ID_128_EIA2:
-    security_128_eia2(&k_int[16],
+    security_128_eia2(&k_rrc_int[16],
                       count,
                       cfg.bearer_id - 1,
                       (cfg.direction == SECURITY_DIRECTION_DOWNLINK) ? (SECURITY_DIRECTION_UPLINK) : (SECURITY_DIRECTION_DOWNLINK),
@@ -321,7 +317,7 @@ bool pdcp_entity::integrity_verify(uint8_t  *msg,
   }
 
   log->debug("Integrity check input:\n");
-  log->debug_hex(&k_int[16], 16, "  K_int");
+  log->debug_hex(&k_rrc_int[16], 16, "  K_rrc_int");
   log->debug("  Local count: %d\n", count);
   log->debug("  Bearer ID: %d\n", cfg.bearer_id);
   log->debug("  Direction: %s\n", (cfg.direction == SECURITY_DIRECTION_DOWNLINK) ? "Uplink" : "Downlink");
@@ -357,6 +353,15 @@ void pdcp_entity::cipher_encrypt(uint8_t  *msg,
                                  uint8_t  *ct)
 {
   byte_buffer_t ct_tmp;
+  uint8_t *k_enc;
+
+  // If control plane use RRC encrytion key. If data use user plane key
+  if (cfg.is_control) {
+    k_enc = k_rrc_enc;
+  } else {
+    k_enc = k_up_enc;
+  }
+
   switch(cipher_algo)
   {
   case CIPHERING_ALGORITHM_ID_EEA0:
@@ -392,6 +397,14 @@ void pdcp_entity::cipher_decrypt(uint8_t  *ct,
                                  uint8_t  *msg)
 {
   byte_buffer_t msg_tmp;
+  uint8_t *k_enc;
+  // If control plane use RRC encrytion key. If data use user plane key
+  if (cfg.is_control) {
+    k_enc = k_rrc_enc;
+  } else {
+    k_enc = k_up_enc;
+  }
+
   switch(cipher_algo)
   {
   case CIPHERING_ALGORITHM_ID_EEA0:

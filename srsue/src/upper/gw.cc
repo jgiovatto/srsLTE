@@ -1,19 +1,14 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -24,20 +19,51 @@
  *
  */
 
-
 #include "srsue/hdr/upper/gw.h"
 
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <arpa/inet.h>
 #include <linux/ip.h>
-#include <linux/ipv6.h>
 #include <linux/if_tun.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+
+#ifdef USE_GLIBC_IPV6
+#include <linux/ipv6.h>
+#else
+// Some versions of glibc yield to a compile error with gcc
+// complaining about a redefinition of struct in6_pktinfo. See [1].
+// Since we only need two structs from that header we define them here and
+// just don't include the entire file. See [1] for more information.
+//
+// [1] https://patchwork.ozlabs.org/patch/425881/
+struct ipv6hdr {
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+  __u8 priority : 4, version : 4;
+#elif defined(__BIG_ENDIAN_BITFIELD)
+  __u8 version : 4, priority : 4;
+#else
+#error "Please fix <asm/byteorder.h>"
+#endif
+  __u8 flow_lbl[3];
+
+  __be16 payload_len;
+  __u8   nexthdr;
+  __u8   hop_limit;
+
+  struct in6_addr saddr;
+  struct in6_addr daddr;
+};
+
+struct in6_ifreq {
+  struct in6_addr ifr6_addr;
+  __u32           ifr6_prefixlen;
+  int             ifr6_ifindex;
+};
+#endif
 
 namespace srsue {
 
@@ -140,15 +166,20 @@ void gw::write_pdu(uint32_t lcid, srslte::byte_buffer_t *pdu)
 {
   gw_log->info_hex(pdu->msg, pdu->N_bytes, "RX PDU. Stack latency: %ld us\n", pdu->get_latency_us());
   dl_tput_bytes += pdu->N_bytes;
-  if(!if_up)
-  {
+  if (!if_up) {
     gw_log->warning("TUN/TAP not up - dropping gw RX message\n");
-  }else{
-    int n = write(tun_fd, pdu->msg, pdu->N_bytes); 
-    if(n > 0 && (pdu->N_bytes != (uint32_t)n))
-    {
-      gw_log->warning("DL TUN/TAP write failure. Wanted to write %d B but only wrote %d B.\n", pdu->N_bytes, n);
-    } 
+  } else {
+    // Only handle IPv4 and IPv6 packets
+    struct iphdr*   ip_pkt  = (struct iphdr*)pdu->msg;
+    struct ipv6hdr* ip6_pkt = (struct ipv6hdr*)pdu->msg;
+    if (ip_pkt->version == 4 || ip_pkt->version == 6) {
+      int n = write(tun_fd, pdu->msg, pdu->N_bytes);
+      if (n > 0 && (pdu->N_bytes != (uint32_t)n)) {
+        gw_log->warning("DL TUN/TAP write failure. Wanted to write %d B but only wrote %d B.\n", pdu->N_bytes, n);
+      }
+    } else {
+      gw_log->error("Unsupported IP version. Dropping packet with %d B\n", pdu->N_bytes);
+    }
   }
   pool->deallocate(pdu);
 }

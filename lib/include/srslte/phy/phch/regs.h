@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -64,15 +59,17 @@ typedef struct SRSLTE_API {
   srslte_cell_t cell;
   uint32_t max_ctrl_symbols;
   uint32_t ngroups_phich;
-  
-  srslte_phich_resources_t phich_res;
+  uint32_t      ngroups_phich_m1;
+
+  srslte_phich_r_t      phich_res;
   srslte_phich_length_t phich_len;
   
   srslte_regs_ch_t pcfich;
   srslte_regs_ch_t *phich; // there are several phich
   srslte_regs_ch_t pdcch[3]; /* PDCCH indexing, permutation and interleaving is computed for
             the three possible CFI value */
-  
+
+  uint32_t           phich_mi;
   uint32_t nof_regs;
   srslte_regs_reg_t *regs;
 }srslte_regs_t;
@@ -80,8 +77,9 @@ typedef struct SRSLTE_API {
 SRSLTE_API int srslte_regs_init(srslte_regs_t *h,                          
                                 srslte_cell_t cell);
 
-SRSLTE_API void srslte_regs_free(srslte_regs_t *h);
+SRSLTE_API int srslte_regs_init_opts(srslte_regs_t* h, srslte_cell_t cell, uint32_t phich_mi, bool mbsfn_or_sf1_6_tdd);
 
+SRSLTE_API void srslte_regs_free(srslte_regs_t* h);
 
 SRSLTE_API int srslte_regs_pdcch_nregs(srslte_regs_t *h,
                                        uint32_t cfi);
@@ -98,6 +96,7 @@ SRSLTE_API int srslte_regs_pcfich_get(srslte_regs_t *h,
                                       cf_t symbols[REGS_PCFICH_NSYM]);
 
 SRSLTE_API uint32_t srslte_regs_phich_nregs(srslte_regs_t *h);
+
 SRSLTE_API int srslte_regs_phich_add(srslte_regs_t *h,
                                      cf_t symbols[REGS_PHICH_NSYM],
                                      uint32_t ngroup, 
@@ -109,6 +108,9 @@ SRSLTE_API int srslte_regs_phich_get(srslte_regs_t *h,
                                      uint32_t ngroup);
 
 SRSLTE_API uint32_t srslte_regs_phich_ngroups(srslte_regs_t *h);
+
+SRSLTE_API uint32_t srslte_regs_phich_ngroups_m1(srslte_regs_t* h);
+
 SRSLTE_API int srslte_regs_phich_reset(srslte_regs_t *h, 
                                        cf_t *slot_symbols);
 

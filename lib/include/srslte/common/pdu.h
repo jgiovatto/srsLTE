@@ -1,19 +1,14 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -223,20 +218,32 @@ public:
   }
 
   virtual ~sch_subh(){}
-  
+
+  /* 3GPP 36.321 (R.10) Combined Tables 6.2.1-1, 6.2.1-2, 6.2.1-4 */
   typedef enum {
-    PHR_REPORT       = 26,
-    CRNTI            = 27,
-    CON_RES_ID       = 28,
-    MTCH_MAX_LCID    = 28,
-    TRUNC_BSR        = 28,
-    TA_CMD           = 29,
-    SHORT_BSR        = 29,
-    DRX_CMD          = 30,
-    LONG_BSR         = 30,
-    MCH_SCHED_INFO   = 30,
-    PADDING          = 31,
-    SDU              = 0
+    /* Values of LCID for DL-SCH */
+    SCELL_ACTIVATION = 0b11011,
+    CON_RES_ID = 0b11100,
+    TA_CMD = 0b11101,
+    DRX_CMD = 0b11110,
+
+    /* Values of LCID for UL-SCH */
+    PHR_REPORT_EXT = 0b11001,
+    PHR_REPORT = 0b11010,
+    CRNTI = 0b11011,
+    TRUNC_BSR = 0b11100,
+    SHORT_BSR = 0b11101,
+    LONG_BSR = 0b11110,
+
+    /* Values of LCID for MCH */
+    MTCH_MAX_LCID = 0b11100,
+    MCH_SCHED_INFO = 0b11110,
+
+    /*MTCH STOP Value*/
+    MTCH_STOP_EMPTY = 0b11111111111,
+    /* Common */
+    PADDING = 0b11111,
+    SDU = 0b00000
   } cetype;
 
   // Size of MAC CEs
@@ -260,6 +267,7 @@ public:
   uint16_t get_c_rnti();
   uint64_t get_con_res_id();
   uint8_t  get_ta_cmd();
+  uint8_t  get_activation_deactivation_cmd();
   float    get_phr();
   int      get_bsr(uint32_t buff_size[4]);
 

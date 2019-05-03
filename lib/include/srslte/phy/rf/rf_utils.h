@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -34,7 +29,8 @@ typedef struct SRSLTE_API {
   uint32_t max_frames_pbch;      // timeout in number of 5ms frames for MIB decoding
   uint32_t max_frames_pss;       // timeout in number of 5ms frames for synchronization
   uint32_t nof_valid_pss_frames; // number of required synchronized frames
-  float init_agc; // 0 or negative to disable AGC  
+  float    init_agc;             // 0 or negative to disable AGC
+  bool     force_tdd;
 } cell_search_cfg_t;
 
 SRSLTE_API int rf_rssi_scan(srslte_rf_t *rf, 

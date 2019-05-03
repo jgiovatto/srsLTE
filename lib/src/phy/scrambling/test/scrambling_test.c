@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -90,7 +85,7 @@ int init_sequence(srslte_sequence_t *seq, char *name) {
     bzero(seq, sizeof(srslte_sequence_t));
     return srslte_sequence_pdsch(seq, 1234, 0, 0, cell_id, nof_bits);
   } else {
-    fprintf(stderr, "Unsupported sequence name %s\n", name);
+    ERROR("Unsupported sequence name %s\n", name);
     return -1;
   }
 }
@@ -106,7 +101,7 @@ int main(int argc, char **argv) {
   parse_args(argc, argv);
 
   if (init_sequence(&seq, srslte_sequence_name) == -1) {
-    fprintf(stderr, "Error initiating sequence %s\n", srslte_sequence_name);
+    ERROR("Error initiating sequence %s\n", srslte_sequence_name);
     exit(-1);
   }
 

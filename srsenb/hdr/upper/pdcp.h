@@ -1,19 +1,14 @@
-/**
- *
- * \section COPYRIGHT
- *
- * Copyright 2013-2017 Software Radio Systems Limited
- *
- * \section LICENSE
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -57,9 +52,11 @@ public:
                        uint32_t lcid,
                        uint8_t *k_rrc_enc_,
                        uint8_t *k_rrc_int_,
+                       uint8_t *k_up_enc_,
                        srslte::CIPHERING_ALGORITHM_ID_ENUM cipher_algo_,
                        srslte::INTEGRITY_ALGORITHM_ID_ENUM integ_algo_);
-  
+  void enable_integrity(uint16_t rnti, uint32_t lcid);
+  void enable_encryption(uint16_t rnti, uint32_t lcid);
 private: 
   
   class user_interface_rlc : public srsue::rlc_interface_pdcp

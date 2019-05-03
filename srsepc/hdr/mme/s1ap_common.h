@@ -1,5 +1,5 @@
 /*
- * \section LICENSE
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -18,6 +18,7 @@
  * and at http://www.gnu.org/licenses/.
  *
  */
+
 #ifndef SRSEPC_S1AP_COMMON_H
 #define SRSEPC_S1AP_COMMON_H
 
@@ -32,20 +33,21 @@ namespace srsepc{
 static const uint8_t MAX_TA=255;  //Maximum TA supported
 static const uint8_t MAX_BPLMN=6; //Maximum broadcasted PLMNs per TAC
 
-typedef struct{
-  uint8_t       mme_code;
-  uint16_t      mme_group;
-  uint16_t      tac;        // 16-bit tac
-  uint16_t      mcc;        // BCD-coded with 0xF filler
-  uint16_t      mnc;        // BCD-coded with 0xF filler
-  std::string   mme_bind_addr;
-  std::string   mme_name;
-  std::string   dns_addr;
-  std::string   mme_apn;
-  bool          pcap_enable;
-  std::string   pcap_filename;
-  srslte::CIPHERING_ALGORITHM_ID_ENUM  encryption_algo;
-  srslte::INTEGRITY_ALGORITHM_ID_ENUM  integrity_algo;
+typedef struct {
+  uint8_t                             mme_code;
+  uint16_t                            mme_group;
+  uint16_t                            tac;          // 16-bit tac
+  uint16_t                            mcc;          // BCD-coded with 0xF filler
+  uint16_t                            mnc;          // BCD-coded with 0xF filler
+  uint16_t                            paging_timer; // Paging timer in sec (T3413)
+  std::string                         mme_bind_addr;
+  std::string                         mme_name;
+  std::string                         dns_addr;
+  std::string                         mme_apn;
+  bool                                pcap_enable;
+  std::string                         pcap_filename;
+  srslte::CIPHERING_ALGORITHM_ID_ENUM encryption_algo;
+  srslte::INTEGRITY_ALGORITHM_ID_ENUM integrity_algo;
 } s1ap_args_t;
 
 typedef struct{

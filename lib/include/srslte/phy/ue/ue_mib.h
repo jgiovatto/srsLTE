@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -63,15 +58,16 @@
 
 typedef struct SRSLTE_API {
   srslte_sync_t sfind;
- 
-  cf_t *sf_symbols;
-  cf_t *ce[SRSLTE_MAX_PORTS];
-  
+
+  cf_t* sf_symbols[SRSLTE_MAX_PORTS];
+
   srslte_ofdm_t fft;
-  srslte_chest_dl_t chest; 
   srslte_pbch_t pbch;
-  
-  uint8_t bch_payload[SRSLTE_BCH_PAYLOAD_LEN];
+
+  srslte_chest_dl_t     chest;
+  srslte_chest_dl_res_t chest_res;
+
+  uint8_t  bch_payload[SRSLTE_BCH_PAYLOAD_LEN];
   uint32_t nof_tx_ports; 
   uint32_t sfn_offset; 
   
@@ -114,9 +110,7 @@ SRSLTE_API int srslte_ue_mib_sync_init_multi(srslte_ue_mib_sync_t *q,
 
 SRSLTE_API void srslte_ue_mib_sync_free(srslte_ue_mib_sync_t *q);
 
-SRSLTE_API int srslte_ue_mib_sync_set_cell(srslte_ue_mib_sync_t *q,
-                                           uint32_t cell_id,
-                                           srslte_cp_t cp);
+SRSLTE_API int srslte_ue_mib_sync_set_cell(srslte_ue_mib_sync_t* q, srslte_cell_t cell);
 
 SRSLTE_API void srslte_ue_mib_sync_reset(srslte_ue_mib_sync_t * q); 
 

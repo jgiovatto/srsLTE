@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -84,8 +79,7 @@ SRSLTE_API void rf_uhd_suppress_stdout(void *h);
 
 SRSLTE_API void rf_uhd_register_error_handler(void *h, srslte_rf_error_handler_t error_handler);
 
-SRSLTE_API double rf_uhd_set_rx_freq(void *h, 
-                                  double freq);
+SRSLTE_API double rf_uhd_set_rx_freq(void* h, uint32_t ch, double freq);
 
 SRSLTE_API int rf_uhd_recv_with_time(void *h,
                                   void *data,
@@ -107,12 +101,11 @@ SRSLTE_API double rf_uhd_set_tx_srate(void *h,
 SRSLTE_API double rf_uhd_set_tx_gain(void *h, 
                                    double gain);
 
-SRSLTE_API double rf_uhd_set_tx_freq(void *h,
-                                   double freq);
+SRSLTE_API double rf_uhd_set_tx_freq(void* h, uint32_t ch, double freq);
 
-SRSLTE_API void rf_uhd_get_time(void *h, 
-                              time_t *secs, 
-                              double *frac_secs); 
+SRSLTE_API void rf_uhd_get_time(void* h, time_t* secs, double* frac_secs);
+
+SRSLTE_API void rf_uhd_sync_pps(void* h);
 
 SRSLTE_API int  rf_uhd_send_timed(void *h, 
                                   void *data, 

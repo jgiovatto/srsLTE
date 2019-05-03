@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -24,10 +19,10 @@
  *
  */
 
-#include <strings.h>
-#include <stdlib.h>
+#include "srslte/srslte.h"
 #include <math.h>
-#include <srslte/srslte.h>
+#include <stdlib.h>
+#include <strings.h>
 
 #include "srslte/phy/utils/cexptab.h"
 #include "srslte/phy/sync/cfo.h"
@@ -87,7 +82,7 @@ int srslte_cfo_resize(srslte_cfo_t *h, uint32_t samples) {
     srslte_cexptab_gen(&h->tab, h->cur_cexp, h->last_freq, samples);
     h->nsamples = samples;
   } else {
-    fprintf(stderr, "Error in cfo_resize(): nof_samples must be lower than initialized\n");
+    ERROR("Error in cfo_resize(): nof_samples must be lower than initialized\n");
     return SRSLTE_ERROR;
   }
 #endif /* SRSLTE_CFO_USE_EXP_TABLE */

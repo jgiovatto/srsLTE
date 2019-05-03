@@ -1,19 +1,14 @@
-/**
- *
- * \section COPYRIGHT
- *
- * Copyright 2013-2017 Software Radio Systems Limited
- *
- * \section LICENSE
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -90,7 +85,11 @@ typedef struct {
   srslte_cell_t                      cell;
   bool                               enable_mbsfn;
   uint32_t                           inactivity_timeout_ms;
-}rrc_cfg_t; 
+  srslte::CIPHERING_ALGORITHM_ID_ENUM
+      eea_preference_list[srslte::CIPHERING_ALGORITHM_ID_N_ITEMS];
+  srslte::INTEGRITY_ALGORITHM_ID_ENUM
+      eia_preference_list[srslte::INTEGRITY_ALGORITHM_ID_N_ITEMS];
+} rrc_cfg_t;
 
 static const char rrc_state_text[RRC_STATE_N_ITEMS][100] = {"IDLE",
                                                             "WAIT FOR CON SETUP COMPLETE",
@@ -221,7 +220,7 @@ public:
     void handle_rrc_reconf_complete(asn1::rrc::rrc_conn_recfg_complete_s* msg, srslte::byte_buffer_t* pdu);
     void handle_security_mode_complete(asn1::rrc::security_mode_complete_s* msg);
     void handle_security_mode_failure(asn1::rrc::security_mode_fail_s* msg);
-    void handle_ue_cap_info(asn1::rrc::ue_cap_info_s* msg);
+    bool handle_ue_cap_info(asn1::rrc::ue_cap_info_s* msg);
 
     void set_bitrates(LIBLTE_S1AP_UEAGGREGATEMAXIMUMBITRATE_STRUCT *rates);
     void set_security_capabilities(LIBLTE_S1AP_UESECURITYCAPABILITIES_STRUCT *caps);
@@ -245,6 +244,7 @@ public:
     void cqi_get(uint16_t* pmi_idx, uint16_t* n_pucch);
     int  cqi_free();
 
+    bool select_security_algorithms();
     void send_dl_ccch(asn1::rrc::dl_ccch_msg_s* dl_ccch_msg);
     void send_dl_dcch(asn1::rrc::dl_dcch_msg_s* dl_dcch_msg, srslte::byte_buffer_t* pdu = NULL);
 
@@ -337,7 +337,8 @@ private:
                           uint8_t *k_up_int,
                           srslte::CIPHERING_ALGORITHM_ID_ENUM cipher_algo,
                           srslte::INTEGRITY_ALGORITHM_ID_ENUM integ_algo);
-
+  void enable_integrity(uint16_t rnti, uint32_t lcid);
+  void enable_encryption(uint16_t rnti, uint32_t lcid);
   srslte::byte_buffer_pool* pool;
   srslte::byte_buffer_t     byte_buf_paging;
 

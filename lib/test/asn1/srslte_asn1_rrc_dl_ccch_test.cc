@@ -1,19 +1,14 @@
-/**
- *
- * \section COPYRIGHT
- *
+/*
  * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section LICENSE
+ * This file is part of srsLTE.
  *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -47,8 +42,8 @@ int rrc_conn_setup_test1()
   log1.set_level(srslte::LOG_LEVEL_DEBUG);
   log1.set_hex_limit(128);
 
-  uint8_t  rrc_msg[]   = {0x60, 0x12, 0x98, 0x0b, 0xfd, 0xd2, 0x04, 0xfa, 0x18, 0x3e, 0xd5, 0xe6, 0xc2,
-                       0x59, 0x90, 0xc1, 0xa6, 0x00, 0x01, 0x31, 0x40, 0x42, 0x50, 0x80, 0x00, 0xf8};
+  uint8_t  rrc_msg[] = {0x60, 0x12, 0x98, 0x0b, 0xfd, 0xd2, 0x04, 0xfa, 0x18, 0x3e, 0xd5, 0xe6, 0xc2,
+                        0x59, 0x90, 0xc1, 0xa6, 0x00, 0x01, 0x31, 0x40, 0x42, 0x50, 0x80, 0x00, 0xf8};
   uint32_t rrc_msg_len = sizeof(rrc_msg);
   // 6012980bfdd204fa183ed5e6c25990c1a60001314042508000f8
 
@@ -83,6 +78,7 @@ int rrc_conn_setup_test1()
 
   // test repacking
   uint8_t rrc_msg2[rrc_msg_len];
+  bzero(rrc_msg2, sizeof(rrc_msg2));
   bit_ref bref2(&rrc_msg2[0], sizeof(rrc_msg2));
   if (dl_ccch_msg.pack(bref2) != SRSASN_SUCCESS) {
     return -1;
@@ -110,6 +106,7 @@ int rrc_reestablishment_reject_test()
 
   // test repacking
   uint8_t rrc_msg[32];
+  bzero(rrc_msg, sizeof(rrc_msg));
   bit_ref bref(rrc_msg, sizeof(rrc_msg));
   if (dl_ccch_msg.pack(bref) != SRSASN_SUCCESS) {
     return -1;

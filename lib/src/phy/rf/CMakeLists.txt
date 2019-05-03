@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2017 Software Radio Systems Limited
+# Copyright 2013-2019 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -10,7 +10,7 @@
 #
 # srsLTE is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU Affero General Public License for more details.
 #
 # A copy of the GNU Affero General Public License can be found in
@@ -42,6 +42,11 @@ if(RF_FOUND)
     list(APPEND SOURCES_RF rf_soapy_imp.c)
   endif (SOAPYSDR_FOUND AND ENABLE_SOAPYSDR)
 
+  if (ZEROMQ_FOUND)
+    add_definitions(-DENABLE_ZEROMQ)
+    list(APPEND SOURCES_RF rf_zmq_imp.c)
+  endif (ZEROMQ_FOUND)
+
   add_library(srslte_rf SHARED ${SOURCES_RF})
   target_link_libraries(srslte_rf srslte_rf_utils srslte_phy)
   
@@ -56,6 +61,13 @@ if(RF_FOUND)
   if (SOAPYSDR_FOUND AND ENABLE_SOAPYSDR)
     target_link_libraries(srslte_rf ${SOAPYSDR_LIBRARIES})
   endif (SOAPYSDR_FOUND AND ENABLE_SOAPYSDR)
+
+  if (ZEROMQ_FOUND)
+    target_link_libraries(srslte_rf ${ZEROMQ_LIBRARIES})
+    add_executable(rf_zmq_test rf_zmq_test.c)
+    target_link_libraries(rf_zmq_test srslte_rf)
+    add_test(rf_zmq_test rf_zmq_test )
+  endif (ZEROMQ_FOUND)
 
   if (ENABLE_SHMEMRF)
     target_link_libraries(srslte_rf rt)

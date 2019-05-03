@@ -1,19 +1,14 @@
-/**
- *
- * \section COPYRIGHT
- *
- * Copyright 2013-2017 Software Radio Systems Limited
- *
- * \section LICENSE
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -94,7 +89,7 @@ public:
             fprintf(stderr, "Invalid option: %s for field %s\n", val.c_str(), name);
             fprintf(stderr, "Valid options:  %s", value_str[0]);
             for (uint32_t i=1;i<nof_items;i++) {
-              fprintf(stderr, ", %s", value_str[i]); 
+              fprintf(stderr, ", %s", value_str[i]);
             }
             fprintf(stderr, "\n");
             return -1; 

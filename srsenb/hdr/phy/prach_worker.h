@@ -1,19 +1,14 @@
-/**
- *
- * \section COPYRIGHT
- *
- * Copyright 2013-2017 Software Radio Systems Limited
- *
- * \section LICENSE
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -68,11 +63,22 @@ private:
   const static int sf_buffer_sz = 128*1024;
   class sf_buffer {
   public:
-    sf_buffer() { nof_samples = 0; tti = 0; bzero(samples, sizeof(samples)); }
-    void reset() { nof_samples = 0; tti = 0; }
-    cf_t samples[sf_buffer_sz];
+    sf_buffer()
+    {
+      nof_samples = 0;
+      tti         = 0;
+    }
+    void reset()
+    {
+      nof_samples = 0;
+      tti         = 0;
+    }
+    cf_t     samples[sf_buffer_sz];
     uint32_t nof_samples;
     uint32_t tti;
+#ifdef SRSLTE_BUFFER_POOL_LOG_ENABLED
+    char debug_name[SRSLTE_BUFFER_POOL_LOG_NAME_LEN];
+#endif /* SRSLTE_BUFFER_POOL_LOG_ENABLED */
   };
   srslte::buffer_pool<sf_buffer>  buffer_pool;
   srslte::block_queue<sf_buffer*> pending_buffers;

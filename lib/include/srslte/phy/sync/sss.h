@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -104,8 +99,9 @@ SRSLTE_API void srslte_sss_put_slot(float *sss,
                                     uint32_t nof_prb, 
                                     srslte_cp_t cp);
 
-SRSLTE_API int srslte_sss_set_N_id_2(srslte_sss_t *q,
-                                           uint32_t N_id_2);
+SRSLTE_API void srslte_sss_put_symbol(float* sss, cf_t* symbol, uint32_t nof_prb);
+
+SRSLTE_API int srslte_sss_set_N_id_2(srslte_sss_t* q, uint32_t N_id_2);
 
 SRSLTE_API int srslte_sss_m0m1_partial(srslte_sss_t *q,
                                              const cf_t *input,

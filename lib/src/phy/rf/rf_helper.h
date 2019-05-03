@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -26,6 +21,7 @@
 
 // A bunch of helper functions to process device arguments
 
+#include <string.h>
 
 #define REMOVE_SUBSTRING_WITHCOMAS(S, TOREMOVE) \
   remove_substring(S, TOREMOVE ",");\
@@ -34,15 +30,17 @@
   remove_substring(S, ", " TOREMOVE);\
   remove_substring(S, TOREMOVE)
 
-static void remove_substring(char *s,const char *toremove) {
+static inline void remove_substring(char* s, const char* toremove)
+{
   while((s=strstr(s,toremove))) {
     memmove(s,s+strlen(toremove),1+strlen(s+strlen(toremove)));
   }
 }
 
-static void copy_subdev_string(char *dst, char *src) {
+static inline void copy_subdev_string(char* dst, char* src)
+{
   int n = 0;
-  size_t len = strlen(src);
+  int len = (int)strlen(src);
   /* Copy until end of string or comma */
   while (n < len && src[n] != '\0' && src[n] != ',') {
     dst[n] = src[n];

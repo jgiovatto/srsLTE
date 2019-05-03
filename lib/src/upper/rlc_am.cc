@@ -1,19 +1,14 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -23,7 +18,6 @@
  * and at http://www.gnu.org/licenses/.
  *
  */
-
 
 #include "srslte/upper/rlc_am.h"
 
@@ -38,16 +32,7 @@
 
 namespace srslte {
 
-rlc_am::rlc_am(uint32_t queue_len)
-  :tx(this, queue_len)
-  ,rx(this)
-  ,log(NULL)
-  ,rrc(NULL)
-  ,pdcp(NULL)
-  ,mac_timers(NULL)
-  ,lcid(0)
-  ,rb_name("")
-  ,cfg()
+rlc_am::rlc_am() : tx(this), rx(this), log(NULL), rrc(NULL), pdcp(NULL), mac_timers(NULL), lcid(0), rb_name(""), cfg()
 {
 }
 
@@ -80,7 +65,7 @@ bool rlc_am::configure(srslte_rlc_config_t cfg_)
     return false;
   }
 
-  if (not tx.configure(cfg_.am)) {
+  if (not tx.configure(cfg_)) {
     return false;
   }
 
@@ -176,29 +161,28 @@ void rlc_am::write_pdu(uint8_t *payload, uint32_t nof_bytes)
  * Tx subclass implementation
  ***************************************************************************/
 
-rlc_am::rlc_am_tx::rlc_am_tx(rlc_am* parent_, uint32_t queue_len_)
-  :parent(parent_)
-  ,poll_retx_timer(NULL)
-  ,poll_retx_timer_id(0)
-  ,status_prohibit_timer(NULL)
-  ,status_prohibit_timer_id(0)
-  ,vt_a(0)
-  ,vt_ms(RLC_AM_WINDOW_SIZE)
-  ,vt_s(0)
-  ,status_prohibited(false)
-  ,poll_sn(0)
-  ,num_tx_bytes(0)
-  ,pdu_without_poll(0)
-  ,byte_without_poll(0)
-  ,tx_sdu(NULL)
-  ,tx_sdu_queue(queue_len_)
-  ,log(NULL)
-  ,cfg()
-  ,pool(byte_buffer_pool::get_instance())
-  ,tx_enabled(false)
+rlc_am::rlc_am_tx::rlc_am_tx(rlc_am* parent_) :
+  parent(parent_),
+  poll_retx_timer(NULL),
+  poll_retx_timer_id(0),
+  status_prohibit_timer(NULL),
+  status_prohibit_timer_id(0),
+  vt_a(0),
+  vt_ms(RLC_AM_WINDOW_SIZE),
+  vt_s(0),
+  status_prohibited(false),
+  poll_sn(0),
+  num_tx_bytes(0),
+  pdu_without_poll(0),
+  byte_without_poll(0),
+  tx_sdu(NULL),
+  log(NULL),
+  cfg(),
+  tx_status(),
+  pool(byte_buffer_pool::get_instance()),
+  tx_enabled(false)
 {
   pthread_mutex_init(&mutex, NULL);
-  ZERO_OBJECT(tx_status);
 }
 
 rlc_am::rlc_am_tx::~rlc_am_tx()
@@ -219,10 +203,10 @@ void rlc_am::rlc_am_tx::init()
   }
 }
 
-bool rlc_am::rlc_am_tx::configure(srslte_rlc_am_config_t cfg_)
+bool rlc_am::rlc_am_tx::configure(srslte_rlc_config_t cfg_)
 {
   // TODO: add config checks
-  cfg = cfg_;
+  cfg = cfg_.am;
 
   // check timers
   if (poll_retx_timer == NULL or status_prohibit_timer == NULL) {
@@ -237,6 +221,8 @@ bool rlc_am::rlc_am_tx::configure(srslte_rlc_am_config_t cfg_)
   if (cfg.t_poll_retx > 0) {
     poll_retx_timer->set(this, static_cast<uint32_t>(cfg.t_poll_retx));
   }
+
+  tx_sdu_queue.resize(cfg_.tx_queue_length);
 
   tx_enabled = true;
 
@@ -393,7 +379,8 @@ void rlc_am::rlc_am_tx::write_sdu(byte_buffer_t *sdu, bool blocking)
       if (tx_sdu_queue.try_write(sdu)) {
         log->info_hex(sdu->msg, sdu->N_bytes, "%s Tx SDU (%d B, tx_sdu_queue_len=%d)", RB_NAME, sdu->N_bytes, tx_sdu_queue.size());
       } else {
-        log->debug_hex(sdu->msg, sdu->N_bytes, "[Dropped SDU] %s Tx SDU (%d B, tx_sdu_queue_len=%d)", RB_NAME, sdu->N_bytes, tx_sdu_queue.size());
+        log->info_hex(sdu->msg, sdu->N_bytes, "[Dropped SDU] %s Tx SDU (%d B, tx_sdu_queue_len=%d)", RB_NAME,
+                      sdu->N_bytes, tx_sdu_queue.size());
         pool->deallocate(sdu);
       }
     }
@@ -1310,7 +1297,7 @@ void rlc_am::rlc_am_rx::handle_data_pdu(uint8_t *payload, uint32_t nof_bytes, rl
   }
   memcpy(pdu.buf->msg, payload, nof_bytes);
   pdu.buf->N_bytes  = nof_bytes;
-  memcpy(&pdu.header, &header, sizeof(rlc_amd_pdu_header_t));
+  pdu.header = header;
 
   rx_window[header.sn] = pdu;
 
@@ -1395,7 +1382,7 @@ void rlc_am::rlc_am_rx::handle_data_pdu_segment(uint8_t *payload, uint32_t nof_b
 
   memcpy(segment.buf->msg, payload, nof_bytes);
   segment.buf->N_bytes = nof_bytes;
-  memcpy(&segment.header, &header, sizeof(rlc_amd_pdu_header_t));
+  segment.header = header;
 
   // Check if we already have a segment from the same PDU
   it = rx_segments.find(header.sn);

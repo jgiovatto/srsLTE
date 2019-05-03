@@ -1,19 +1,14 @@
-/**
- *
- * \section COPYRIGHT
- *
- * Copyright 2013-2017 Software Radio Systems Limited
- *
- * \section LICENSE
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -230,17 +225,17 @@ void rlc::user_interface::write_pdu(uint32_t lcid, srslte::byte_buffer_t* sdu)
 
 void rlc::user_interface::write_pdu_bcch_bch(srslte::byte_buffer_t* sdu)
 {
-  fprintf(stderr, "Error: Received BCCH from ue=%d\n", rnti);
+  ERROR("Error: Received BCCH from ue=%d\n", rnti);
 }
 
 void rlc::user_interface::write_pdu_bcch_dlsch(srslte::byte_buffer_t* sdu)
 {
-  fprintf(stderr, "Error: Received BCCH from ue=%d\n", rnti);
+  ERROR("Error: Received BCCH from ue=%d\n", rnti);
 }
 
 void rlc::user_interface::write_pdu_pcch(srslte::byte_buffer_t* sdu)
 {
-  fprintf(stderr, "Error: Received PCCH from ue=%d\n", rnti);
+  ERROR("Error: Received PCCH from ue=%d\n", rnti);
 }
 
 std::string rlc::user_interface::get_rb_name(uint32_t lcid)

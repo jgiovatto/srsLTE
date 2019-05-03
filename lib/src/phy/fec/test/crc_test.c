@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -107,7 +102,7 @@ int main(int argc, char **argv) {
   // check if generated word is as expected
   if (get_expected_word(num_bits, crc_length, crc_poly, seed,
       &expected_word)) {
-    fprintf(stderr, "Test parameters not defined in test_results.h\n");
+    ERROR("Test parameters not defined in test_results.h\n");
     exit(-1);
   }
   exit(expected_word != crc_word);

@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -140,8 +135,11 @@ SRSLTE_API void srslte_vec_interleave_simd(const cf_t *x, const cf_t *y, cf_t *z
 
 SRSLTE_API void srslte_vec_interleave_add_simd(const cf_t *x, const cf_t *y, cf_t *z, const int len);
 
+SRSLTE_API void srslte_vec_gen_sine_simd(cf_t amplitude, float freq, cf_t* z, int len);
+
 SRSLTE_API void srslte_vec_apply_cfo_simd(const cf_t *x, float cfo, cf_t *z, int len);
 
+SRSLTE_API float srslte_vec_estimate_frequency_simd(const cf_t* x, int len);
 
 /* SIMD Find Max functions */
 SRSLTE_API uint32_t srslte_vec_max_fi_simd(const float *x, const int len);

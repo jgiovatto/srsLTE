@@ -1,10 +1,5 @@
-/**
- *
- * \section COPYRIGHT
- *
- * Copyright 2013-2017 Software Radio Systems Limited
- *
- * \section LICENSE
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -24,22 +19,21 @@
  *
  */
 
-#include <iostream> //TODO Remove
-#include <arpa/inet.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/sctp.h>
 #include "srsepc/hdr/mme/mme.h"
+#include <arpa/inet.h>
+#include <inttypes.h> // for printing uint64_t
+#include <netinet/sctp.h>
+#include <sys/socket.h>
+#include <sys/types.h>
 
-namespace srsepc{
+namespace srsepc {
 
-mme*          mme::m_instance = NULL;
+mme*            mme::m_instance    = NULL;
 pthread_mutex_t mme_instance_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-mme::mme():
-  m_running(false)
+mme::mme() : m_running(false)
 {
-  m_pool = srslte::byte_buffer_pool::get_instance();     
+  m_pool = srslte::byte_buffer_pool::get_instance();
   return;
 }
 
@@ -48,40 +42,39 @@ mme::~mme()
   return;
 }
 
-mme*
-mme::get_instance(void)
+mme* mme::get_instance(void)
 {
   pthread_mutex_lock(&mme_instance_mutex);
-  if(NULL == m_instance) {
+  if (NULL == m_instance) {
     m_instance = new mme();
   }
   pthread_mutex_unlock(&mme_instance_mutex);
-  return(m_instance);
+  return (m_instance);
 }
 
-void
-mme::cleanup(void)
+void mme::cleanup(void)
 {
   pthread_mutex_lock(&mme_instance_mutex);
-  if(NULL != m_instance) {
+  if (NULL != m_instance) {
     delete m_instance;
     m_instance = NULL;
   }
   pthread_mutex_unlock(&mme_instance_mutex);
 }
 
-int
-mme::init(mme_args_t* args, srslte::log_filter *nas_log, srslte::log_filter *s1ap_log, srslte::log_filter *mme_gtpc_log, hss_interface_nas * hss)
+int mme::init(mme_args_t*         args,
+              srslte::log_filter* nas_log,
+              srslte::log_filter* s1ap_log,
+              srslte::log_filter* mme_gtpc_log)
 {
-
   /*Init logger*/
-  m_nas_log  =  nas_log;
-  m_s1ap_log = s1ap_log;
+  m_nas_log      = nas_log;
+  m_s1ap_log     = s1ap_log;
   m_mme_gtpc_log = mme_gtpc_log;
 
   /*Init S1AP*/
   m_s1ap = s1ap::get_instance();
-  if (m_s1ap->init(args->s1ap_args, nas_log, s1ap_log, hss)) {
+  if (m_s1ap->init(args->s1ap_args, nas_log, s1ap_log)) {
     m_s1ap_log->error("Error initializing MME S1APP\n");
     exit(-1);
   }
@@ -99,8 +92,7 @@ mme::init(mme_args_t* args, srslte::log_filter *nas_log, srslte::log_filter *s1a
   return 0;
 }
 
-void
-mme::stop()
+void mme::stop()
 {
   if (m_running) {
     m_s1ap->stop();
@@ -112,52 +104,141 @@ mme::stop()
   return;
 }
 
-void
-mme::run_thread()
+void mme::run_thread()
 {
-  srslte::byte_buffer_t *pdu = m_pool->allocate("mme::run_thread");
-  uint32_t sz = SRSLTE_MAX_BUFFER_SIZE_BYTES - SRSLTE_BUFFER_HEADER_OFFSET;
+  srslte::byte_buffer_t* pdu = m_pool->allocate("mme::run_thread");
+  uint32_t               sz  = SRSLTE_MAX_BUFFER_SIZE_BYTES - SRSLTE_BUFFER_HEADER_OFFSET;
 
-  struct sockaddr_in enb_addr;
+  struct sockaddr_in     enb_addr;
   struct sctp_sndrcvinfo sri;
-  socklen_t fromlen = sizeof(enb_addr);
+  socklen_t              fromlen = sizeof(enb_addr);
   bzero(&enb_addr, sizeof(enb_addr));
   int rd_sz;
-  int msg_flags=0;
+  int msg_flags = 0;
 
-  //Mark the thread as running
-  m_running=true;
+  // Mark the thread as running
+  m_running = true;
 
-  //Get S1-MME socket
+  // Get S1-MME and S11 sockets
   int s1mme = m_s1ap->get_s1_mme();
-  while(m_running)
-  {
-    m_s1ap_log->debug("Waiting for SCTP Msg\n");
+  int s11   = m_mme_gtpc->get_s11();
+
+  while (m_running) {
     pdu->reset();
-    rd_sz = sctp_recvmsg(s1mme, pdu->msg, sz,(struct sockaddr*) &enb_addr, &fromlen, &sri, &msg_flags);
-    if (rd_sz == -1 && errno != EAGAIN){
-      m_s1ap_log->error("Error reading from SCTP socket: %s", strerror(errno));
+    int max_fd = std::max(s1mme, s11);
+
+    FD_ZERO(&m_set);
+    FD_SET(s1mme, &m_set);
+    FD_SET(s11, &m_set);
+
+    // Add timers to select
+    for (std::vector<mme_timer_t>::iterator it = m_timers.begin(); it != m_timers.end(); ++it) {
+      FD_SET(it->fd, &m_set);
+      max_fd = std::max(max_fd, it->fd);
+      m_s1ap_log->debug("Adding Timer fd %d to fd_set\n", it->fd);
     }
-    else if (rd_sz == -1 && errno == EAGAIN){
-      m_s1ap_log->debug("Socket timeout reached");
-    } else {
-      if (msg_flags & MSG_NOTIFICATION) {
-        //Received notification
-        union sctp_notification *notification = (union sctp_notification*)pdu->msg;
-        m_s1ap_log->debug("SCTP Notification %d\n", notification->sn_header.sn_type);
-        if (notification->sn_header.sn_type == SCTP_SHUTDOWN_EVENT) {
-          m_s1ap_log->info("SCTP Association Shutdown. Association: %d\n",sri.sinfo_assoc_id);
-          m_s1ap_log->console("SCTP Association Shutdown. Association: %d\n",sri.sinfo_assoc_id);
-          m_s1ap->delete_enb_ctx(sri.sinfo_assoc_id);
+
+    m_s1ap_log->debug("Waiting for S1-MME or S11 Message\n");
+    int n = select(max_fd + 1, &m_set, NULL, NULL, NULL);
+    if (n == -1) {
+      m_s1ap_log->error("Error from select\n");
+    } else if (n) {
+      // Handle S1-MME
+      if (FD_ISSET(s1mme, &m_set)) {
+        rd_sz = sctp_recvmsg(s1mme, pdu->msg, sz, (struct sockaddr*)&enb_addr, &fromlen, &sri, &msg_flags);
+        if (rd_sz == -1 && errno != EAGAIN) {
+          m_s1ap_log->error("Error reading from SCTP socket: %s", strerror(errno));
+        } else if (rd_sz == -1 && errno == EAGAIN) {
+          m_s1ap_log->debug("Socket timeout reached");
+        } else {
+          if (msg_flags & MSG_NOTIFICATION) {
+            // Received notification
+            union sctp_notification* notification = (union sctp_notification*)pdu->msg;
+            m_s1ap_log->debug("SCTP Notification %d\n", notification->sn_header.sn_type);
+            if (notification->sn_header.sn_type == SCTP_SHUTDOWN_EVENT) {
+              m_s1ap_log->info("SCTP Association Shutdown. Association: %d\n", sri.sinfo_assoc_id);
+              m_s1ap_log->console("SCTP Association Shutdown. Association: %d\n", sri.sinfo_assoc_id);
+              m_s1ap->delete_enb_ctx(sri.sinfo_assoc_id);
+            }
+          } else {
+            // Received data
+            pdu->N_bytes = rd_sz;
+            m_s1ap_log->info("Received S1AP msg. Size: %d\n", pdu->N_bytes);
+            m_s1ap->handle_s1ap_rx_pdu(pdu, &sri);
+          }
         }
-      } else {
-        //Received data
-        pdu->N_bytes = rd_sz;
-        m_s1ap_log->info("Received S1AP msg. Size: %d\n", pdu->N_bytes);
-        m_s1ap->handle_s1ap_rx_pdu(pdu,&sri);
       }
+      // Handle S11
+      if (FD_ISSET(s11, &m_set)) {
+        pdu->N_bytes = recvfrom(s11, pdu->msg, SRSLTE_MAX_BUFFER_SIZE_BYTES, 0, NULL, NULL);
+        m_mme_gtpc->handle_s11_pdu(pdu);
+      }
+      // Handle NAS Timers
+      for (std::vector<mme_timer_t>::iterator it = m_timers.begin(); it != m_timers.end();) {
+        if (FD_ISSET(it->fd, &m_set)) {
+          m_s1ap_log->info("Timer expired\n");
+          uint64_t exp;
+          rd_sz = read(it->fd, &exp, sizeof(uint64_t));
+          m_s1ap->expire_nas_timer(it->type, it->imsi);
+          close(it->fd);
+          m_timers.erase(it);
+        } else {
+          ++it;
+        }
+      }
+    } else {
+      m_s1ap_log->debug("No data from select.\n");
     }
   }
   return;
 }
-} //namespace srsepc
+
+/*
+ * Timer Handling
+ */
+bool mme::add_nas_timer(int timer_fd, nas_timer_type type, uint64_t imsi)
+{
+  m_s1ap_log->debug("Adding NAS timer to MME. IMSI %" PRIu64 ", Type %d, Fd: %d\n", imsi, type, timer_fd);
+
+  mme_timer_t timer;
+  timer.fd   = timer_fd;
+  timer.type = type;
+  timer.imsi = imsi;
+
+  m_timers.push_back(timer);
+  return true;
+}
+
+bool mme::is_nas_timer_running(nas_timer_type type, uint64_t imsi)
+{
+  std::vector<mme_timer_t>::iterator it;
+  for (it = m_timers.begin(); it != m_timers.end(); ++it) {
+    if (it->type == type && it->imsi == imsi) {
+      return true; // found timer
+    }
+  }
+  return false;
+}
+
+bool mme::remove_nas_timer(nas_timer_type type, uint64_t imsi)
+{
+  std::vector<mme_timer_t>::iterator it;
+  for (it = m_timers.begin(); it != m_timers.end(); ++it) {
+    if (it->type == type && it->imsi == imsi) {
+      break; // found timer to remove
+    }
+  }
+  if (it == m_timers.end()) {
+    m_s1ap_log->warning("Could not find timer to remove. IMSI %" PRIu64 ", Type %d\n", imsi, type);
+    return false;
+  }
+
+  // removing timer
+  m_s1ap_log->debug("Removing NAS timer from MME. IMSI %" PRIu64 ", Type %d, Fd: %d\n", imsi, type, it->fd);
+  FD_CLR(it->fd, &m_set);
+  close(it->fd);
+  m_timers.erase(it);
+  return true;
+}
+
+} // namespace srsepc

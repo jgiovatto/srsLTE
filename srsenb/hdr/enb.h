@@ -1,19 +1,14 @@
-/**
- *
- * \section COPYRIGHT
- *
- * Copyright 2013-2017 Software Radio Systems Limited
- *
- * \section LICENSE
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -47,6 +42,7 @@
 
 #include "srslte/radio/radio.h"
 
+#include "srslte/common/security.h"
 #include "srslte/common/bcd_helpers.h"
 #include "srslte/common/buffer_pool.h"
 #include "srslte/interfaces/ue_interfaces.h"
@@ -132,6 +128,8 @@ typedef struct {
   bool        print_buffer_state;
   std::string m1u_multiaddr;
   std::string m1u_if_addr;
+  std::string eia_pref_list;
+  std::string eea_pref_list;
 }expert_args_t;
 
 typedef struct { 

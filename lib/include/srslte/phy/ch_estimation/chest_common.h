@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -30,26 +25,23 @@
 #include <stdint.h>
 #include "srslte/config.h"
 
-#define SRSLTE_CHEST_MAX_SMOOTH_FIL_LEN  65
+#define SRSLTE_CHEST_MAX_SMOOTH_FIL_LEN 64
 
+typedef enum SRSLTE_API {
+  SRSLTE_CHEST_FILTER_GAUSS = 0,
+  SRSLTE_CHEST_FILTER_TRIANGLE,
+  SRSLTE_CHEST_FILTER_NONE
+} srslte_chest_filter_t;
 
-SRSLTE_API void srslte_chest_average_pilots(cf_t *input, 
-                                            cf_t *output, 
-                                            float *filter, 
-                                            uint32_t nof_ref, 
-                                            uint32_t nof_symbols, 
-                                            uint32_t filter_len); 
+SRSLTE_API void srslte_chest_average_pilots(
+    cf_t* input, cf_t* output, float* filter, uint32_t nof_ref, uint32_t nof_symbols, uint32_t filter_len);
 
-SRSLTE_API void srslte_chest_set_smooth_filter3_coeff(float *smooth_filter, 
-                                                      float w); 
+SRSLTE_API uint32_t srslte_chest_set_smooth_filter3_coeff(float* smooth_filter, float w);
 
-SRSLTE_API float srslte_chest_estimate_noise_pilots(cf_t *noisy, 
-                                                    cf_t *noiseless, 
-                                                    cf_t *noise_vec, 
-                                                    uint32_t nof_pilots); 
+SRSLTE_API float srslte_chest_estimate_noise_pilots(cf_t* noisy, cf_t* noiseless, cf_t* noise_vec, uint32_t nof_pilots);
 
-SRSLTE_API void srslte_chest_set_triangle_filter(float *fil, 
-                                                 int filter_len); 
+SRSLTE_API uint32_t srslte_chest_set_triangle_filter(float* fil, int filter_len);
+
+SRSLTE_API uint32_t srslte_chest_set_smooth_filter_gauss(float* filter, uint32_t order, float std_dev);
 
 #endif // SRSLTE_CHEST_COMMON_H
-

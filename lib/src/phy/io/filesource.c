@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -24,12 +19,12 @@
  *
  */
 
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
 
 #include "srslte/phy/io/filesource.h"
+#include "srslte/phy/utils/debug.h"
 
 int srslte_filesource_init(srslte_filesource_t *q, char *filename, srslte_datatype_t type) {
   bzero(q, sizeof(srslte_filesource_t));
@@ -128,7 +123,7 @@ int srslte_filesource_read_multi(srslte_filesource_t *q, void **buffer, int nsam
     case SRSLTE_COMPLEX_SHORT:
     case SRSLTE_FLOAT_BIN:
     case SRSLTE_COMPLEX_SHORT_BIN:
-      fprintf(stderr, "%s.%d:Read Mode not implemented\n", __FILE__, __LINE__);
+      ERROR("%s.%d:Read Mode not implemented\n", __FILE__, __LINE__);
       count = SRSLTE_ERROR;
       break;
     case SRSLTE_COMPLEX_FLOAT_BIN:

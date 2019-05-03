@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -24,14 +19,13 @@
  *
  */
 
-
 #include <stdlib.h>
 #include <strings.h>
 
-#include "srslte/phy/utils/vector.h"
-#include "srslte/phy/utils/bit.h"
 #include "srslte/phy/modem/demod_soft.h"
-
+#include "srslte/phy/utils/bit.h"
+#include "srslte/phy/utils/debug.h"
+#include "srslte/phy/utils/vector.h"
 
 #ifdef LV_HAVE_SSE
 #include <smmintrin.h>
@@ -427,9 +421,9 @@ int srslte_demod_soft_demodulate(srslte_mod_t modulation, const cf_t* symbols, f
     case SRSLTE_MOD_64QAM:
       demod_64qam_lte(symbols, llr, nsymbols);
       break;
-    default: 
-      fprintf(stderr, "Invalid modulation %d\n", modulation);
-      return -1; 
+    default:
+      ERROR("Invalid modulation %d\n", modulation);
+      return -1;
   } 
   return 0; 
 }
@@ -448,9 +442,9 @@ int srslte_demod_soft_demodulate_s(srslte_mod_t modulation, const cf_t* symbols,
     case SRSLTE_MOD_64QAM:
       demod_64qam_lte_s(symbols, llr, nsymbols);
       break;
-    default: 
-      fprintf(stderr, "Invalid modulation %d\n", modulation);
-      return -1; 
+    default:
+      ERROR("Invalid modulation %d\n", modulation);
+      return -1;
   } 
   return 0; 
 }
@@ -470,7 +464,7 @@ int srslte_demod_soft_demodulate_b(srslte_mod_t modulation, const cf_t* symbols,
       demod_64qam_lte_b(symbols, llr, nsymbols);
       break;
     default:
-      fprintf(stderr, "Invalid modulation %d\n", modulation);
+      ERROR("Invalid modulation %d\n", modulation);
       return -1;
   }
   return 0;

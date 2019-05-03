@@ -1,19 +1,14 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -29,6 +24,8 @@
 
 // for custom constructors
 #include "srslte/asn1/rrc_asn1.h"
+
+#define RLC_TX_QUEUE_LEN (128)
 
 namespace srslte {
 
@@ -86,12 +83,13 @@ typedef struct {
 class srslte_rlc_config_t
 {
 public:
-  rlc_mode_t               rlc_mode;
-  srslte_rlc_am_config_t    am;
-  srslte_rlc_um_config_t    um;
+  rlc_mode_t             rlc_mode;
+  srslte_rlc_am_config_t am;
+  srslte_rlc_um_config_t um;
+  uint32_t               tx_queue_length;
 
   // Default ctor
-  srslte_rlc_config_t(): rlc_mode(RLC_MODE_TM), am(), um() {};
+  srslte_rlc_config_t() : rlc_mode(RLC_MODE_TM), am(), um(), tx_queue_length(RLC_TX_QUEUE_LEN){};
 
   // Constructor based on rrc_asn1's RLC config
   srslte_rlc_config_t(asn1::rrc::rlc_cfg_c* cnfg) : rlc_mode(RLC_MODE_AM), am(), um()
@@ -131,6 +129,8 @@ public:
         // Handle default case
         break;
     }
+
+    tx_queue_length = RLC_TX_QUEUE_LEN;
   }
 
   // Factory for MCH
@@ -145,6 +145,7 @@ public:
     cfg.um.tx_sn_field_length  = RLC_UMD_SN_SIZE_5_BITS;
     cfg.um.tx_mod              = 32;
     cfg.um.is_mrb              = true;
+    cfg.tx_queue_length        = 1024;
     return cfg;
   }
 };

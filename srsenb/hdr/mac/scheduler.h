@@ -1,19 +1,14 @@
-/**
- *
- * \section COPYRIGHT
- *
- * Copyright 2013-2017 Software Radio Systems Limited
- *
- * \section LICENSE
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -27,12 +22,13 @@
 #ifndef SRSENB_SCHEDULER_H
 #define SRSENB_SCHEDULER_H
 
-#include <map>
+#include "scheduler_harq.h"
+#include "scheduler_ue.h"
+#include "srslte/common/bounded_bitset.h"
 #include "srslte/common/log.h"
 #include "srslte/interfaces/enb_interfaces.h"
 #include "srslte/interfaces/sched_interface.h"
-#include "scheduler_ue.h"
-#include "scheduler_harq.h"
+#include <map>
 #include <pthread.h>
 
 namespace srsenb {
@@ -63,8 +59,8 @@ public:
   public: 
 
     /* Virtual methods for user metric calculation */
-    virtual void            new_tti(std::map<uint16_t,sched_ue> &ue_db, uint32_t start_rb, uint32_t nof_rb, uint32_t nof_ctrl_symbols, uint32_t tti) = 0;
-    virtual dl_harq_proc*   get_user_allocation(sched_ue *user) = 0;
+    virtual void
+    sched_users(std::map<uint16_t, sched_ue>& ue_db, rbgmask_t* dl_mask, uint32_t nof_ctrl_symbols, uint32_t tti) = 0;
   };
 
   
@@ -73,9 +69,7 @@ public:
   public: 
 
     /* Virtual methods for user metric calculation */
-    virtual void           reset_allocation(uint32_t nof_rb_) = 0;
-    virtual void           new_tti(std::map<uint16_t,sched_ue> &ue_db, uint32_t nof_rb, uint32_t tti) = 0;
-    virtual ul_harq_proc*  get_user_allocation(sched_ue *user) = 0; 
+    virtual void           sched_users(std::map<uint16_t, sched_ue>& ue_db, ul_mask_t* ul_mask, uint32_t tti) = 0;
     virtual bool           update_allocation(ul_harq_proc::ul_alloc_t alloc) = 0;
   };
 
@@ -140,13 +134,10 @@ public:
     return rv_idx[retx_idx%4]; 
   }
 
+  static void generate_cce_location(
+      srslte_regs_t* regs, sched_ue::sched_dci_cce_t* location, uint32_t cfi, uint32_t sf_idx = 0, uint16_t rnti = 0);
 
-  
-  static void generate_cce_location(srslte_regs_t *regs, sched_ue::sched_dci_cce_t *location, 
-                                    uint32_t cfi, uint32_t sf_idx = 0, uint16_t rnti = 0);     
-  
-private:
-  
+protected:
   metric_dl *dl_metric;
   metric_ul *ul_metric; 
   srslte::log *log_h; 
@@ -163,9 +154,26 @@ private:
   const static int MAX_CCE = 128; 
 
   // This is for computing DCI locations
-  srslte_regs_t regs; 
-  bool used_cce[MAX_CCE]; 
-    
+  srslte_regs_t regs;
+  class sched_vars
+  {
+  public:
+    struct tti_vars_t {
+      srslte::bounded_bitset<MAX_CCE, true> used_cce;
+      uint32_t                              tti_rx = 0;
+      tti_vars_t() : used_cce(MAX_CCE) {}
+    };
+    void        init(sched* parent_);
+    tti_vars_t& new_tti(uint32_t tti_rx);
+    tti_vars_t& tti_vars(uint32_t tti_rx);
+
+  private:
+    static const uint32_t tti_array_size = 16;
+    sched*                parent         = NULL;
+    tti_vars_t            tti_vars_[tti_array_size];
+  };
+  sched_vars sched_vars;
+
   typedef struct {
     int buf_rar; 
     uint16_t rnti; 
@@ -179,17 +187,26 @@ private:
     uint32_t n_tx;
   } sched_sib_t;
 
+  int dl_sched_bc(dl_sched_bc_t bc[MAX_BC_LIST]);
+  int dl_sched_rar(dl_sched_rar_t rar[MAX_RAR_LIST]);
+  int dl_sched_data(dl_sched_data_t data[MAX_DATA_LIST]);
 
-  int  dl_sched_bc(dl_sched_bc_t bc[MAX_BC_LIST]); 
-  int  dl_sched_rar(dl_sched_rar_t rar[MAX_RAR_LIST]); 
-  int  dl_sched_data(dl_sched_data_t data[MAX_DATA_LIST]); 
-    
-  
-  int  generate_format1a(uint32_t rb_start, uint32_t l_crb, uint32_t tbs, uint32_t rv, srslte_ra_dl_dci_t *dci);
-  bool generate_dci(srslte_dci_location_t *sched_location, sched_ue::sched_dci_cce_t *locations, uint32_t aggr_level, sched_ue *user = NULL); 
- 
+  void ul_sched_msg3();
+
+  int generate_format1a(
+      uint32_t rb_start, uint32_t l_crb, uint32_t tbs, uint32_t rv, uint16_t rnti, srslte_dci_dl_t* dci);
+  int  find_empty_dci(sched_ue::sched_dci_cce_t* locations,
+                      uint32_t                   aggr_level,
+                      sched_vars::tti_vars_t*    tti_vars,
+                      sched_ue*                  user = NULL);
+  bool generate_dci(srslte_dci_location_t*     sched_location,
+                    sched_ue::sched_dci_cce_t* locations,
+                    uint32_t                   aggr_level,
+                    sched_vars::tti_vars_t*    tti_vars,
+                    sched_ue*                  user = NULL);
 
   std::map<uint16_t, sched_ue>   ue_db;
+  typedef std::map<uint16_t, sched_ue>::iterator ue_db_it_t;
 
   sched_sib_t pending_sibs[MAX_SIBS];
   
@@ -224,7 +241,11 @@ private:
   uint32_t sfn;
   uint32_t current_tti;
   uint32_t current_cfi;
-  
+
+  ul_mask_t ul_mask;
+  rbgmask_t dl_mask;
+  bool      fail_dci_alloc = false;
+
   bool configured;
 
 };

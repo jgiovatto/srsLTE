@@ -1,19 +1,14 @@
-/**
- *
- * \section COPYRIGHT
- *
- * Copyright 2013-2017 Software Radio Systems Limited
- *
- * \section LICENSE
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -63,6 +58,7 @@ class mac
 {
 public:
   mac();
+  ~mac();
   bool init(mac_args_t *args, srslte_cell_t *cell, phy_interface_mac *phy, rlc_interface_mac *rlc, rrc_interface_mac *rrc, srslte::log *log_h);
   void stop();
   
@@ -83,7 +79,7 @@ public:
     
   int get_dl_sched(uint32_t tti, dl_sched_t *dl_sched_res);
   int get_ul_sched(uint32_t tti, ul_sched_t *ul_sched_res);
-  int get_mch_sched(bool is_mcch, dl_sched_t *dl_sched_res);
+  int  get_mch_sched(uint32_t tti, bool is_mcch, dl_sched_t* dl_sched_res);
   void build_mch_sched(uint32_t tbs);
   void rl_failure(uint16_t rnti);
   void rl_ok(uint16_t rnti); 

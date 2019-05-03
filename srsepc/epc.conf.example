@@ -17,6 +17,7 @@
 #                   (default: EEA0, support: EEA1, EEA2)
 # integrity_algo:   Preferred integrity protection algorithm for NAS 
 #                   (default: EIA1, support: EIA1, EIA2 (EIA0 not support)
+# paging_timer:     Value of paging timer in seconds (T3413)
 #
 #####################################################################
 [mme]
@@ -30,18 +31,16 @@ apn = srsapn
 dns_addr = 8.8.8.8
 encryption_algo = EEA0
 integrity_algo = EIA1
+paging_timer = 2
 
 #####################################################################
 # HSS configuration
 #
-# algo:            Authentication algorithm (xor/milenage)
 # db_file:         Location of .csv file that stores UEs information.
 #
 #####################################################################
 [hss]
-auth_algo = xor
 db_file = user_db.csv
-
 
 #####################################################################
 # SP-GW configuration
@@ -49,13 +48,15 @@ db_file = user_db.csv
 # gtpu_bind_addr:   GTP-U bind address.
 # sgi_if_addr:      SGi TUN interface IP address.
 # sgi_if_name:      SGi TUN interface name.
+# max_paging_queue: Maximum packets in paging queue (per UE).
 #
 #####################################################################
 
 [spgw]
-gtpu_bind_addr = 127.0.1.100
-sgi_if_addr    = 172.16.0.1
-sgi_if_name    = srs_spgw_sgi
+gtpu_bind_addr   = 127.0.1.100
+sgi_if_addr      = 172.16.0.1
+sgi_if_name      = srs_spgw_sgi
+max_paging_queue = 100
 
 ####################################################################
 # PCAP configuration
@@ -85,18 +86,21 @@ filename = /tmp/epc.pcap
 # configured.
 # Format: e.g. s1ap_hex_limit = 32
 #
-# Logging layers: s1ap, gtpc, spgw, hss, all
+# Logging layers: nas, s1ap, mme_gtpc, spgw_gtpc, gtpu, spgw, hss, all
 # Logging levels: debug, info, warning, error, none
 #
 # filename: File path to use for log output. Can be set to stdout
 #           to print logs to standard output
 #####################################################################
 [log]
-all_level = debug
+all_level = info
 all_hex_limit = 32
 filename = /tmp/epc.log
 
+#nas_level = debug
 #s1ap_level = debug
-#gtpc_level = debug
+#mme_gtpc_level = debug
+#spgw_gtpc_level = debug
+#gtpu_level = debug
 #spgw_level = debug
 #hss_level = debug

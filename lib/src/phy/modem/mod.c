@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -24,14 +19,14 @@
  *
  */
 
-
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <assert.h>
 
-#include "srslte/phy/utils/bit.h"
 #include "srslte/phy/modem/mod.h"
+#include "srslte/phy/utils/bit.h"
+#include "srslte/phy/utils/debug.h"
 
 /** Low-level API */
 
@@ -129,11 +124,11 @@ int srslte_mod_modulate_bytes(srslte_modem_table_t* q, uint8_t *bits, cf_t* symb
 {
 
   if (!q->byte_tables_init) {
-    fprintf(stderr, "Error need to initiated modem tables for packeted bits before calling srslte_mod_modulate_bytes()\n");
+    ERROR("Error need to initiated modem tables for packeted bits before calling srslte_mod_modulate_bytes()\n");
     return -1; 
   }
   if (nbits % q->nbits_x_symbol) {
-    fprintf(stderr, "Error modulator expects number of bits (%d) to be multiple of %d\n", nbits, q->nbits_x_symbol);
+    ERROR("Error modulator expects number of bits (%d) to be multiple of %d\n", nbits, q->nbits_x_symbol);
     return -1; 
   }
   switch(q->nbits_x_symbol) {
@@ -150,7 +145,7 @@ int srslte_mod_modulate_bytes(srslte_modem_table_t* q, uint8_t *bits, cf_t* symb
       mod_64qam_bytes(q, bits, symbols, nbits);
       break;      
     default:
-      fprintf(stderr, "srslte_mod_modulate_bytes() accepts QPSK/16QAM/64QAM modulations only\n");
+      ERROR("srslte_mod_modulate_bytes() accepts QPSK/16QAM/64QAM modulations only\n");
       return -1; 
   }
   return nbits/q->nbits_x_symbol;

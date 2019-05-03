@@ -1,19 +1,14 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -23,7 +18,6 @@
  * and at http://www.gnu.org/licenses/.
  *
  */
-
 
 #include "srslte/upper/rlc_um.h"
 #include <sstream>
@@ -36,12 +30,7 @@ using namespace asn1::rrc;
 
 namespace srslte {
 
-rlc_um::rlc_um(uint32_t queue_len)
-    :lcid(0)
-    ,tx(queue_len)
-    ,pool(byte_buffer_pool::get_instance())
-    ,rrc(NULL)
-    ,log(NULL)
+rlc_um::rlc_um() : lcid(0), tx(), pool(byte_buffer_pool::get_instance()), rrc(NULL), log(NULL)
 {
   bzero(&cfg, sizeof(srslte_rlc_um_config_t));
 }
@@ -221,14 +210,13 @@ std::string rlc_um::get_rb_name(srsue::rrc_interface_rlc *rrc, uint32_t lcid, bo
  * Tx subclass implementation
  ***************************************************************************/
 
-rlc_um::rlc_um_tx::rlc_um_tx(uint32_t queue_len)
-    :tx_sdu_queue(queue_len)
-    ,pool(byte_buffer_pool::get_instance())
-    ,log(NULL)
-    ,tx_sdu(NULL)
-    ,vt_us(0)
-    ,tx_enabled(false)
-    ,num_tx_bytes(0)
+rlc_um::rlc_um_tx::rlc_um_tx() :
+  pool(byte_buffer_pool::get_instance()),
+  log(NULL),
+  tx_sdu(NULL),
+  vt_us(0),
+  tx_enabled(false),
+  num_tx_bytes(0)
 {
   pthread_mutex_init(&mutex, NULL);
 }
@@ -255,9 +243,7 @@ bool rlc_um::rlc_um_tx::configure(srslte_rlc_config_t cnfg_, std::string rb_name
     return false;
   }
 
-  if(cfg.is_mrb){
-    tx_sdu_queue.resize(512);
-  }
+  tx_sdu_queue.resize(cnfg_.tx_queue_length);
 
   rb_name = rb_name_;
   tx_enabled = true;
@@ -558,7 +544,18 @@ void rlc_um::rlc_um_rx::init(srslte::log *log_, uint32_t lcid_, srsue::pdcp_inte
 
 void rlc_um::rlc_um_rx::reestablish()
 {
-  stop();
+  // try to reassemble any SDUs if possible
+  if (reordering_timer != NULL) {
+    if (reordering_timer->is_running()) {
+      reordering_timer->stop();
+      timer_expired(reordering_timer_id);
+    }
+  }
+
+  pthread_mutex_lock(&mutex);
+  reset();
+  rx_enabled = true;
+  pthread_mutex_unlock(&mutex);
 }
 
 
@@ -566,21 +563,28 @@ void rlc_um::rlc_um_rx::stop()
 {
   pthread_mutex_lock(&mutex);
 
+  reset();
+
+  if (mac_timers != NULL && reordering_timer != NULL) {
+    reordering_timer->stop();
+    mac_timers->timer_release_id(reordering_timer_id);
+    reordering_timer = NULL;
+  }
+
+  pthread_mutex_unlock(&mutex);
+}
+
+void rlc_um::rlc_um_rx::reset()
+{
   vr_ur    = 0;
   vr_ux    = 0;
   vr_uh    = 0;
   pdu_lost = false;
   rx_enabled = false;
 
-  if(rx_sdu) {
+  if (rx_sdu) {
     pool->deallocate(rx_sdu);
     rx_sdu = NULL;
-  }
-
-  if (mac_timers != NULL && reordering_timer != NULL) {
-    reordering_timer->stop();
-    mac_timers->timer_release_id(reordering_timer_id);
-    reordering_timer = NULL;
   }
 
   // Drop all messages in RX window
@@ -589,7 +593,6 @@ void rlc_um::rlc_um_rx::stop()
     pool->deallocate(it->second.buf);
   }
   rx_window.clear();
-  pthread_mutex_unlock(&mutex);
 }
 
 
@@ -956,7 +959,9 @@ void rlc_um::rlc_um_rx::timer_expired(uint32_t timeout_id)
     log->warning("Lost PDU SN: %d\n", vr_ur);
 
     pdu_lost = true;
-    rx_sdu->reset();
+    if (rx_sdu != NULL) {
+      rx_sdu->reset();
+    }
 
     while(RX_MOD_BASE(vr_ur) < RX_MOD_BASE(vr_ux)) {
       vr_ur = (vr_ur + 1)%cfg.rx_mod;

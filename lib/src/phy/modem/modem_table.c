@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -23,7 +18,6 @@
  * and at http://www.gnu.org/licenses/.
  *
  */
-
 
 #include <stdbool.h>
 #include <complex.h>
@@ -82,7 +76,6 @@ int srslte_modem_table_set(srslte_modem_table_t* q, cf_t* table, uint32_t nsymbo
 int srslte_modem_table_lte(srslte_modem_table_t* q, srslte_mod_t modulation) {
   srslte_modem_table_init(q);
   switch(modulation) {
-  case SRSLTE_MOD_LAST:
   case SRSLTE_MOD_BPSK:
     q->nbits_x_symbol = 1;
     q->nsymbols = 2;

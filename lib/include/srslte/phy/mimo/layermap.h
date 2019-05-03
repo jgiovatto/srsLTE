@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -57,13 +52,12 @@ SRSLTE_API int srslte_layermap_multiplex(cf_t *d[SRSLTE_MAX_CODEWORDS],
                                          int nof_layers,
                                          int nof_symbols[SRSLTE_MAX_CODEWORDS]);
 
-SRSLTE_API int srslte_layermap_type(cf_t *d[SRSLTE_MAX_CODEWORDS], 
-                                    cf_t *x[SRSLTE_MAX_LAYERS], 
-                                    int nof_cw, 
-                                    int nof_layers,    
-                                    int nof_symbols[SRSLTE_MAX_CODEWORDS], 
-                                    srslte_mimo_type_t type);
-
+SRSLTE_API int srslte_layermap_type(cf_t*              d[SRSLTE_MAX_CODEWORDS],
+                                    cf_t*              x[SRSLTE_MAX_LAYERS],
+                                    int                nof_cw,
+                                    int                nof_layers,
+                                    int                nof_symbols[SRSLTE_MAX_CODEWORDS],
+                                    srslte_tx_scheme_t type);
 
 /* Generates the vector of data symbols "d" based on the vector of layer-mapped symbols "x"
  */
@@ -82,13 +76,13 @@ SRSLTE_API int srslte_layerdemap_multiplex(cf_t *x[SRSLTE_MAX_LAYERS],
                                            int nof_cw,
                                            int nof_layer_symbols, 
                                            int nof_symbols[SRSLTE_MAX_CODEWORDS]);
- 
-SRSLTE_API int srslte_layerdemap_type(cf_t *x[SRSLTE_MAX_LAYERS], 
-                                      cf_t *d[SRSLTE_MAX_CODEWORDS], 
-                                      int nof_layers, 
-                                      int nof_cw,
-                                      int nof_layer_symbols, 
-                                      int nof_symbols[SRSLTE_MAX_CODEWORDS], 
-                                      srslte_mimo_type_t type);
+
+SRSLTE_API int srslte_layerdemap_type(cf_t*              x[SRSLTE_MAX_LAYERS],
+                                      cf_t*              d[SRSLTE_MAX_CODEWORDS],
+                                      int                nof_layers,
+                                      int                nof_cw,
+                                      int                nof_layer_symbols,
+                                      int                nof_symbols[SRSLTE_MAX_CODEWORDS],
+                                      srslte_tx_scheme_t type);
 
 #endif // SRSLTE_LAYERMAP_H

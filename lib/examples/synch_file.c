@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -128,11 +123,11 @@ int main(int argc, char **argv) {
   printf("Initializing...");fflush(stdout);
 
   if (srslte_filesource_init(&fsrc, input_file_name, SRSLTE_COMPLEX_FLOAT_BIN)) {
-    fprintf(stderr, "Error opening file %s\n", input_file_name);
+    ERROR("Error opening file %s\n", input_file_name);
     exit(-1);
   }
   if (srslte_filesink_init(&fsink, output_file_name, SRSLTE_COMPLEX_FLOAT_BIN)) {
-    fprintf(stderr, "Error opening file %s\n", output_file_name);
+    ERROR("Error opening file %s\n", output_file_name);
     exit(-1);
   }
 
@@ -153,7 +148,7 @@ int main(int argc, char **argv) {
   }
 
   if (srslte_cfo_init(&cfocorr, frame_length)) {
-    fprintf(stderr, "Error initiating CFO\n");
+    ERROR("Error initiating CFO\n");
     return -1;
   }
 
@@ -164,19 +159,19 @@ int main(int argc, char **argv) {
    */
   for (N_id_2=0;N_id_2<3;N_id_2++) {
     if (srslte_pss_init(&pss[N_id_2], frame_length)) {
-      fprintf(stderr, "Error initializing PSS object\n");
+      ERROR("Error initializing PSS object\n");
       exit(-1);
     }
     if (srslte_pss_set_N_id_2(&pss[N_id_2], N_id_2)) {
-      fprintf(stderr, "Error initializing N_id_2\n");
+      ERROR("Error initializing N_id_2\n");
       exit(-1);
     }
     if (srslte_sss_init(&sss[N_id_2], 128)) {
-      fprintf(stderr, "Error initializing SSS object\n");
+      ERROR("Error initializing SSS object\n");
       exit(-1);
     }
     if (srslte_sss_set_N_id_2(&sss[N_id_2], N_id_2)) {
-      fprintf(stderr, "Error initializing N_id_2\n");
+      ERROR("Error initializing N_id_2\n");
       exit(-1);
     }
   }

@@ -1,19 +1,14 @@
-/**
- *
- * \section COPYRIGHT
- *
- * Copyright 2013-2017 Software Radio Systems Limited
- *
- * \section LICENSE
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -165,12 +160,13 @@ void rrc::log_rrc_message(const std::string& source, const direction_t dir, cons
                           const T& msg)
 {
   if (rrc_log->get_level() == srslte::LOG_LEVEL_INFO) {
-    rrc_log->info("%s - %s %s\n", source.c_str(), dir == Tx ? "Tx" : "Rx", msg.msg.c1().type().to_string().c_str());
+    rrc_log->info("%s - %s %s (%d B)\n", source.c_str(), dir == Tx ? "Tx" : "Rx",
+                  msg.msg.c1().type().to_string().c_str(), pdu->N_bytes);
   } else if (rrc_log->get_level() >= srslte::LOG_LEVEL_DEBUG) {
     asn1::json_writer json_writer;
     msg.to_json(json_writer);
-    rrc_log->debug_hex(pdu->msg, pdu->N_bytes, "%s - %s %s\n", source.c_str(), dir == Tx ? "Tx" : "Rx",
-                       msg.msg.c1().type().to_string().c_str());
+    rrc_log->debug_hex(pdu->msg, pdu->N_bytes, "%s - %s %s (%d B)\n", source.c_str(), dir == Tx ? "Tx" : "Rx",
+                       msg.msg.c1().type().to_string().c_str(), pdu->N_bytes);
     rrc_log->debug("Content:\n%s\n", json_writer.to_string().c_str());
   }
 }
@@ -431,7 +427,6 @@ bool rrc::is_paging_opportunity(uint32_t tti, uint32_t *payload_len)
 
   asn1::rrc::pcch_msg_s pcch_msg;
   pcch_msg.msg.set(pcch_msg_type_c::types::c1);
-  pcch_msg.msg.c1().set(pcch_msg_type_c::c1_c_::types::paging);
   paging_s* paging_rec = &pcch_msg.msg.c1().paging();
 
   // Default paging cycle, should get DRX from user
@@ -464,7 +459,7 @@ bool rrc::is_paging_opportunity(uint32_t tti, uint32_t *payload_len)
           paging_elem.ue_id.set(paging_ue_id_c::types::imsi);
           paging_elem.ue_id.imsi().resize(u.choice.iMSI.n_octets);
           memcpy(paging_elem.ue_id.imsi().data(), u.choice.iMSI.buffer, u.choice.iMSI.n_octets);
-          printf("Warning IMSI paging not tested\n");
+          rrc_log->console("Warning IMSI paging not tested\n");
         } else {
           paging_elem.ue_id.set(paging_ue_id_c::types::s_tmsi);
           paging_elem.ue_id.s_tmsi().mmec.from_number(u.choice.s_TMSI.mMEC.buffer[0]);
@@ -490,10 +485,11 @@ bool rrc::is_paging_opportunity(uint32_t tti, uint32_t *payload_len)
   pthread_mutex_unlock(&paging_mutex);
 
   if (paging_rec->paging_record_list.size() > 0) {
-    asn1::bit_ref bref(byte_buf_paging.msg, byte_buf_paging.N_bytes);
+    byte_buf_paging.reset();
+    asn1::bit_ref bref(byte_buf_paging.msg, byte_buf_paging.get_tailroom());
     pcch_msg.pack(bref);
-    uint32_t N_bits         = (uint32_t)bref.distance(byte_buf_paging.msg);
-    byte_buf_paging.N_bytes = (N_bits - 1) / 8 + 1;
+    byte_buf_paging.N_bytes = (uint32_t)bref.distance_bytes();
+    uint32_t N_bits         = (uint32_t)bref.distance();
 
     if (payload_len) {
       *payload_len = byte_buf_paging.N_bytes;
@@ -530,8 +526,11 @@ void rrc::parse_ul_ccch(uint16_t rnti, byte_buffer_t *pdu)
   if (pdu) {
     ul_ccch_msg_s ul_ccch_msg;
     asn1::bit_ref bref(pdu->msg, pdu->N_bytes);
-
-    ul_ccch_msg.unpack(bref);
+    if (ul_ccch_msg.unpack(bref) != asn1::SRSASN_SUCCESS or
+        ul_ccch_msg.msg.type().value != ul_ccch_msg_type_c::types_opts::c1) {
+      rrc_log->error("Failed to unpack UL-CCCH message\n");
+      goto exit;
+    }
 
     log_rrc_message("SRB0", Rx, pdu, ul_ccch_msg);
 
@@ -584,6 +583,7 @@ void rrc::parse_ul_ccch(uint16_t rnti, byte_buffer_t *pdu)
         break;
     }
 
+  exit:
     pool->deallocate(pdu);
   }
 }
@@ -753,7 +753,6 @@ void rrc::configure_mbsfn_sibs(sib_type2_s* sib2, sib_type13_r9_s* sib13)
 {
   // Temp assignment of MCCH, this will eventually come from a cfg file
   mcch.msg.set(mcch_msg_type_c::types::c1);
-  mcch.msg.c1().set(mcch_msg_type_c::c1_c_::types::mbsfn_area_cfg_r9);
   mbsfn_area_cfg_r9_s& area_cfg_r9      = mcch.msg.c1().mbsfn_area_cfg_r9();
   area_cfg_r9.common_sf_alloc_period_r9 = mbsfn_area_cfg_r9_s::common_sf_alloc_period_r9_e_::rf64;
   area_cfg_r9.common_sf_alloc_r9.resize(1);
@@ -786,7 +785,7 @@ void rrc::configure_mbsfn_sibs(sib_type2_s* sib2, sib_type13_r9_s* sib13)
     memcpy(&pmch_item->mbms_session_info_list_r9[1].tmgi_r9.service_id_r9[0], &byte[0],
            3); // FIXME: Check if service is set to 1
   }
-  pmch_item->pmch_cfg_r9.data_mcs_r9         = 10;
+  pmch_item->pmch_cfg_r9.data_mcs_r9         = 20;
   pmch_item->pmch_cfg_r9.mch_sched_period_r9 = pmch_cfg_r9_s::mch_sched_period_r9_e_::rf64;
   pmch_item->pmch_cfg_r9.sf_alloc_end_r9     = 64 * 6;
 
@@ -804,7 +803,17 @@ void rrc::configure_security(uint16_t rnti,
                              srslte::INTEGRITY_ALGORITHM_ID_ENUM integ_algo)
 {
   // TODO: add k_up_enc, k_up_int support to PDCP
-  pdcp->config_security(rnti, lcid, k_rrc_enc, k_rrc_int, cipher_algo, integ_algo);
+  pdcp->config_security(rnti, lcid, k_rrc_enc, k_rrc_int, k_up_enc, cipher_algo, integ_algo);
+}
+
+void rrc::enable_integrity(uint16_t rnti, uint32_t lcid)
+{
+  pdcp->enable_integrity(rnti, lcid);
+}
+
+void rrc::enable_encryption(uint16_t rnti, uint32_t lcid)
+{
+  pdcp->enable_encryption(rnti, lcid);
 }
 
 /*******************************************************************************
@@ -944,6 +953,8 @@ rrc::ue::ue()
   cqi_sched_sf_idx  = 0;
   cqi_sched_prb_idx = 0;
   rlf_cnt           = 0;
+  integ_algo        = srslte::INTEGRITY_ALGORITHM_ID_EIA0;
+  cipher_algo       = srslte::CIPHERING_ALGORITHM_ID_EEA0;
   nas_pending       = false;
   state             = RRC_STATE_IDLE;
   pool              = srslte::byte_buffer_pool::get_instance();
@@ -1037,7 +1048,12 @@ void rrc::ue::parse_ul_dcch(uint32_t lcid, byte_buffer_t *pdu)
 
   ul_dcch_msg_s ul_dcch_msg;
   asn1::bit_ref bref(pdu->msg, pdu->N_bytes);
-  ul_dcch_msg.unpack(bref);
+  if (ul_dcch_msg.unpack(bref) != asn1::SRSASN_SUCCESS or
+      ul_dcch_msg.msg.type().value != ul_dcch_msg_type_c::types_opts::c1) {
+    parent->rrc_log->error("Failed to unpack UL-DCCH message\n");
+    pool->deallocate(pdu);
+    return;
+  }
 
   parent->log_rrc_message(rb_id_text[lcid], Rx, pdu, ul_dcch_msg);
 
@@ -1083,9 +1099,13 @@ void rrc::ue::parse_ul_dcch(uint32_t lcid, byte_buffer_t *pdu)
       handle_security_mode_failure(&ul_dcch_msg.msg.c1().security_mode_fail());
       break;
     case ul_dcch_msg_type_c::c1_c_::types::ue_cap_info:
-      handle_ue_cap_info(&ul_dcch_msg.msg.c1().ue_cap_info());
-      send_connection_reconf(pdu);
-      state = RRC_STATE_WAIT_FOR_CON_RECONF_COMPLETE;
+      if (handle_ue_cap_info(&ul_dcch_msg.msg.c1().ue_cap_info())) {
+        send_connection_reconf(pdu);
+        state = RRC_STATE_WAIT_FOR_CON_RECONF_COMPLETE;
+      } else {
+        send_connection_reject();
+        state = RRC_STATE_IDLE;
+      }
       break;
     default:
       parent->rrc_log->error("Msg: %s not supported\n", ul_dcch_msg.msg.c1().type().to_string().c_str());
@@ -1132,7 +1152,6 @@ void rrc::ue::handle_rrc_con_setup_complete(rrc_conn_setup_complete_s* msg, srsl
   memcpy(pdu->msg, msg_r8->ded_info_nas.data(), pdu->N_bytes);
 
   // Acknowledge Dedicated Configuration
-  parent->phy->set_conf_dedicated_ack(rnti, true);
   parent->mac->phy_config_enabled(rnti, true);
 
   if(has_tmsi) {
@@ -1149,13 +1168,13 @@ void rrc::ue::handle_rrc_reconf_complete(rrc_conn_recfg_complete_s* msg, srslte:
   parent->rrc_log->info("RRCReconfigurationComplete transaction ID: %d\n", msg->rrc_transaction_id);
 
   // Acknowledge Dedicated Configuration
-  parent->phy->set_conf_dedicated_ack(rnti, true);
   parent->mac->phy_config_enabled(rnti, true);
 }
 
 void rrc::ue::handle_security_mode_complete(security_mode_complete_s* msg)
 {
   parent->rrc_log->info("SecurityModeComplete transaction ID: %d\n", msg->rrc_transaction_id);
+  parent->enable_encryption(rnti, RB_ID_SRB1);
 }
 
 void rrc::ue::handle_security_mode_failure(security_mode_fail_s* msg)
@@ -1163,7 +1182,7 @@ void rrc::ue::handle_security_mode_failure(security_mode_fail_s* msg)
   parent->rrc_log->info("SecurityModeFailure transaction ID: %d\n", msg->rrc_transaction_id);
 }
 
-void rrc::ue::handle_ue_cap_info(ue_cap_info_s* msg)
+bool rrc::ue::handle_ue_cap_info(ue_cap_info_s* msg)
 {
   parent->rrc_log->info("UECapabilityInformation transaction ID: %d\n", msg->rrc_transaction_id);
   ue_cap_info_r8_ies_s* msg_r8 = &msg->crit_exts.c1().ue_cap_info_r8();
@@ -1175,10 +1194,15 @@ void rrc::ue::handle_ue_cap_info(ue_cap_info_s* msg)
     } else {
       asn1::bit_ref bref(msg_r8->ue_cap_rat_container_list[0].ue_cap_rat_container.data(),
                          msg_r8->ue_cap_rat_container_list[0].ue_cap_rat_container.size());
-      eutra_capabilities.unpack(bref);
+      if (eutra_capabilities.unpack(bref) != asn1::SRSASN_SUCCESS) {
+        parent->rrc_log->error("Failed to unpack EUTRA capabilities message\n");
+        return false;
+      }
       parent->rrc_log->info("UE rnti: 0x%x category: %d\n", rnti, eutra_capabilities.ue_category);
     }
   }
+
+  return true;
 
   // TODO: Add liblte_rrc support for unpacking UE cap info and repacking into
   //       inter-node UERadioAccessCapabilityInformation (36.331 v10.0.0 Section 10.2.2).
@@ -1200,10 +1224,11 @@ void rrc::ue::set_security_key(uint8_t* key, uint32_t length)
 {
   memcpy(k_enb, key, length);
   parent->rrc_log->info_hex(k_enb, 32, "Key eNodeB (k_enb)");
-  // Select algos (TODO: use security capabilities and config preferences)
-  cipher_algo = srslte::CIPHERING_ALGORITHM_ID_EEA0; // FIXME: Should i keep this type???
-  integ_algo  = srslte::INTEGRITY_ALGORITHM_ID_128_EIA1;
+  // Selects security algorithms (cipher_algo and integ_algo) based on capabilities and config preferences 
+  select_security_algorithms();
 
+  parent->rrc_log->info("Selected security algorithms EEA: EEA%d EIA: EIA%d\n", cipher_algo, integ_algo);
+  
   // Generate K_rrc_enc and K_rrc_int
   srslte::security_generate_k_rrc(k_enb, cipher_algo, integ_algo, k_rrc_enc, k_rrc_int);
 
@@ -1219,9 +1244,11 @@ void rrc::ue::set_security_key(uint8_t* key, uint32_t length)
                              k_up_enc,  k_up_int,
                              cipher_algo, integ_algo);
 
+  parent->enable_integrity(rnti, RB_ID_SRB1);
+
   parent->rrc_log->info_hex(k_rrc_enc, 32, "RRC Encryption Key (k_rrc_enc)");
   parent->rrc_log->info_hex(k_rrc_int, 32, "RRC Integrity Key (k_rrc_int)");
-  parent->rrc_log->info_hex(k_up_enc, 32, "RRC Encryption Key (k_rrc_enc)");
+  parent->rrc_log->info_hex(k_up_enc, 32, "UP Encryption Key (k_up_enc)");
 }
 
 bool rrc::ue::setup_erabs(LIBLTE_S1AP_E_RABTOBESETUPLISTCTXTSUREQ_STRUCT *e)
@@ -1435,12 +1462,14 @@ void rrc::ue::send_connection_setup(bool is_setup)
   phy_cfg->sched_request_cfg.set(sched_request_cfg_c::types::setup);
   phy_cfg->sched_request_cfg.setup().dsr_trans_max = parent->cfg.sr_cfg.dsr_max;
 
-  //  phy_cfg->ant_info_present = false;
-  //  phy_cfg->ant_info.set(phys_cfg_ded_s::ant_info_c_::types::default_value);
   // set default antenna config
   phy_cfg->ant_info_present = true;
   phy_cfg->ant_info.set(phys_cfg_ded_s::ant_info_c_::types::explicit_value);
-  phy_cfg->ant_info.explicit_value().tx_mode.value = ant_info_ded_s::tx_mode_e_::tm1;
+  if (parent->cfg.cell.nof_ports == 1) {
+    phy_cfg->ant_info.explicit_value().tx_mode.value = ant_info_ded_s::tx_mode_e_::tm1;
+  } else {
+    phy_cfg->ant_info.explicit_value().tx_mode.value = ant_info_ded_s::tx_mode_e_::tm2;
+  }
   phy_cfg->ant_info.explicit_value().ue_tx_ant_sel.set(setup_e::release);
 
   if (is_setup) {
@@ -1466,8 +1495,7 @@ void rrc::ue::send_connection_setup(bool is_setup)
 
   // PUCCH
   phy_cfg->pucch_cfg_ded_present = true;
-  phy_cfg->pucch_cfg_ded.ack_nack_repeat.set(pucch_cfg_ded_s::ack_nack_repeat_c_::types::setup);
-  phy_cfg->pucch_cfg_ded.ack_nack_repeat.setup().n1_pucch_an_rep = 0;
+  phy_cfg->pucch_cfg_ded.ack_nack_repeat.set(pucch_cfg_ded_s::ack_nack_repeat_c_::types::release);
 
   phy_cfg->cqi_report_cfg_present = true;
   if(parent->cfg.cqi_cfg.mode == RRC_CFG_CQI_MODE_APERIODIC) {
@@ -1498,18 +1526,23 @@ void rrc::ue::send_connection_setup(bool is_setup)
   sched_cfg.maxharq_tx              = parent->cfg.mac_cnfg.ul_sch_cfg.max_harq_tx.to_number();
   sched_cfg.continuous_pusch = false;   
   sched_cfg.aperiodic_cqi_period = parent->cfg.cqi_cfg.mode == RRC_CFG_CQI_MODE_APERIODIC?parent->cfg.cqi_cfg.period:0; 
-  sched_cfg.ue_bearers[0].direction = srsenb::sched_interface::ue_bearer_cfg_t::BOTH; 
-  sched_cfg.ue_bearers[1].direction = srsenb::sched_interface::ue_bearer_cfg_t::BOTH; 
-  sched_cfg.sr_I       = sr_I; 
-  sched_cfg.sr_N_pucch = sr_N_pucch; 
-  sched_cfg.sr_enabled = true;
-  sched_cfg.cqi_pucch  = cqi_pucch; 
-  sched_cfg.cqi_idx    = cqi_idx; 
-  sched_cfg.cqi_enabled = parent->cfg.cqi_cfg.mode == RRC_CFG_CQI_MODE_PERIODIC;
+  sched_cfg.ue_bearers[0].direction = srsenb::sched_interface::ue_bearer_cfg_t::BOTH;
+  sched_cfg.ue_bearers[1].direction = srsenb::sched_interface::ue_bearer_cfg_t::BOTH;
+  if (parent->cfg.cqi_cfg.mode == RRC_CFG_CQI_MODE_APERIODIC) {
+    sched_cfg.aperiodic_cqi_period                   = parent->cfg.cqi_cfg.mode == parent->cfg.cqi_cfg.period;
+    sched_cfg.dl_cfg.cqi_report.aperiodic_configured = true;
+  } else {
+    sched_cfg.dl_cfg.cqi_report.pmi_idx             = cqi_idx;
+    sched_cfg.dl_cfg.cqi_report.periodic_configured = true;
+  }
+  sched_cfg.pucch_cfg.I_sr              = sr_I;
+  sched_cfg.pucch_cfg.n_pucch_sr        = sr_N_pucch;
+  sched_cfg.pucch_cfg.sr_configured     = true;
+  sched_cfg.pucch_cfg.n_pucch           = cqi_pucch;
   sched_cfg.pucch_cfg.delta_pucch_shift = parent->sib2.rr_cfg_common.pucch_cfg_common.delta_pucch_shift.to_number();
   sched_cfg.pucch_cfg.N_cs              = parent->sib2.rr_cfg_common.pucch_cfg_common.n_cs_an;
   sched_cfg.pucch_cfg.n_rb_2            = parent->sib2.rr_cfg_common.pucch_cfg_common.n_rb_cqi;
-  sched_cfg.pucch_cfg.n1_pucch_an       = parent->sib2.rr_cfg_common.pucch_cfg_common.n1_pucch_an;
+  sched_cfg.pucch_cfg.N_pucch_1         = parent->sib2.rr_cfg_common.pucch_cfg_common.n1_pucch_an;
 
   // Configure MAC 
   parent->mac->ue_cfg(rnti, &sched_cfg);
@@ -1526,7 +1559,6 @@ void rrc::ue::send_connection_setup(bool is_setup)
 
   // Configure PHY layer
   parent->phy->set_config_dedicated(rnti, phy_cfg);
-  parent->phy->set_conf_dedicated_ack(rnti, false);
   parent->mac->set_dl_ant_info(rnti, &phy_cfg->ant_info);
   parent->mac->phy_config_enabled(rnti, false);
 
@@ -1666,16 +1698,9 @@ void rrc::ue::send_connection_reconf(srslte::byte_buffer_t *pdu)
   conn_reconf->rr_cfg_ded.phys_cfg_ded_present = true;
   phys_cfg_ded_s* phy_cfg                      = &conn_reconf->rr_cfg_ded.phys_cfg_ded;
 
-  if (parent->cfg.antenna_info.tx_mode > ant_info_ded_s::tx_mode_e_::tm1) {
-    phy_cfg->ant_info_present = true;
-    phy_cfg->ant_info.set(phys_cfg_ded_s::ant_info_c_::types::explicit_value);
-    phy_cfg->ant_info.explicit_value() = parent->cfg.antenna_info;
-  } else {
-    phy_cfg->ant_info_present = true;
-    phy_cfg->ant_info.set(phys_cfg_ded_s::ant_info_c_::types::explicit_value);
-    phy_cfg->ant_info.explicit_value().tx_mode.value = ant_info_ded_s::tx_mode_e_::tm1;
-    phy_cfg->ant_info.explicit_value().ue_tx_ant_sel.set(setup_e::release);
-  }
+  phy_cfg->ant_info_present = true;
+  phy_cfg->ant_info.set(phys_cfg_ded_s::ant_info_c_::types::explicit_value);
+  phy_cfg->ant_info.explicit_value() = parent->cfg.antenna_info;
 
   // Configure PHY layer
   phy_cfg->cqi_report_cfg_present = true;
@@ -1701,14 +1726,17 @@ void rrc::ue::send_connection_reconf(srslte::byte_buffer_t *pdu)
       phy_cfg->cqi_report_cfg.cqi_report_periodic.set(cqi_report_periodic_c::types::setup);
       phy_cfg->cqi_report_cfg.cqi_report_periodic.setup().ri_cfg_idx_present = true;
       phy_cfg->cqi_report_cfg.cqi_report_periodic.setup().ri_cfg_idx         = 483;
+      parent->rrc_log->console("\nWarning: Only 1 user is supported in TM3 and TM4\n\n");
     } else {
       phy_cfg->cqi_report_cfg.cqi_report_periodic.setup().ri_cfg_idx_present = false;
     }
   }
   phy_cfg->cqi_report_cfg.nom_pdsch_rs_epre_offset = 0;
+  // PDSCH
+  phy_cfg->pdsch_cfg_ded_present = true;
+  phy_cfg->pdsch_cfg_ded.p_a     = parent->cfg.pdsch_cfg;
 
   parent->phy->set_config_dedicated(rnti, phy_cfg);
-  parent->phy->set_conf_dedicated_ack(rnti, false);
   parent->mac->set_dl_ant_info(rnti, &phy_cfg->ant_info);
   parent->mac->phy_config_enabled(rnti, false);
 
@@ -1726,7 +1754,7 @@ void rrc::ue::send_connection_reconf(srslte::byte_buffer_t *pdu)
   conn_reconf->rr_cfg_ded.drb_to_add_mod_list.resize(1);
   if (get_drbid_config(&conn_reconf->rr_cfg_ded.drb_to_add_mod_list[0], 1)) {
     parent->rrc_log->error("Getting DRB1 configuration\n");
-    printf("The QCI %d for DRB1 is invalid or not configured.\n", erabs[5].qos_params.qCI.QCI);
+    parent->rrc_log->console("The QCI %d for DRB1 is invalid or not configured.\n", erabs[5].qos_params.qCI.QCI);
     return;
   }
   
@@ -1748,6 +1776,9 @@ void rrc::ue::send_connection_reconf(srslte::byte_buffer_t *pdu)
   pdcp_cnfg.is_control = true;
   pdcp_cnfg.is_data = false;
   parent->pdcp->add_bearer(rnti, 2, pdcp_cnfg);
+  parent->pdcp->config_security(rnti, 2, k_rrc_enc, k_rrc_int, k_up_enc, cipher_algo, integ_algo);
+  parent->pdcp->enable_integrity(rnti, 2);
+  parent->pdcp->enable_encryption(rnti, 2);
 
   // Configure DRB1 in RLC
   parent->rlc->add_bearer(rnti, 3, &conn_reconf->rr_cfg_ded.drb_to_add_mod_list[0].rlc_cfg);
@@ -1755,6 +1786,7 @@ void rrc::ue::send_connection_reconf(srslte::byte_buffer_t *pdu)
   // Configure DRB1 in PDCP
   pdcp_cnfg.is_control = false;
   pdcp_cnfg.is_data = true;
+  pdcp_cnfg.bearer_id = 1; // TODO: Review all ID mapping LCID DRB ERAB EPSBID Mapping 
   if (conn_reconf->rr_cfg_ded.drb_to_add_mod_list[0].pdcp_cfg.rlc_um_present) {
     if (conn_reconf->rr_cfg_ded.drb_to_add_mod_list[0].pdcp_cfg.rlc_um.pdcp_sn_size.value ==
         pdcp_cfg_s::rlc_um_s_::pdcp_sn_size_e_::len7bits) {
@@ -1762,7 +1794,9 @@ void rrc::ue::send_connection_reconf(srslte::byte_buffer_t *pdu)
     }
   }
   parent->pdcp->add_bearer(rnti, 3, pdcp_cnfg);
-
+  parent->pdcp->config_security(rnti, 3, k_rrc_enc, k_rrc_int, k_up_enc, cipher_algo, integ_algo);
+  parent->pdcp->enable_integrity(rnti, 3);
+  parent->pdcp->enable_encryption(rnti, 3);
   // DRB1 has already been configured in GTPU through bearer setup
 
   // Add NAS Attach accept
@@ -1807,8 +1841,8 @@ void rrc::ue::send_connection_reconf_new_bearer(LIBLTE_S1AP_E_RABTOBESETUPLISTBE
     // Get DRB configuration
     drb_to_add_mod_s drb_item;
     if (get_drbid_config(&drb_item, lcid - 2)) {
-      parent->rrc_log->error("Getting DRB configuration\n");    
-      printf("ERROR: The QCI %d is invalid or not configured.\n", erabs[lcid+4].qos_params.qCI.QCI);
+      parent->rrc_log->error("Getting DRB configuration\n");
+      parent->rrc_log->console("ERROR: The QCI %d is invalid or not configured.\n", erabs[lcid + 4].qos_params.qCI.QCI);
       return;
     }
 
@@ -1821,7 +1855,7 @@ void rrc::ue::send_connection_reconf_new_bearer(LIBLTE_S1AP_E_RABTOBESETUPLISTBE
     parent->rlc->add_bearer(rnti, lcid, &drb_item.rlc_cfg);
     // Configure DRB in PDCP
     srslte::srslte_pdcp_config_t pdcp_config;
-    pdcp_config.bearer_id = drb_item.drb_id;
+    pdcp_config.bearer_id = drb_item.drb_id - 1; // TODO: Review all ID mapping LCID DRB ERAB EPSBID Mapping
     pdcp_config.is_data = true;
     pdcp_config.direction = SECURITY_DIRECTION_DOWNLINK;
     parent->pdcp->add_bearer(rnti, lcid, pdcp_config);
@@ -1881,6 +1915,108 @@ void rrc::ue::send_ue_cap_enquiry()
 
 /********************** HELPERS ***************************/
 
+bool rrc::ue::select_security_algorithms()
+{
+  // Each position in the bitmap represents an encryption algorithm:
+  // “all bits equal to 0” – UE supports no other algorithm than EEA0,
+  // “first bit” – 128-EEA1,
+  // “second bit” – 128-EEA2,
+  // “third bit” – 128-EEA3,
+  // other bits reserved for future use. Value ‘1’ indicates support and value
+  // ‘0’ indicates no support of the algorithm.
+  // Algorithms are defined in TS 33.401 [15].
+  // Note: information missing
+
+  bool enc_algo_found = false;
+  bool integ_algo_found = false;
+
+  for (int i = 0; i < srslte::CIPHERING_ALGORITHM_ID_N_ITEMS; i++) {
+    switch (parent->cfg.eea_preference_list[i]) {
+    case srslte::CIPHERING_ALGORITHM_ID_EEA0:
+      // “all bits equal to 0” – UE supports no other algorithm than EEA0,
+      // specification does not cover the case in which EEA0 is supported with other algorithms
+      // just assume that EEA0 is always supported even this can not be explicity signaled by S1AP
+      cipher_algo    = srslte::CIPHERING_ALGORITHM_ID_EEA0;
+      enc_algo_found = true;
+      parent->rrc_log->info("Selected EEA0 as RRC encryption algorithm\n");
+      break;
+    case srslte::CIPHERING_ALGORITHM_ID_128_EEA1:
+      // “first bit” – 128-EEA1,
+      if (security_capabilities.encryptionAlgorithms
+              .buffer[srslte::CIPHERING_ALGORITHM_ID_128_EEA1 - 1]) {
+        cipher_algo = srslte::CIPHERING_ALGORITHM_ID_128_EEA1;
+        enc_algo_found = true;
+        parent->rrc_log->info("Selected EEA1 as RRC encryption algorithm\n");
+        break;
+      } else {
+        parent->rrc_log->info("Failed to selected EEA1 as RRC encryption algorithm, due to unsupported algorithm\n");
+      }
+      break;
+    case srslte::CIPHERING_ALGORITHM_ID_128_EEA2:
+      // “second bit” – 128-EEA2,
+      if (security_capabilities.encryptionAlgorithms
+              .buffer[srslte::CIPHERING_ALGORITHM_ID_128_EEA2 - 1]) {
+        cipher_algo = srslte::CIPHERING_ALGORITHM_ID_128_EEA2;
+        enc_algo_found = true;
+        parent->rrc_log->info("Selected EEA2 as RRC encryption algorithm\n");
+        break;
+      } else {
+        parent->rrc_log->info("Failed to selected EEA2 as RRC encryption algorithm, due to unsupported algorithm\n");
+      }
+      break;
+    default:
+      enc_algo_found = false;
+      break;
+    }
+    if (enc_algo_found == true) {
+      break;
+    }
+  }
+
+  for (int i = 0; i < srslte::INTEGRITY_ALGORITHM_ID_N_ITEMS; i++) {
+    switch (parent->cfg.eia_preference_list[i]) {
+    case srslte::INTEGRITY_ALGORITHM_ID_EIA0:
+      // Null integrity is not supported
+      parent->rrc_log->info("Skipping EIA0 as RRC integrity algorithm. Null integrity is not supported.\n");
+      break;
+    case srslte::INTEGRITY_ALGORITHM_ID_128_EIA1:
+      // “first bit” – 128-EIA1,
+      if (security_capabilities.integrityProtectionAlgorithms.buffer[srslte::INTEGRITY_ALGORITHM_ID_128_EIA1 - 1]) {
+        integ_algo = srslte::INTEGRITY_ALGORITHM_ID_128_EIA1;
+        integ_algo_found = true;
+        parent->rrc_log->info("Selected EIA1 as RRC integrity algorithm.\n");
+      } else {
+        parent->rrc_log->info("Failed to selected EIA1 as RRC encryption algorithm, due to unsupported algorithm\n");
+      }
+      break;
+    case srslte::INTEGRITY_ALGORITHM_ID_128_EIA2:
+      // “second bit” – 128-EIA2,
+      if (security_capabilities.integrityProtectionAlgorithms.buffer[srslte::INTEGRITY_ALGORITHM_ID_128_EIA2 - 1]) {
+        integ_algo = srslte::INTEGRITY_ALGORITHM_ID_128_EIA2;
+        integ_algo_found = true;
+        parent->rrc_log->info("Selected EIA2 as RRC integrity algorithm.\n");
+      } else {
+        parent->rrc_log->info("Failed to selected EIA2 as RRC encryption algorithm, due to unsupported algorithm\n");
+      }
+      break;
+    default:
+      integ_algo_found = false;
+      break;
+    }
+
+    if (integ_algo_found == true) {
+      break;
+    }
+  }
+
+  if (integ_algo_found == false || enc_algo_found == false) {
+    // TODO: if no security algorithm found abort radio connection and issue
+    // encryption-and-or-integrity-protection-algorithms-not-supported message
+    parent->rrc_log->error("Did not find a matching integrity or encryption algorithm with the UE\n");
+    return false;
+  }
+  return true;
+}
 void rrc::ue::send_dl_ccch(dl_ccch_msg_s* dl_ccch_msg)
 {
   // Allocate a new PDU buffer, pack the message and send to PDCP
@@ -1911,7 +2047,7 @@ void rrc::ue::send_dl_dcch(dl_dcch_msg_s* dl_dcch_msg, byte_buffer_t* pdu)
     pdu->N_bytes = 1u + (uint32_t)bref.distance_bytes(pdu->msg);
 
     char buf[32];
-    sprintf(buf, "SRB0 - rnti=0x%x", rnti);
+    sprintf(buf, "SRB1 - rnti=0x%x", rnti);
     parent->log_rrc_message(buf, Tx, pdu, *dl_dcch_msg);
 
     parent->pdcp->write_sdu(rnti, RB_ID_SRB1, pdu);
@@ -2078,12 +2214,15 @@ int rrc::ue::cqi_allocate(uint32_t period, uint16_t* pmi_idx, uint16_t* n_pucch)
   parent->cqi_sched.nof_users[i_min][j_min]++; 
   cqi_sched_prb_idx = i_min; 
   cqi_sched_sf_idx  = j_min; 
-  cqi_allocated     = true; 
-  cqi_idx           = *pmi_idx; 
-  cqi_pucch         = *n_pucch; 
- 
-  parent->rrc_log->info("Allocated CQI resources for time-frequency slot (%d, %d), n_pucch_2=%d, pmi_cfg_idx=%d\n", 
-                        cqi_sched_prb_idx, cqi_sched_sf_idx, *n_pucch, *pmi_idx);
+  cqi_allocated     = true;
+  cqi_idx           = *pmi_idx;
+  cqi_pucch         = *n_pucch;
+
+  parent->rrc_log->info("Allocated CQI resources for time-frequency slot (%d, %d), n_pucch_2=%d, pmi_cfg_idx=%d\n",
+                        cqi_sched_prb_idx,
+                        cqi_sched_sf_idx,
+                        *n_pucch,
+                        *pmi_idx);
 
   return 0; 
 }

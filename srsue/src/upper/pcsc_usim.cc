@@ -1,19 +1,14 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -24,10 +19,10 @@
  *
  */
 
-
 #include <sstream>
-#include <srsue/hdr/upper/pcsc_usim.h>
+
 #include "srslte/common/bcd_helpers.h"
+#include "srsue/hdr/upper/pcsc_usim.h"
 #include "string.h"
 
 #define CHECK_SIM_PIN 1
@@ -127,7 +122,7 @@ std::string pcsc_usim::get_imei_str()
 bool pcsc_usim::get_imsi_vec(uint8_t* imsi_, uint32_t n)
 {
   if (!initiated) {
-    fprintf(stderr, "USIM not initiated!\n");
+    ERROR("USIM not initiated!\n");
     return false;
   }
 
@@ -147,7 +142,7 @@ bool pcsc_usim::get_imsi_vec(uint8_t* imsi_, uint32_t n)
 bool pcsc_usim::get_imei_vec(uint8_t* imei_, uint32_t n)
 {
   if (!initiated) {
-    fprintf(stderr, "USIM not initiated!\n");
+    ERROR("USIM not initiated!\n");
     return false;
   }
 
@@ -168,7 +163,7 @@ bool pcsc_usim::get_imei_vec(uint8_t* imei_, uint32_t n)
 bool pcsc_usim::get_home_plmn_id(plmn_id_s* home_plmn_id)
 {
   if (!initiated) {
-    fprintf(stderr, "USIM not initiated!\n");
+    ERROR("USIM not initiated!\n");
     return false;
   }
 
@@ -208,7 +203,7 @@ auth_result_t pcsc_usim::generate_authentication_response(uint8_t  *rand,
 {
   auth_result_t ret = AUTH_FAILED;
   if (!initiated) {
-    fprintf(stderr, "USIM not initiated!\n");
+    ERROR("USIM not initiated!\n");
     return ret;
   }
 
@@ -267,7 +262,7 @@ void pcsc_usim::generate_nas_keys(uint8_t *k_asme,
                              INTEGRITY_ALGORITHM_ID_ENUM integ_algo)
 {
   if (!initiated) {
-    fprintf(stderr, "USIM not initiated!\n");
+    ERROR("USIM not initiated!\n");
     return;
   }
 
@@ -293,7 +288,7 @@ void pcsc_usim::generate_as_keys(uint8_t *k_asme,
                             INTEGRITY_ALGORITHM_ID_ENUM integ_algo)
 {
   if (!initiated) {
-    fprintf(stderr, "USIM not initiated!\n");
+    ERROR("USIM not initiated!\n");
     return;
   }
 
@@ -332,7 +327,7 @@ void pcsc_usim::generate_as_keys_ho(uint32_t pci,
                                INTEGRITY_ALGORITHM_ID_ENUM integ_algo)
 {
   if (!initiated) {
-    fprintf(stderr, "USIM not initiated!\n");
+    ERROR("USIM not initiated!\n");
     return;
   }
 

@@ -1,19 +1,14 @@
-/**
- *
- * \section COPYRIGHT
- *
- * Copyright 2013-2017 Software Radio Systems Limited
- *
- * \section LICENSE
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -110,16 +105,28 @@ void pdcp::reset(uint16_t rnti)
   pthread_rwlock_unlock(&rwlock);
 }
 
-void pdcp::config_security(uint16_t rnti, uint32_t lcid, uint8_t* k_rrc_enc_, uint8_t* k_rrc_int_, 
-                           srslte::CIPHERING_ALGORITHM_ID_ENUM cipher_algo_, 
+void pdcp::config_security(uint16_t rnti, uint32_t lcid, uint8_t* k_rrc_enc_, uint8_t* k_rrc_int_, uint8_t* k_up_enc_,
+                           srslte::CIPHERING_ALGORITHM_ID_ENUM cipher_algo_,
                            srslte::INTEGRITY_ALGORITHM_ID_ENUM integ_algo_)
 {
   pthread_rwlock_rdlock(&rwlock);
   if (users.count(rnti)) {
-    users[rnti].pdcp->config_security(lcid, k_rrc_enc_, k_rrc_int_, cipher_algo_, integ_algo_);
-    users[rnti].pdcp->enable_integrity(lcid);
-    users[rnti].pdcp->enable_encryption(lcid);
+    users[rnti].pdcp->config_security(lcid, k_rrc_enc_, k_rrc_int_, k_up_enc_, cipher_algo_, integ_algo_);
   }
+  pthread_rwlock_unlock(&rwlock);
+}
+
+void pdcp::enable_integrity(uint16_t rnti, uint32_t lcid)
+{
+  pthread_rwlock_rdlock(&rwlock);
+  users[rnti].pdcp->enable_integrity(lcid);
+  pthread_rwlock_unlock(&rwlock);
+}
+
+void pdcp::enable_encryption(uint16_t rnti, uint32_t lcid)
+{
+  pthread_rwlock_rdlock(&rwlock);
+  users[rnti].pdcp->enable_encryption(lcid);
   pthread_rwlock_unlock(&rwlock);
 }
 
@@ -170,17 +177,17 @@ void pdcp::user_interface_rrc::write_pdu(uint32_t lcid, srslte::byte_buffer_t* p
 
 void pdcp::user_interface_rrc::write_pdu_bcch_bch(srslte::byte_buffer_t* pdu)
 {
-  fprintf(stderr, "Error: Received BCCH from ue=%d\n", rnti);
+  ERROR("Error: Received BCCH from ue=%d\n", rnti);
 }
 
 void pdcp::user_interface_rrc::write_pdu_bcch_dlsch(srslte::byte_buffer_t* pdu)
 {
-  fprintf(stderr, "Error: Received BCCH from ue=%d\n", rnti);
+  ERROR("Error: Received BCCH from ue=%d\n", rnti);
 }
 
 void pdcp::user_interface_rrc::write_pdu_pcch(srslte::byte_buffer_t* pdu)
 {
-  fprintf(stderr, "Error: Received PCCH from ue=%d\n", rnti);
+  ERROR("Error: Received PCCH from ue=%d\n", rnti);
 }
 
 std::string pdcp::user_interface_rrc::get_rb_name(uint32_t lcid)

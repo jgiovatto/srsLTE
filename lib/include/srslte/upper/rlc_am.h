@@ -1,19 +1,14 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -69,7 +64,7 @@ struct rlc_amd_retx_t{
 class rlc_am : public rlc_common
 {
 public:
-  rlc_am(uint32_t queue_len = 128);
+  rlc_am();
   ~rlc_am();
   void init(log                   *log_,
             uint32_t              lcid_,
@@ -104,11 +99,11 @@ private:
   class rlc_am_tx : public timer_callback
   {
   public:
-    rlc_am_tx(rlc_am *parent_, uint32_t queue_len_);
+    rlc_am_tx(rlc_am* parent_);
     ~rlc_am_tx();
 
     void init();
-    bool configure(srslte_rlc_am_config_t cfg_);
+    bool configure(srslte_rlc_config_t cfg_);
 
     void empty_queue();
     void reestablish();

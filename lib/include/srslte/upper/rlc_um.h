@@ -1,19 +1,14 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -48,7 +43,7 @@ class rlc_um
     :public rlc_common
 {
 public:
-  rlc_um(uint32_t queue_len = 128);
+  rlc_um();
   ~rlc_um();
   void init(log                       *rlc_entity_log_,
             uint32_t                   lcid_,
@@ -84,7 +79,7 @@ private:
   class rlc_um_tx
   {
   public:
-    rlc_um_tx(uint32_t queue_len);
+    rlc_um_tx();
     ~rlc_um_tx();
     void init(srslte::log *log_);
     bool configure(srslte_rlc_config_t cfg, std::string rb_name);
@@ -156,6 +151,8 @@ private:
     void timer_expired(uint32_t timeout_id);
 
   private:
+    void reset();
+
     byte_buffer_pool                    *pool;
     srslte::log                         *log;
     mac_interface_timers                *mac_timers;

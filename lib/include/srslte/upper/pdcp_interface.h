@@ -1,19 +1,14 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -56,8 +51,9 @@ public:
 
   // RRC interface
   virtual void write_sdu(byte_buffer_t *sdu, bool blocking) = 0;
-  virtual void config_security(uint8_t *k_enc_,
-                       uint8_t *k_int_,
+  virtual void config_security(uint8_t *k_rrc_enc_,
+                       uint8_t *k_rrc_int_,
+                       uint8_t *k_up_enc_,
                        CIPHERING_ALGORITHM_ID_ENUM cipher_algo_,
                        INTEGRITY_ALGORITHM_ID_ENUM integ_algo_) = 0;
   virtual void enable_integrity() = 0;

@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2017 Software Radio Systems Limited
+# Copyright 2013-2019 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -10,7 +10,7 @@
 #
 # srsLTE is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU Affero General Public License for more details.
 #
 # A copy of the GNU Affero General Public License can be found in
@@ -71,6 +71,7 @@ option(ENABLE_GUI      "Enable GUI (using srsGUI)"                ON)
 option(ENABLE_UHD      "Enable UHD"                               ON)
 option(ENABLE_BLADERF  "Enable BladeRF"                           ON)
 option(ENABLE_SOAPYSDR "Enable SoapySDR"                          ON)
+option(ENABLE_ZEROMQ   "Enable ZeroMQ"                            ON)
 option(ENABLE_HARDSIM  "Enable support for SIM cards"             ON)
 
 option(BUILD_STATIC    "Attempt to statically link external deps" OFF)
@@ -80,6 +81,7 @@ option(ENABLE_MSAN     "Enable clang memory sanitizer"            OFF)
 option(ENABLE_TIDY     "Enable clang tidy"                        OFF)
 
 option(USE_LTE_RATES   "Use standard LTE sampling rates"          OFF)
+option(USE_GLIBC_IPV6  "Use glibc's own ipv6.h"                   ON)
 
 set(GCC_ARCH native CACHE STRING "GCC compile for specific architecture.")
 
@@ -176,12 +178,21 @@ if(ENABLE_SOAPYSDR)
   endif(SOAPYSDR_FOUND)
 endif(ENABLE_SOAPYSDR)
 
-if(BLADERF_FOUND OR UHD_FOUND OR SOAPYSDR_FOUND OR ENABLE_SHMEMRF)
+# ZeroMQ
+if(ENABLE_ZEROMQ)
+  find_package(ZeroMQ)
+  if(ZEROMQ_FOUND)
+    include_directories(${ZEROMQ_INCLUDE_DIRS})
+    link_directories(${ZEROMQ_LIBRARY_DIRS})
+  endif(ZEROMQ_FOUND)
+endif(ENABLE_ZEROMQ)
+
+if(BLADERF_FOUND OR UHD_FOUND OR SOAPYSDR_FOUND OR ZEROMQ_FOUND OR ENABLE_SHMEMRF)
   set(RF_FOUND TRUE CACHE INTERNAL "RF frontend found")
-else(BLADERF_FOUND OR UHD_FOUND OR SOAPYSDR_FOUND)
+else(BLADERF_FOUND OR UHD_FOUND OR SOAPYSDR_FOUND OR ZEROMQ_FOUND OR ENABLE_SHMEMRF)
   set(RF_FOUND FALSE CACHE INTERNAL "RF frontend found")
   add_definitions(-DDISABLE_RF)
-endif(BLADERF_FOUND OR UHD_FOUND OR SOAPYSDR_FOUND OR ENABLE_SHMEMRF)
+endif(BLADERF_FOUND OR UHD_FOUND OR SOAPYSDR_FOUND OR ZEROMQ_FOUND OR ENABLE_SHMEMRF)
 
 # Boost
 if(ENABLE_SRSUE OR ENABLE_SRSENB OR ENABLE_SRSEPC)
@@ -255,7 +266,7 @@ macro(ADD_CXX_COMPILER_FLAG_IF_AVAILABLE flag have)
 endmacro(ADD_CXX_COMPILER_FLAG_IF_AVAILABLE)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-comment -Wno-reorder -Wno-unused-but-set-variable -Wno-unused-variable -Wformat -Wmissing-field-initializers -Wtype-limits -std=c++03")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-comment -Wno-reorder -Wno-unused-but-set-variable -Wno-unused-variable -Wtype-limits -std=c++11")
 
   find_package(SSE)
   if (HAVE_AVX2)
@@ -291,6 +302,11 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     message(STATUS "Using standard LTE sampling rates")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DFORCE_STANDARD_RATE")
   endif (USE_LTE_RATES)
+
+  if (USE_GLIBC_IPV6)
+    message(STATUS "Using default glibc header for IPv6 support.")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_GLIBC_IPV6")
+  endif (USE_GLIBC_IPV6)
 
   find_package(SSE)
   if (HAVE_AVX2)

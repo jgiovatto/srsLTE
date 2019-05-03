@@ -1,19 +1,14 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -45,6 +40,9 @@
 #include "srslte/common/metrics_hub.h"
 #include "srslte/version.h"
 
+extern uint32_t zero_tti;
+extern bool     simulate_rlf;
+
 using namespace std;
 using namespace srsue;
 namespace bpo = boost::program_options;
@@ -74,36 +72,36 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     ("rf.ul_freq",     bpo::value<float>(&args->rf.ul_freq)->default_value(-1),      "Uplink Frequency (if positive overrides EARFCN)")
     ("rf.rx_gain", bpo::value<float>(&args->rf.rx_gain)->default_value(-1), "Front-end receiver gain")
     ("rf.tx_gain", bpo::value<float>(&args->rf.tx_gain)->default_value(-1), "Front-end transmitter gain")
-    ("rf.nof_rx_ant", bpo::value<uint32_t>(&args->rf.nof_rx_ant)->default_value(1), "Number of RX antennas")
+    ("rf.nof_radios", bpo::value<uint32_t>(&args->rf.nof_radios)->default_value(1), "Number of available RF devices")
+    ("rf.nof_rf_channels", bpo::value<uint32_t>(&args->rf.nof_rf_channels)->default_value(1), "Number of RF channels per radio")
+    ("rf.nof_rx_ant", bpo::value<uint32_t>(&args->rf.nof_rx_ant)->default_value(1), "Number of RX antennas per channel")
 
     ("rf.device_name", bpo::value<string>(&args->rf.device_name)->default_value("auto"), "Front-end device name")
-    ("rf.device_args", bpo::value<string>(&args->rf.device_args)->default_value("auto"), "Front-end device arguments")
-    ("rf.time_adv_nsamples", bpo::value<string>(&args->rf.time_adv_nsamples)->default_value("auto"),
-     "Transmission time advance")
+    ("rf.device_args", bpo::value<string>(&args->rf.device_args[0])->default_value("auto"), "Front-end device arguments")
+    ("rf.device_args_2", bpo::value<string>(&args->rf.device_args[1])->default_value("auto"), "Front-end device 2 arguments")
+    ("rf.device_args_3", bpo::value<string>(&args->rf.device_args[2])->default_value("auto"), "Front-end device 3 arguments")
+    ("rf.time_adv_nsamples", bpo::value<string>(&args->rf.time_adv_nsamples)->default_value("auto"), "Transmission time advance")
     ("rf.burst_preamble_us", bpo::value<string>(&args->rf.burst_preamble)->default_value("auto"), "Transmission time advance")
     ("rf.continuous_tx", bpo::value<string>(&args->rf.continuous_tx)->default_value("auto"), "Transmit samples continuously to the radio or on bursts (auto/yes/no). Default is auto (yes for UHD, no for rest)")
 
     ("rrc.feature_group", bpo::value<uint32_t>(&args->rrc.feature_group)->default_value(0xe6041000), "Hex value of the featureGroupIndicators field in the"
                                                                                            "UECapabilityInformation message. Default 0xe6041000")
-    ("rrc.ue_category",   bpo::value<string>(&args->ue_category_str)->default_value("4"),  "UE Category (1 to 5)")
+    ("rrc.ue_category",   bpo::value<string>(&args->rrc.ue_category_str)->default_value(SRSLTE_UE_CATEGORY_DEFAULT),  "UE Category (1 to 10)")
+    ("rrc.release",       bpo::value<uint32_t>(&args->rrc.release)->default_value(8),  "UE Release (8 to 10)")
 
     ("nas.apn",               bpo::value<string>(&args->nas.apn_name)->default_value(""),          "Set Access Point Name (APN) for data services")
     ("nas.apn_protocol",      bpo::value<string>(&args->nas.apn_protocol)->default_value(""),  "Set Access Point Name (APN) protocol for data services")
     ("nas.user",              bpo::value<string>(&args->nas.apn_user)->default_value(""),  "Username for CHAP authentication")
     ("nas.pass",              bpo::value<string>(&args->nas.apn_pass)->default_value(""),  "Password for CHAP authentication")
     ("nas.force_imsi_attach", bpo::value<bool>(&args->nas.force_imsi_attach)->default_value(false),  "Whether to always perform an IMSI attach")
+    ("nas.eia",               bpo::value<string>(&args->nas.eia)->default_value("1,2"),  "List of integrity algorithms included in UE capabilities")
+    ("nas.eea",               bpo::value<string>(&args->nas.eea)->default_value("0,1,2"),  "List of ciphering algorithms included in UE capabilities")
 
     ("pcap.enable", bpo::value<bool>(&args->pcap.enable)->default_value(false), "Enable MAC packet captures for wireshark")
     ("pcap.filename", bpo::value<string>(&args->pcap.filename)->default_value("ue.pcap"), "MAC layer capture filename")
     ("pcap.nas_enable",   bpo::value<bool>(&args->pcap.nas_enable)->default_value(false), "Enable NAS packet captures for wireshark")
     ("pcap.nas_filename", bpo::value<string>(&args->pcap.nas_filename)->default_value("ue_nas.pcap"), "NAS layer capture filename (useful when NAS encryption is enabled)")
-
-    ("trace.enable", bpo::value<bool>(&args->trace.enable)->default_value(false), "Enable PHY and radio timing traces")
-    ("trace.phy_filename", bpo::value<string>(&args->trace.phy_filename)->default_value("ue.phy_trace"),
-     "PHY timing traces filename")
-    ("trace.radio_filename", bpo::value<string>(&args->trace.radio_filename)->default_value("ue.radio_trace"),
-     "Radio timing traces filename")
-
+    
     ("gui.enable", bpo::value<bool>(&args->gui.enable)->default_value(false), "Enable GUI plots")
 
     ("log.phy_level", bpo::value<string>(&args->log.phy_level), "PHY log level")
@@ -221,12 +219,8 @@ void parse_args(all_args_t* args, int argc, char* argv[])
      bpo::value<int>(&args->expert.phy.pdsch_max_its)->default_value(8),
      "Maximum number of turbo decoder iterations")
 
-    ("expert.attach_enable_64qam",
-     bpo::value<bool>(&args->expert.phy.attach_enable_64qam)->default_value(false),
-     "PUSCH 64QAM modulation before attachment")
-
     ("expert.nof_phy_threads",
-     bpo::value<int>(&args->expert.phy.nof_phy_threads)->default_value(2),
+     bpo::value<int>(&args->expert.phy.nof_phy_threads)->default_value(3),
      "Number of PHY threads")
 
     ("expert.equalizer_mode",
@@ -252,7 +246,7 @@ void parse_args(all_args_t* args, int argc, char* argv[])
 
     ("expert.cfo_correct_tol_hz",
      bpo::value<float>(&args->expert.phy.cfo_correct_tol_hz)->default_value(1.0),
-     "Tolerance (in Hz) for digital CFO compensation (needs to be low if average_subframe_enabled=true.")
+     "Tolerance (in Hz) for digital CFO compensation (needs to be low if interpolate_subframe_enabled=true.")
 
     ("expert.cfo_pss_ema",
      bpo::value<float>(&args->expert.phy.cfo_pss_ema)->default_value(DEFAULT_CFO_EMA_TRACK),
@@ -287,9 +281,9 @@ void parse_args(all_args_t* args, int argc, char* argv[])
      bpo::value<bool>(&args->expert.phy.sic_pss_enabled)->default_value(false),
      "Applies Successive Interference Cancellation to PSS signals when searching for neighbour cells. Must be disabled if cells have identical channel and timing.")
 
-    ("expert.average_subframe_enabled",
-     bpo::value<bool>(&args->expert.phy.average_subframe_enabled)->default_value(true),
-     "Averages in the time domain the channel estimates within 1 subframe. Needs accurate CFO correction.")
+    ("expert.interpolate_subframe_enabled",
+     bpo::value<bool>(&args->expert.phy.interpolate_subframe_enabled)->default_value(false),
+     "Interpolates in the time domain the channel estimates within 1 subframe.")
 
     ("expert.estimator_fil_auto",
      bpo::value<bool>(&args->expert.phy.estimator_fil_auto)->default_value(false),
@@ -302,6 +296,10 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     ("expert.estimator_fil_order",
      bpo::value<uint32_t>(&args->expert.phy.estimator_fil_order)->default_value(4),
      "Sets the channel estimator smooth gaussian filter order (even values perform better).")
+
+    ("expert.snr_to_cqi_offset",
+     bpo::value<float>(&args->expert.phy.snr_to_cqi_offset)->default_value(0),
+     "Sets an offset in the SNR to CQI table. This is used to adjust the reported CQI.")
 
     ("expert.sss_algorithm",
      bpo::value<string>(&args->expert.phy.sss_algorithm)->default_value("full"),
@@ -444,6 +442,29 @@ void parse_args(all_args_t* args, int argc, char* argv[])
       args->log.usim_hex_limit = args->log.all_hex_limit;
     }
   }
+
+  if (args->expert.mbms_service > -1) {
+    if (!args->expert.phy.interpolate_subframe_enabled) {
+      fprintf(stderr,
+              "interpolate_subframe_enabled = %d, While using MBMS, "
+              "please set interpolate_subframe_enabled to true\n",
+              args->expert.phy.interpolate_subframe_enabled);
+      exit(1);
+    }
+    if (args->expert.phy.nof_phy_threads > 2) {
+      fprintf(stderr,
+              "nof_phy_threads = %d, While using MBMS, please set "
+              "number of phy threads to 1 or 2\n",
+              args->expert.phy.nof_phy_threads);
+      exit(1);
+    }
+    if ((0 == args->expert.phy.snr_estim_alg.find("refs"))) {
+      fprintf(stderr,
+              "snr_estim_alg = refs, While using MBMS, please set "
+              "algorithm to pss or empty \n");
+      exit(1);
+    }
+  }
 }
 
 static int     sigcnt     = 0;
@@ -458,7 +479,7 @@ void sig_int_handler(int signo)
 {
   sigcnt++;
   running = false;
-  printf("Stopping srsUE... Press Ctrl+C %d more times to force stop\n", 10 - sigcnt);
+  cout << "Stopping srsUE... Press Ctrl+C " << (10 - sigcnt) << " more times to force stop" << endl;
   if (sigcnt >= 10) {
     exit(-1);
   }
@@ -481,6 +502,12 @@ void* input_loop(void* m)
           cout << "Enter t to restart trace." << endl;
         }
         metrics_screen.toggle_print(do_metrics);
+      } else if (0 == key.compare("rlf")) {
+        simulate_rlf = true;
+        cout << "Sending Radio Link Failure" << endl;
+      } else if (0 == key.find("zeros ")) {
+        zero_tti = std::stoi(key.substr(6));
+        cout << "Receiving zeros for " << zero_tti << " ms" << endl;
       } else if (0 == key.compare("q")) {
         running = false;
       } else if (0 == key.compare("mbms")) {
@@ -545,15 +572,15 @@ int main(int argc, char* argv[])
   pthread_t input;
   pthread_create(&input, NULL, &input_loop, &args);
 
-  printf("Attaching UE...\n");
+  cout << "Attaching UE..." << endl;
   while (!ue->switch_on() && running) {
     sleep(1);
   }
   if (running) {
     if (args.expert.pregenerate_signals) {
-      printf("Pre-generating signals...\n");
+      cout << "Pre-generating signals..." << endl;
       ue->pregenerate_signals(true);
-      printf("Done pregenerating signals.\n");
+      cout << "Done pregenerating signals." << endl;
     }
     if (args.gui.enable) {
       ue->start_plot();

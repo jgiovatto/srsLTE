@@ -1,22 +1,23 @@
 /*
-Copyright 2013-2017 Software Radio Systems Limited
-
-This file is part of srsLTE
-
-srsLTE is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of
-the License, or (at your option) any later version.
-
-srsLTE is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Affero General Public License for more details.
-
-A copy of the GNU Affero General Public License can be found in
-the LICENSE file in the top-level directory of this distribution
-and at http://www.gnu.org/licenses/.
-*/
+ * Copyright 2013-2019 Software Radio Systems Limited
+ *
+ * This file is part of srsLTE.
+ *
+ * srsLTE is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version.
+ *
+ * srsLTE is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * A copy of the GNU Affero General Public License can be found in
+ * the LICENSE file in the top-level directory of this distribution
+ * and at http://www.gnu.org/licenses/.
+ *
+ */
 
 #include "srslte/asn1/asn1_utils.h"
 #include <cmath>
@@ -125,7 +126,6 @@ SRSASN_CODE bit_ref::pack(uint32_t val, uint32_t n_bits)
     val              = val & mask;
     uint8_t keepmask = ((uint8_t)-1) - (uint8_t)((1 << (8 - offset)) - 1);
     if ((uint32_t)(8 - offset) > n_bits) {
-      keepmask += (1u << (8u - offset - n_bits)) - 1;
       uint8_t bit = (uint8_t)(val << (8u - offset - n_bits));
       *ptr        = ((*ptr) & keepmask) + bit;
       offset += n_bits;
@@ -375,12 +375,12 @@ UnalignedIntegerPacker<IntType>::UnalignedIntegerPacker(IntType lb_, IntType ub_
 {
 }
 template <class IntType>
-SRSASN_CODE UnalignedIntegerPacker<IntType>::pack(bit_ref& bref, IntType n)
+SRSASN_CODE UnalignedIntegerPacker<IntType>::pack(bit_ref& bref, IntType n) const
 {
   return pack_unalign_integer(bref, n, lb, ub);
 }
 template <class IntType>
-SRSASN_CODE UnalignedIntegerPacker<IntType>::unpack(IntType& n, bit_ref& bref)
+SRSASN_CODE UnalignedIntegerPacker<IntType>::unpack(IntType& n, bit_ref& bref) const
 {
   return unpack_unalign_integer(n, bref, lb, ub);
 }

@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -115,13 +110,13 @@ int main(int argc, char **argv) {
     bzero(outifft, sizeof(cf_t) * SRSLTE_SLOT_LEN(srslte_symbol_sz(n_prb)) * 2);
 
     if (srslte_ofdm_rx_init(&fft, cp, outifft, outfft, n_prb)) {
-      fprintf(stderr, "Error initializing FFT\n");
+      ERROR("Error initializing FFT\n");
       exit(-1);
     }
     srslte_ofdm_set_normalize(&fft, true);
 
     if (srslte_ofdm_tx_init(&ifft, cp, input, outifft, n_prb)) {
-      fprintf(stderr, "Error initializing iFFT\n");
+      ERROR("Error initializing iFFT\n");
       exit(-1);
     }
     srslte_ofdm_set_normalize(&ifft, true);

@@ -1,19 +1,14 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -45,11 +40,21 @@
 
 #define SRSLTE_RRC_N_BANDS 43
 typedef struct {
-  uint32_t                      ue_category;
-  uint32_t                      feature_group;
-  uint8_t                       supported_bands[SRSLTE_RRC_N_BANDS];
-  uint32_t                      nof_supported_bands;
-}rrc_args_t;
+  std::string ue_category_str;
+  uint32_t    ue_category;
+  uint32_t    release;
+  uint32_t    feature_group;
+  uint8_t     supported_bands[SRSLTE_RRC_N_BANDS];
+  uint32_t    nof_supported_bands;
+  bool        support_ca;
+} rrc_args_t;
+
+#define SRSLTE_UE_CATEGORY_DEFAULT "4"
+#define SRSLTE_UE_CATEGORY_MIN 1
+#define SRSLTE_UE_CATEGORY_MAX 21
+#define SRSLTE_RELEASE_DEFAULT 8
+#define SRSLTE_RELEASE_MIN 8
+#define SRSLTE_RELEASE_MAX 15
 
 using srslte::byte_buffer_t;
 
@@ -69,7 +74,7 @@ class cell_t
   }
   // NaN means an RSRP value has not yet been obtained. Keep then in the list and clean them if never updated
   bool greater(cell_t *x) {
-    return rsrp > x->rsrp || isnan(rsrp);
+    return rsrp > x->rsrp || std::isnan(rsrp);
   }
   bool plmn_equals(asn1::rrc::plmn_id_s plmn_id)
   {
@@ -142,7 +147,7 @@ class cell_t
   }
 
   void set_rsrp(float rsrp) {
-    if (!isnan(rsrp)) {
+    if (!std::isnan(rsrp)) {
       this->rsrp = rsrp;
     }
     in_sync = true;
@@ -280,15 +285,16 @@ public:
   rrc();
   ~rrc();
 
-  void init(phy_interface_rrc *phy_,
-            mac_interface_rrc *mac_,
-            rlc_interface_rrc *rlc_,
-            pdcp_interface_rrc *pdcp_,
-            nas_interface_rrc *nas_,
-            usim_interface_rrc *usim_,
-            gw_interface_rrc   *gw_,
-            srslte::mac_interface_timers *mac_timers_,
-            srslte::log *rrc_log_);
+  void init(phy_interface_rrc*            phy_,
+            mac_interface_rrc*            mac_,
+            rlc_interface_rrc*            rlc_,
+            pdcp_interface_rrc*           pdcp_,
+            nas_interface_rrc*            nas_,
+            usim_interface_rrc*           usim_,
+            gw_interface_rrc*             gw_,
+            srslte::mac_interface_timers* mac_timers_,
+            srslte::log*                  rrc_log_,
+            rrc_args_t*                   args_);
 
   void stop();
 
@@ -366,15 +372,11 @@ private:
   usim_interface_rrc *usim;
   gw_interface_rrc    *gw;
 
-  asn1::rrc::ul_dcch_msg_s ul_dcch_msg;
-  asn1::rrc::ul_ccch_msg_s ul_ccch_msg;
-  asn1::rrc::dl_ccch_msg_s dl_ccch_msg;
-  asn1::rrc::dl_dcch_msg_s dl_dcch_msg;
-
   byte_buffer_t* dedicated_info_nas;
 
-  void send_ul_ccch_msg();
-  void send_ul_dcch_msg(uint32_t lcid);
+  void send_ul_ccch_msg(const asn1::rrc::ul_ccch_msg_s& msg);
+  void send_ul_dcch_msg(uint32_t lcid, const asn1::rrc::ul_dcch_msg_s& msg);
+
   srslte::bit_buffer_t          bit_buf;
 
   pthread_mutex_t mutex;
@@ -392,8 +394,8 @@ private:
 
   uint16_t ho_src_rnti;
   cell_t   ho_src_cell;
-  phy_interface_rrc::phy_cfg_t previous_phy_cfg;
-  mac_interface_rrc::mac_cfg_t previous_mac_cfg;
+  phy_interface_rrc::phy_cfg_t current_phy_cfg, previous_phy_cfg;
+  mac_interface_rrc::mac_cfg_t current_mac_cfg, previous_mac_cfg;
   bool pending_mob_reconf;
   asn1::rrc::rrc_conn_recfg_s  mob_reconf;
 
@@ -551,15 +553,19 @@ private:
     void remove_meas_object(uint32_t object_id);
     void remove_meas_report(uint32_t report_id);
     void remove_meas_id(uint32_t measId);
-    void remove_meas_id(std::map<uint32_t, meas_t>::iterator it);
-    void calculate_triggers(uint32_t tti);
-    void update_phy();
+    void    remove_meas_id(std::map<uint32_t, meas_t>::iterator it);
+    void    calculate_triggers(uint32_t tti);
+    void    update_phy();
     void L3_filter(meas_value_t *value, float rsrp[NOF_MEASUREMENTS]);
     bool find_earfcn_cell(uint32_t earfcn, uint32_t pci, meas_obj_t **object, int *cell_idx);
     float   range_to_value(quantity_t quant, uint8_t range);
     uint8_t value_to_range(quantity_t quant, float value);
-    bool    process_event(asn1::rrc::eutra_event_s* event, uint32_t tti, bool enter_condition, bool exit_condition,
-                          meas_t* m, meas_value_t* cell);
+    bool    process_event(asn1::rrc::eutra_event_s* event,
+                          uint32_t                  tti,
+                          bool                      enter_condition,
+                          bool                      exit_condition,
+                          meas_t*                   m,
+                          meas_value_t*             cell);
 
     void generate_report(uint32_t meas_id);
   };
@@ -642,15 +648,22 @@ private:
   void leave_connected();
   void stop_timers();
 
-  void apply_rr_config_common_dl(asn1::rrc::rr_cfg_common_s* config);
-  void apply_rr_config_common_ul(asn1::rrc::rr_cfg_common_s* config);
+  void log_rr_config_common();
+  void log_phy_config_dedicated();
+  void log_mac_config_dedicated();
+
+  void apply_rr_config_common(asn1::rrc::rr_cfg_common_s* config, bool send_lower_layers);
+  bool apply_rr_config_dedicated(asn1::rrc::rr_cfg_ded_s* cnfg);
+  void apply_phy_config_dedicated(const asn1::rrc::phys_cfg_ded_s& phy_cnfg);
+
+  void apply_mac_config_dedicated_default();
+  void apply_mac_config_dedicated_explicit(asn1::rrc::mac_main_cfg_s mac_cfg);
+
   void handle_sib1();
   void handle_sib2();
   void handle_sib3();
   void handle_sib13();
 
-  void apply_sib2_configs(asn1::rrc::sib_type2_s* sib2);
-  void apply_sib13_configs(asn1::rrc::sib_type13_r9_s* sib13);
   void handle_con_setup(asn1::rrc::rrc_conn_setup_s* setup);
   void handle_con_reest(asn1::rrc::rrc_conn_reest_s* setup);
   void handle_rrc_con_reconfig(uint32_t lcid, asn1::rrc::rrc_conn_recfg_s* reconfig);
@@ -658,12 +671,11 @@ private:
   void add_drb(asn1::rrc::drb_to_add_mod_s* drb_cnfg);
   void release_drb(uint32_t drb_id);
   void add_mrb(uint32_t lcid, uint32_t port);
-  bool apply_rr_config_dedicated(asn1::rrc::rr_cfg_ded_s* cnfg);
-  void apply_phy_config_dedicated(asn1::rrc::phys_cfg_ded_s* phy_cnfg, bool apply_defaults);
-  void apply_mac_config_dedicated(asn1::rrc::mac_main_cfg_s* mac_cfg, bool apply_defaults);
 
   // Helpers for setting default values
   void set_phy_default_pucch_srs();
+  void set_phy_config_common_default();
+  void set_phy_config_dedicated_default();
   void set_phy_default();
   void set_mac_default();
   void set_rrc_default();

@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -24,18 +19,16 @@
  *
  */
 
-
 #include <float.h>
 #include <complex.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "srslte/phy/utils/bit.h"
+#include "srslte/phy/utils/debug.h"
 #include "srslte/phy/utils/vector.h"
 #include "srslte/phy/utils/vector_simd.h"
-#include "srslte/phy/utils/bit.h"
-
-
 
 void srslte_vec_xor_bbb(int8_t *x,int8_t *y,int8_t *z, const uint32_t len) {
   srslte_vec_xor_bbb_simd(x, y, z, len);
@@ -233,7 +226,7 @@ void srslte_vec_sprint_hex(char *str, const uint32_t max_str_len, uint8_t *x, co
   nbytes = len/8;
   // check that hex string fits in buffer (every byte takes 3 characters, plus brackets)
   if ((3*(len/8 + ((len%8)?1:0))) + 2 >= max_str_len) {
-    fprintf(stderr, "Buffer too small for printing hex string (max_str_len=%d, payload_len=%d).\n", max_str_len, len);
+    ERROR("Buffer too small for printing hex string (max_str_len=%d, payload_len=%d).\n", max_str_len, len);
     return;
   }
 
@@ -471,6 +464,16 @@ void srslte_vec_interleave_add(const cf_t *x, const cf_t *y, cf_t *z, const int 
   srslte_vec_interleave_add_simd(x, y, z, len);
 }
 
+void srslte_vec_gen_sine(cf_t amplitude, float freq, cf_t* z, int len)
+{
+  srslte_vec_gen_sine_simd(amplitude, freq, z, len);
+}
+
 void srslte_vec_apply_cfo(const cf_t *x, float cfo, cf_t *z, int len) {
   srslte_vec_apply_cfo_simd(x, cfo, z, len);
+}
+
+float srslte_vec_estimate_frequency(const cf_t* x, int len)
+{
+  return srslte_vec_estimate_frequency_simd(x, len);
 }

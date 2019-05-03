@@ -1,21 +1,16 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICRXAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
  *
  * A copy of the GNU Affero General Public License can be found in
@@ -23,7 +18,6 @@
  * and at http://www.gnu.org/licenses/.
  *
  */
-
 
 #include "srslte/upper/rlc.h"
 #include "srslte/upper/rlc_tm.h"
@@ -42,8 +36,6 @@ rlc::rlc()
   rrc = NULL;
   mac_timers = NULL;
   ue = NULL;
-  default_lcid = 0;
-  buffer_size = 0;
   bzero(metrics_time, sizeof(metrics_time));
   pthread_rwlock_init(&rwlock, NULL);
 }
@@ -66,13 +58,12 @@ rlc::~rlc()
   pthread_rwlock_destroy(&rwlock);
 }
 
-void rlc::init(srsue::pdcp_interface_rlc *pdcp_,
-               srsue::rrc_interface_rlc  *rrc_,
-               srsue::ue_interface       *ue_,
-               log                       *rlc_log_, 
-               mac_interface_timers      *mac_timers_,
-               uint32_t                  lcid_,
-               int                       buffer_size_)
+void rlc::init(srsue::pdcp_interface_rlc* pdcp_,
+               srsue::rrc_interface_rlc*  rrc_,
+               srsue::ue_interface*       ue_,
+               log*                       rlc_log_,
+               mac_interface_timers*      mac_timers_,
+               uint32_t                   lcid_)
 {
   pdcp    = pdcp_;
   rrc     = rrc_;
@@ -80,7 +71,6 @@ void rlc::init(srsue::pdcp_interface_rlc *pdcp_,
   rlc_log = rlc_log_;
   mac_timers = mac_timers_;
   default_lcid = lcid_;
-  buffer_size  = buffer_size_;
 
   gettimeofday(&metrics_time[1], NULL);
   reset_metrics();
@@ -248,6 +238,8 @@ bool rlc::rb_is_um(uint32_t lcid)
   pthread_rwlock_rdlock(&rwlock);
   if (valid_lcid(lcid)) {
     ret = rlc_array.at(lcid)->get_mode() == RLC_MODE_UM;
+  } else {
+    rlc_log->warning("LCID %d doesn't exist.\n", lcid);
   }
   pthread_rwlock_unlock(&rwlock);
 
@@ -288,6 +280,7 @@ uint32_t rlc::get_total_mch_buffer_state(uint32_t lcid)
   uint32_t ret = 0;
 
   pthread_rwlock_rdlock(&rwlock);
+
   if (valid_lcid_mrb(lcid)) {
     ret = rlc_array_mrb.at(lcid)->get_buffer_state();
   }
@@ -303,6 +296,8 @@ int rlc::read_pdu(uint32_t lcid, uint8_t *payload, uint32_t nof_bytes)
   pthread_rwlock_rdlock(&rwlock);
   if (valid_lcid(lcid)) {
     ret = rlc_array.at(lcid)->read_pdu(payload, nof_bytes);
+  } else {
+    rlc_log->warning("LCID %d doesn't exist.\n", lcid);
   }
   pthread_rwlock_unlock(&rwlock);
 
@@ -316,6 +311,8 @@ int rlc::read_pdu_mch(uint32_t lcid, uint8_t *payload, uint32_t nof_bytes)
   pthread_rwlock_rdlock(&rwlock);
   if (valid_lcid_mrb(lcid)) {
     ret = rlc_array_mrb.at(lcid)->read_pdu(payload, nof_bytes);
+  } else {
+    rlc_log->warning("LCID %d doesn't exist.\n", lcid);
   }
   pthread_rwlock_unlock(&rwlock);
 
@@ -327,6 +324,8 @@ void rlc::write_pdu(uint32_t lcid, uint8_t *payload, uint32_t nof_bytes)
   pthread_rwlock_rdlock(&rwlock);
   if (valid_lcid(lcid)) {
     rlc_array.at(lcid)->write_pdu(payload, nof_bytes);
+  } else {
+    rlc_log->warning("LCID %d doesn't exist. Dropping PDU.\n", lcid);
   }
   pthread_rwlock_unlock(&rwlock);
 }
@@ -440,23 +439,18 @@ void rlc::add_bearer(uint32_t lcid, srslte_rlc_config_t cnfg)
         goto unlock_and_exit;
     }
 
-    if (rlc_entity) {
-      // configure and add to array
-      rlc_entity->init(rlc_log, lcid, pdcp, rrc, mac_timers);
+    // configure and add to array
+    rlc_entity->init(rlc_log, lcid, pdcp, rrc, mac_timers);
 
-      if (cnfg.rlc_mode != RLC_MODE_TM) {
-        if (rlc_entity->configure(cnfg) == false) {
-          rlc_log->error("Error configuring RLC entity\n.");
-          goto delete_and_exit;
-        }
-      }
-
-      if (not rlc_array.insert(rlc_map_pair_t(lcid, rlc_entity)).second) {
-        rlc_log->error("Error inserting RLC entity in to array\n.");
+    if (cnfg.rlc_mode != RLC_MODE_TM) {
+      if (rlc_entity->configure(cnfg) == false) {
+        rlc_log->error("Error configuring RLC entity\n.");
         goto delete_and_exit;
       }
-    } else {
-      rlc_log->error("Error instantiating RLC\n");
+    }
+
+    if (not rlc_array.insert(rlc_map_pair_t(lcid, rlc_entity)).second) {
+      rlc_log->error("Error inserting RLC entity in to array\n.");
       goto delete_and_exit;
     }
     rlc_log->warning("Added radio bearer %s in %s\n", rrc->get_rb_name(lcid).c_str(), rlc_mode_text[cnfg.rlc_mode]);
@@ -482,19 +476,14 @@ void rlc::add_bearer_mrb(uint32_t lcid)
 
   if (not valid_lcid_mrb(lcid)) {
     rlc_entity = new rlc_um();
-    if (rlc_entity != NULL) {
-      // configure and add to array
-      rlc_entity->init(rlc_log, lcid, pdcp, rrc, mac_timers);
-      if (not rlc_entity->configure(srslte_rlc_config_t::mch_config())) {
-        rlc_log->error("Error configuring RLC entity\n.");
-        goto delete_and_exit;
-      }
-      if (not rlc_array_mrb.insert(rlc_map_pair_t(lcid, rlc_entity)).second) {
-        rlc_log->error("Error inserting RLC entity in to array\n.");
-        goto delete_and_exit;
-      }
-    } else {
-      rlc_log->error("Error instantiating RLC\n");
+    // configure and add to array
+    rlc_entity->init(rlc_log, lcid, pdcp, rrc, mac_timers);
+    if (not rlc_entity->configure(srslte_rlc_config_t::mch_config())) {
+      rlc_log->error("Error configuring RLC entity\n.");
+      goto delete_and_exit;
+    }
+    if (not rlc_array_mrb.insert(rlc_map_pair_t(lcid, rlc_entity)).second) {
+      rlc_log->error("Error inserting RLC entity in to array\n.");
       goto delete_and_exit;
     }
     rlc_log->warning("Added radio bearer %s with mode RLC_UM\n", rrc->get_rb_name(lcid).c_str());
@@ -564,7 +553,12 @@ void rlc::change_lcid(uint32_t old_lcid, uint32_t new_lcid)
     }
     // erase from old position
     rlc_array.erase(it);
-    rlc_log->warning("Changed LCID of RLC bearer from %d to %d\n", old_lcid, new_lcid);
+
+    if (valid_lcid(new_lcid) && not valid_lcid(old_lcid)) {
+      rlc_log->info("Successfully changed LCID of RLC bearer from %d to %d\n", old_lcid, new_lcid);
+    } else {
+      rlc_log->error("Error during LCID change of RLC bearer from %d to %d\n", old_lcid, new_lcid);
+    }
   } else {
     rlc_log->error("Can't change LCID of bearer %s from %d to %d. Bearer doesn't exist or new LCID already occupied.\n", rrc->get_rb_name(old_lcid).c_str(), old_lcid, new_lcid);
   }

@@ -1,19 +1,14 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -24,15 +19,16 @@
  *
  */
 
+#include "srslte/common/metrics_hub.h"
+#include "srslte/srslte.h"
+#include "srsue/hdr/metrics_csv.h"
+#include "srsue/hdr/metrics_stdout.h"
+#include "srsue/hdr/ue_metrics_interface.h"
 #include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
 #include <unistd.h>
-#include "srsue/hdr/ue_metrics_interface.h"
-#include "srslte/common/metrics_hub.h"
-#include "srsue/hdr/metrics_stdout.h"
-#include "srsue/hdr/metrics_csv.h"
 
 using namespace srsue;
 
@@ -49,8 +45,15 @@ public:
     // fill dummy values
     bzero(&m, sizeof(ue_metrics_t));
     m.rf.rf_o = 10;
-    m.phy.dl.rsrp = -10.0;
-    m.phy.dl.pathloss = 74;
+    m.phy.nof_active_cc  = 2;
+    m.phy.dl[0].rsrp     = -10.0f;
+    m.phy.dl[0].pathloss = 74;
+    m.mac[0].rx_pkts     = 100;
+    m.mac[0].rx_errors   = 0;
+
+    m.mac[1].rx_pkts   = 100;
+    m.mac[1].rx_errors = 100;
+
     return true;
   }
 

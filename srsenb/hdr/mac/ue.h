@@ -1,19 +1,14 @@
-/**
- *
- * \section COPYRIGHT
- *
- * Copyright 2013-2017 Software Radio Systems Limited
- *
- * \section LICENSE
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -42,45 +37,9 @@ class ue : public srslte::read_pdu_interface,
            public srslte::pdu_queue::process_callback
 {
 public:
-  
-  ue() : mac_msg_dl(20), mch_mac_msg_dl(10), mac_msg_ul(20), conres_id_available(false),
-         dl_ri_counter(0),
-         dl_pmi_counter(0),
-         conres_id(0),
-         last_tti(0),
-         pdus(128) {
-    rrc = NULL;
-    sched = NULL;
-    rlc   = NULL; 
-    log_h = NULL; 
-    rnti  = 0; 
-    pcap  = NULL;
-    nof_failures   = 0;
-    phr_counter    = 0;
-    dl_cqi_counter = 0;
-    is_phy_added = false; 
-    for (int i=0;i<NOF_HARQ_PROCESSES;i++) {
-      pending_buffers[i] = NULL; 
-    }
+  ue();
+  virtual ~ue();
 
-    bzero(&metrics, sizeof(mac_metrics_t));
-    bzero(&mutex, sizeof(pthread_mutex_t));
-    bzero(softbuffer_tx, sizeof(softbuffer_tx));
-    bzero(softbuffer_rx, sizeof(softbuffer_rx));
-    for (int i = 0; i < SRSLTE_MAX_TB; ++i) {
-      bzero(tx_payload_buffer, sizeof(uint8_t) * payload_buffer_len);
-    }
-    pthread_mutex_init(&mutex, NULL);
-  }
-  
-  virtual ~ue() {
-    for (int i=0;i<NOF_HARQ_PROCESSES;i++) {
-      srslte_softbuffer_rx_free(&softbuffer_rx[i]);
-      srslte_softbuffer_tx_free(&softbuffer_tx[i]);
-    }
-    pthread_mutex_destroy(&mutex);
-  }
-  
   void     reset();
   
   void     start_pcap(srslte::mac_pcap* pcap_);
@@ -94,10 +53,10 @@ public:
   srslte_softbuffer_tx_t* get_tx_softbuffer(uint32_t harq_process, uint32_t tb_idx);
   srslte_softbuffer_rx_t* get_rx_softbuffer(uint32_t tti);
   
-  bool     process_pdus(); 
-  uint8_t *request_buffer(uint32_t tti, uint32_t len); 
-  void     process_pdu(uint8_t *pdu, uint32_t nof_bytes, srslte::pdu_queue::channel_t channel, uint32_t tstamp);
-  void     push_pdu(uint32_t tti, uint32_t len); 
+  bool     process_pdus();
+  uint8_t* request_buffer(uint32_t tti, uint32_t len);
+  void     process_pdu(uint8_t* pdu, uint32_t nof_bytes, srslte::pdu_queue::channel_t channel);
+  void     push_pdu(uint32_t tti, uint32_t len);
   void     deallocate_pdu(uint32_t tti);
   
   uint32_t rl_failure();
@@ -140,12 +99,13 @@ private:
   
   uint32_t nof_failures;
 
-  const static int NOF_HARQ_PROCESSES = 2 * HARQ_DELAY_MS * SRSLTE_MAX_TB;
-  srslte_softbuffer_tx_t softbuffer_tx[NOF_HARQ_PROCESSES];
-  srslte_softbuffer_rx_t softbuffer_rx[NOF_HARQ_PROCESSES];
+  const static int       NOF_RX_HARQ_PROCESSES = SRSLTE_FDD_NOF_HARQ;
+  const static int       NOF_TX_HARQ_PROCESSES = SRSLTE_FDD_NOF_HARQ * SRSLTE_MAX_TB;
+  srslte_softbuffer_tx_t softbuffer_tx[NOF_TX_HARQ_PROCESSES];
+  srslte_softbuffer_rx_t softbuffer_rx[NOF_RX_HARQ_PROCESSES];
 
-  uint8_t *pending_buffers[NOF_HARQ_PROCESSES]; 
-  
+  uint8_t* pending_buffers[NOF_RX_HARQ_PROCESSES];
+
   // For DL there are two buffers, one for each Transport block
   const static int payload_buffer_len = 128*1024; 
   uint8_t          tx_payload_buffer[SRSLTE_MAX_TB][payload_buffer_len];

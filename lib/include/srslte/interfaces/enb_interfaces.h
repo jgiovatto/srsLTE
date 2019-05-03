@@ -1,19 +1,14 @@
-/**
- *
- * \section COPYRIGHT
- *
- * Copyright 2013-2017 Software Radio Systems Limited
- *
- * \section LICENSE
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -45,22 +40,42 @@ namespace srsenb {
 class mac_interface_phy
 {
 public:
-  const static int MAX_GRANTS = 64; 
-  
-  typedef struct {
-    srslte_enb_dl_pdsch_t sched_grants[MAX_GRANTS];
-    uint32_t nof_grants; 
-    uint32_t cfi; 
-  } dl_sched_t; 
+  const static int MAX_GRANTS = 64;
 
   typedef struct {
-    srslte_enb_ul_pusch_t sched_grants[MAX_GRANTS];
-    srslte_enb_dl_phich_t phich[MAX_GRANTS];
-    uint32_t nof_grants; 
+    srslte_dci_dl_t         dci;
+    srslte_dci_cfg_t        dci_cfg;
+    uint8_t*                data[SRSLTE_MAX_TB];
+    srslte_softbuffer_tx_t* softbuffer_tx[SRSLTE_MAX_TB];
+  } dl_sched_grant_t;
+
+  typedef struct {
+    dl_sched_grant_t pdsch[MAX_GRANTS];
+    uint32_t         nof_grants;
+    uint32_t         cfi;
+  } dl_sched_t;
+
+  typedef struct {
+    uint16_t rnti;
+    bool     ack;
+  } ul_sched_ack_t;
+
+  typedef struct {
+    srslte_dci_ul_t         dci;
+    srslte_dci_cfg_t        dci_cfg;
+    uint32_t                current_tx_nb;
+    uint8_t*                data;
+    bool                    needs_pdcch;
+    srslte_softbuffer_rx_t* softbuffer_rx;
+  } ul_sched_grant_t;
+
+  typedef struct {
+    ul_sched_grant_t pusch[MAX_GRANTS];
+    ul_sched_ack_t   phich[MAX_GRANTS];
+    uint32_t         nof_grants;
     uint32_t nof_phich; 
   } ul_sched_t; 
 
-  
   virtual int sr_detected(uint32_t tti, uint16_t rnti) = 0; 
   virtual int rach_detected(uint32_t tti, uint32_t preamble_idx, uint32_t time_adv) = 0; 
   
@@ -72,7 +87,7 @@ public:
   virtual int crc_info(uint32_t tti, uint16_t rnti, uint32_t nof_bytes, bool crc_res) = 0; 
   
   virtual int get_dl_sched(uint32_t tti, dl_sched_t *dl_sched_res) = 0;
-  virtual int get_mch_sched(bool is_mcch, dl_sched_t *dl_sched_res) = 0;
+  virtual int get_mch_sched(uint32_t tti, bool is_mcch, dl_sched_t* dl_sched_res) = 0;
   virtual int get_ul_sched(uint32_t tti, ul_sched_t *ul_sched_res) = 0;
   
   // Radio-Link status 
@@ -88,8 +103,9 @@ class phy_interface_mac
 public:
   
   /* MAC adds/removes an RNTI to the list of active RNTIs */
-  virtual int  add_rnti(uint16_t rnti) = 0; 
-  virtual void rem_rnti(uint16_t rnti) = 0;
+  virtual int  add_rnti(uint16_t rnti, bool is_temporal = false) = 0;
+  virtual void rem_rnti(uint16_t rnti)                           = 0;
+  virtual void set_mch_period_stop(uint32_t stop)                = 0;
 };
 
 /* Interface RRC -> PHY */
@@ -109,7 +125,6 @@ public:
 
   virtual void configure_mbsfn(asn1::rrc::sib_type2_s* sib2, asn1::rrc::sib_type13_r9_s* sib13,
                                asn1::rrc::mcch_msg_s mcch)                               = 0;
-  virtual void set_conf_dedicated_ack(uint16_t rnti, bool rrc_completed) = 0;
   virtual void set_config_dedicated(uint16_t rnti, asn1::rrc::phys_cfg_ded_s* dedicated) = 0;
 };
 
@@ -200,8 +215,11 @@ public:
                                uint32_t lcid,
                                uint8_t *k_rrc_enc_,
                                uint8_t *k_rrc_int_,
+                               uint8_t *k_up_enc_,
                                srslte::CIPHERING_ALGORITHM_ID_ENUM cipher_algo_,
                                srslte::INTEGRITY_ALGORITHM_ID_ENUM integ_algo_) = 0;
+  virtual void enable_integrity(uint16_t rnti, uint32_t lcid) = 0;
+  virtual void enable_encryption(uint16_t rnti, uint32_t lcid) = 0;
 };
 
 // PDCP interface for RLC

@@ -1,19 +1,14 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -63,7 +58,7 @@ void sch_pdu::parse_packet(uint8_t *ptr)
     if (n_sub >= 0) {
       subheaders[nof_subheaders-1].set_payload_size(n_sub);
     } else {
-      fprintf(stderr,"Reading MAC PDU: negative payload for last subheader\n");
+      ERROR("Reading MAC PDU: negative payload for last subheader\n");
     }
   }
 }
@@ -129,8 +124,11 @@ uint8_t* sch_pdu::write_packet(srslte::log *log_h)
     header_sz += onetwo_padding;
   }
   if (ce_payload_sz + header_sz >= sdu_offset_start) {
-    fprintf(stderr, "Writing PDU: header sz + ce_payload_sz >= sdu_offset_start (%d>=%d). pdu_len=%d, total_sdu_len=%d\n",
-            header_sz + ce_payload_sz, sdu_offset_start, pdu_len, total_sdu_len);
+    ERROR("Writing PDU: header sz + ce_payload_sz >= sdu_offset_start (%d>=%d). pdu_len=%d, total_sdu_len=%d\n",
+          header_sz + ce_payload_sz,
+          sdu_offset_start,
+          pdu_len,
+          total_sdu_len);
     return NULL; 
   }
 
@@ -184,31 +182,49 @@ uint8_t* sch_pdu::write_packet(srslte::log *log_h)
          pdu_len, header_sz+ce_payload_sz, header_sz, ce_payload_sz, 
          nof_subheaders, last_sdu_idx, total_sdu_len, onetwo_padding, rem_len, init_rem_len);
   }
-  
+
   if (rem_len + header_sz + ce_payload_sz + total_sdu_len != pdu_len) {
-    printf("\n------------------------------\n");
-    for (int i=0;i<nof_subheaders;i++) {
-      printf("SUBH %d is_sdu=%d, payload=%d\n", i, subheaders[i].is_sdu(), subheaders[i].get_payload_size());
-    }
-    printf("Wrote PDU: pdu_len=%d, header_and_ce=%d (%d+%d), nof_subh=%d, last_sdu=%d, sdu_len=%d, onepad=%d, multi=%d, init_rem_len=%d\n", 
-         pdu_len, header_sz+ce_payload_sz, header_sz, ce_payload_sz, 
-         nof_subheaders, last_sdu_idx, total_sdu_len, onetwo_padding, rem_len, init_rem_len);
-    fprintf(stderr, "Expected PDU len %d bytes but wrote %d\n", pdu_len, rem_len + header_sz + ce_payload_sz + total_sdu_len);
-    printf("------------------------------\n");
-    
     if (log_h) {
-      log_h->error("Wrote PDU: pdu_len=%d, header_and_ce=%d (%d+%d), nof_subh=%d, last_sdu=%d, sdu_len=%d, onepad=%d, multi=%d, init_rem_len=%d\n", 
-         pdu_len, header_sz+ce_payload_sz, header_sz, ce_payload_sz, 
-         nof_subheaders, last_sdu_idx, total_sdu_len, onetwo_padding, rem_len, init_rem_len);
-    
+      log_h->console("\n------------------------------\n");
+      for (int i = 0; i < nof_subheaders; i++) {
+        log_h->console("SUBH %d is_sdu=%d, payload=%d\n", i, subheaders[i].is_sdu(), subheaders[i].get_payload_size());
+      }
+      log_h->console("Wrote PDU: pdu_len=%d, header_and_ce=%d (%d+%d), nof_subh=%d, last_sdu=%d, sdu_len=%d, "
+                     "onepad=%d, multi=%d, init_rem_len=%d\n",
+                     pdu_len,
+                     header_sz + ce_payload_sz,
+                     header_sz,
+                     ce_payload_sz,
+                     nof_subheaders,
+                     last_sdu_idx,
+                     total_sdu_len,
+                     onetwo_padding,
+                     rem_len,
+                     init_rem_len);
+      ERROR("Expected PDU len %d bytes but wrote %d\n", pdu_len, rem_len + header_sz + ce_payload_sz + total_sdu_len);
+      log_h->console("------------------------------\n");
+
+      log_h->error("Wrote PDU: pdu_len=%d, header_and_ce=%d (%d+%d), nof_subh=%d, last_sdu=%d, sdu_len=%d, onepad=%d, "
+                   "multi=%d, init_rem_len=%d\n",
+                   pdu_len,
+                   header_sz + ce_payload_sz,
+                   header_sz,
+                   ce_payload_sz,
+                   nof_subheaders,
+                   last_sdu_idx,
+                   total_sdu_len,
+                   onetwo_padding,
+                   rem_len,
+                   init_rem_len);
     }
     
     return NULL; 
   }
 
   if ((int)(header_sz + ce_payload_sz) != (int) (ptr - pdu_start_ptr)) {
-    fprintf(stderr, "Expected a header and CE payload of %d bytes but wrote %d\n", 
-            header_sz+ce_payload_sz,(int) (ptr - pdu_start_ptr));
+    ERROR("Expected a header and CE payload of %d bytes but wrote %d\n",
+          header_sz + ce_payload_sz,
+          (int)(ptr - pdu_start_ptr));
     return NULL;
   }
   
@@ -352,6 +368,8 @@ uint32_t sch_subh::sizeof_ce(uint32_t lcid, bool is_ul)
           return 0;
         case PADDING:
           return 0;
+        case SCELL_ACTIVATION:
+          return 1;
       }
     }
   }
@@ -436,13 +454,17 @@ int sch_subh::get_bsr(uint32_t buff_size[4])
 
 bool sch_subh::get_next_mch_sched_info(uint8_t *lcid_, uint16_t *mtch_stop)
 {
+  uint16_t mtch_stop_ce;
   if(payload) {
     nof_mch_sched_ce = nof_bytes/2;
-    if(cur_mch_sched_ce < nof_mch_sched_ce) {
-      *lcid_ = (payload[cur_mch_sched_ce*2]&0xF8) >> 3;
-      *mtch_stop = ((uint16_t)(payload[cur_mch_sched_ce*2]&0x07)) << 8;
-      *mtch_stop += payload[cur_mch_sched_ce*2+1];
+    if (cur_mch_sched_ce < nof_mch_sched_ce) {
+      *lcid_     = (payload[cur_mch_sched_ce * 2] & 0xF8) >> 3;
+      mtch_stop_ce = ((uint16_t)(payload[cur_mch_sched_ce * 2] & 0x07)) << 8;
+      mtch_stop_ce += payload[cur_mch_sched_ce * 2 + 1];
       cur_mch_sched_ce++;
+      *mtch_stop = (mtch_stop_ce == srslte::mch_subh::MTCH_STOP_EMPTY)
+                       ? (0)
+                       : (mtch_stop_ce);
       return true;
     }
   }
@@ -453,6 +475,16 @@ uint8_t sch_subh::get_ta_cmd()
 {
   if (payload) {
     return (uint8_t) payload[0]&0x3f;
+  } else {
+    return 0;
+  }
+}
+
+uint8_t sch_subh::get_activation_deactivation_cmd()
+{
+  /* 3GPP 36.321 section 6.1.3.8 Activation/Deactivation MAC Control Element */
+  if (payload) {
+    return payload[0];
   } else {
     return 0;
   }
@@ -585,8 +617,11 @@ bool sch_subh::set_ta_cmd(uint8_t ta_cmd)
 bool sch_subh::set_next_mch_sched_info(uint8_t lcid_, uint16_t mtch_stop)
 {
   if (((sch_pdu*)parent)->has_space_ce(2, true)) {
-    w_payload_ce[nof_mch_sched_ce*2] = (lcid_&0x1F) << 3 | (uint8_t) ((mtch_stop&0x0700)>>8);
-    w_payload_ce[nof_mch_sched_ce*2+1] = (uint8_t) (mtch_stop&0xff);
+    uint16_t mtch_stop_ce =
+        (mtch_stop) ? (mtch_stop) : (srslte::mch_subh::MTCH_STOP_EMPTY);
+    w_payload_ce[nof_mch_sched_ce * 2] =
+        (lcid_ & 0x1F) << 3 | (uint8_t)((mtch_stop_ce & 0x0700) >> 8);
+    w_payload_ce[nof_mch_sched_ce * 2 + 1] = (uint8_t)(mtch_stop_ce & 0xff);
     nof_mch_sched_ce++;
     lcid = MCH_SCHED_INFO;
     ((sch_pdu*)parent)->update_space_ce(2, true);

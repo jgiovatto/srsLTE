@@ -1,19 +1,14 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -50,13 +45,12 @@ class rlc
 public:
   rlc();
   virtual ~rlc();
-  void init(srsue::pdcp_interface_rlc *pdcp_,
-            srsue::rrc_interface_rlc  *rrc_,
-            srsue::ue_interface       *ue_,
-            log                       *rlc_log_,
-            mac_interface_timers      *mac_timers_,
-            uint32_t                   lcid_,
-            int                        buffer_size_ = -1); // -1 to use default buffer sizes
+  void init(srsue::pdcp_interface_rlc* pdcp_,
+            srsue::rrc_interface_rlc*  rrc_,
+            srsue::ue_interface*       ue_,
+            log*                       rlc_log_,
+            mac_interface_timers*      mac_timers_,
+            uint32_t                   lcid_);
   void stop();
 
   void get_metrics(rlc_metrics_t &m);
@@ -109,7 +103,6 @@ private:
   pthread_rwlock_t rwlock;
 
   uint32_t                     default_lcid;
-  int                          buffer_size;
 
   // Timer needed for metrics calculation
   struct timeval      metrics_time[3];

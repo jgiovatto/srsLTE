@@ -1,19 +1,14 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -63,12 +58,14 @@ public:
   void del_bearer(uint32_t lcid);
   void change_lcid(uint32_t old_lcid, uint32_t new_lcid);
   void config_security(uint32_t lcid,
-                       uint8_t *k_enc,
-                       uint8_t *k_int,
+                       uint8_t *k_rrc_enc,
+                       uint8_t *k_rrc_int,
+                       uint8_t *k_up_enc,
                        CIPHERING_ALGORITHM_ID_ENUM cipher_algo,
                        INTEGRITY_ALGORITHM_ID_ENUM integ_algo);
-  void config_security_all(uint8_t *k_enc,
-                           uint8_t *k_int,
+  void config_security_all(uint8_t *k_rrc_enc,
+                           uint8_t *k_rrc_int,
+                           uint8_t *k_up_enc,
                            CIPHERING_ALGORITHM_ID_ENUM cipher_algo,
                            INTEGRITY_ALGORITHM_ID_ENUM integ_algo);
   void enable_integrity(uint32_t lcid);

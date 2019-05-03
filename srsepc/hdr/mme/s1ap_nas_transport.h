@@ -1,10 +1,5 @@
-/**
- *
- * \section COPYRIGHT
- *
- * Copyright 2013-2017 Software Radio Systems Limited
- *
- * \section LICENSE
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -26,29 +21,36 @@
 #ifndef SRSEPC_S1AP_NAS_TRANSPORT_H
 #define SRSEPC_S1AP_NAS_TRANSPORT_H
 
+#include "mme_gtpc.h"
+#include "s1ap_common.h"
+#include "srsepc/hdr/hss/hss.h"
+#include "srslte/asn1/gtpc.h"
 #include "srslte/asn1/liblte_s1ap.h"
 #include "srslte/common/buffer_pool.h"
-#include "s1ap_common.h"
-#include "srslte/asn1/gtpc.h"
-#include "srsepc/hdr/hss/hss.h"
-#include "mme_gtpc.h"
 
-namespace srsepc{
+namespace srsepc {
 
 class s1ap_nas_transport
 {
 public:
   static s1ap_nas_transport* m_instance;
-  static s1ap_nas_transport* get_instance(void);
-  static void cleanup(void);
-  void init(hss_interface_nas * hss_);
+  static s1ap_nas_transport* get_instance();
+  static void                cleanup();
+  void                       init();
 
-  bool handle_initial_ue_message(LIBLTE_S1AP_MESSAGE_INITIALUEMESSAGE_STRUCT* init_ue, struct sctp_sndrcvinfo* enb_sri,
-                                 srslte::byte_buffer_t* reply_buffer, bool* reply_flag);
+  bool handle_initial_ue_message(LIBLTE_S1AP_MESSAGE_INITIALUEMESSAGE_STRUCT* init_ue,
+                                 struct sctp_sndrcvinfo*                      enb_sri,
+                                 srslte::byte_buffer_t*                       reply_buffer,
+                                 bool*                                        reply_flag);
+
   bool handle_uplink_nas_transport(LIBLTE_S1AP_MESSAGE_UPLINKNASTRANSPORT_STRUCT* ul_xport,
-                                   struct sctp_sndrcvinfo* enb_sri, srslte::byte_buffer_t* reply_buffer,
-                                   bool* reply_flag);
-  bool send_downlink_nas_transport(uint32_t enb_ue_s1ap_id, uint32_t mme_ue_s1ap_id, srslte::byte_buffer_t* nas_msg,
+                                   struct sctp_sndrcvinfo*                        enb_sri,
+                                   srslte::byte_buffer_t*                         reply_buffer,
+                                   bool*                                          reply_flag);
+
+  bool send_downlink_nas_transport(uint32_t               enb_ue_s1ap_id,
+                                   uint32_t               mme_ue_s1ap_id,
+                                   srslte::byte_buffer_t* nas_msg,
                                    struct sctp_sndrcvinfo enb_sri);
 
 private:
@@ -61,6 +63,10 @@ private:
   s1ap*              m_s1ap;
   hss_interface_nas* m_hss;
   mme_gtpc*          m_mme_gtpc;
+
+  nas_init_t m_nas_init;
+  nas_if_t   m_nas_if;
 };
-} //namespace srsepc
+
+} // namespace srsepc
 #endif // SRSEPC_S1AP_NAS_TRANSPORT_H

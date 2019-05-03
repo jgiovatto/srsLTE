@@ -1,19 +1,14 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
+ * This file is part of srsLTE.
  *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsUE library.
- *
- * srsUE is free software: you can redistribute it and/or modify
+ * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsUE is distributed in the hope that it will be useful,
+ * srsLTE is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -170,8 +165,9 @@ int security_command_test()
   usim.init(&args, &usim_log);
 
   srsue::nas nas;
-  srslte_nas_config_t cfg;
-  ZERO_OBJECT(cfg);
+  nas_args_t cfg;
+  cfg.eia = "1,2";
+  cfg.eea = "0,1,2";
   nas.init(&usim, &rrc_dummy, &gw, &nas_log, cfg);
 
   // push auth request PDU to NAS to generate security context
@@ -230,10 +226,9 @@ int mme_attach_request_test()
   args.op = "63BFA50EE6523365FF14C1F45F88737D";
   usim.init(&args, &usim_log);
 
-  srslte_nas_config_t nas_cfg;
-  ZERO_OBJECT(nas_cfg);
+  nas_args_t nas_cfg;
   nas_cfg.force_imsi_attach = true;
-  nas_cfg.apn = "test123";
+  nas_cfg.apn_name          = "test123";
   srsue::nas nas;
   srsue::gw gw;
 
@@ -302,11 +297,10 @@ int esm_info_request_test()
   pool = byte_buffer_pool::get_instance();
 
   srsue::nas nas;
-  srslte_nas_config_t cfg;
-  ZERO_OBJECT(cfg);
-  cfg.apn = "srslte";
-  cfg.user = "srsuser";
-  cfg.pass = "srspass";
+  nas_args_t cfg;
+  cfg.apn_name          = "srslte";
+  cfg.apn_user          = "srsuser";
+  cfg.apn_pass          = "srspass";
   cfg.force_imsi_attach = true;
   nas.init(&usim, &rrc_dummy, &gw, &nas_log, cfg);
 

@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2019 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2015 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -24,10 +19,9 @@
  *
  */
 
-
+#include "srslte/srslte.h"
 #include <stdlib.h>
 #include <string.h>
-#include <srslte/srslte.h>
 
 #include "srslte/phy/dft/dft.h"
 #include "srslte/phy/utils/vector.h"
@@ -50,15 +44,15 @@ int srslte_conv_fft_cc_init(srslte_conv_fft_cc_t *q, uint32_t input_len, uint32_
     return SRSLTE_ERROR;
   }
   if (srslte_dft_plan(&q->input_plan,q->output_len,SRSLTE_DFT_FORWARD,SRSLTE_DFT_COMPLEX)) {
-    fprintf(stderr, "Error initiating input plan\n");
+    ERROR("Error initiating input plan\n");
     return SRSLTE_ERROR;
   }
   if (srslte_dft_plan(&q->filter_plan,q->output_len,SRSLTE_DFT_FORWARD,SRSLTE_DFT_COMPLEX)) {
-    fprintf(stderr, "Error initiating filter plan\n");
+    ERROR("Error initiating filter plan\n");
     return SRSLTE_ERROR;
   }
   if (srslte_dft_plan(&q->output_plan,q->output_len,SRSLTE_DFT_BACKWARD,SRSLTE_DFT_COMPLEX)) {
-    fprintf(stderr, "Error initiating output plan\n");
+    ERROR("Error initiating output plan\n");
     return SRSLTE_ERROR;
   }
   srslte_dft_plan_set_norm(&q->input_plan, true);
@@ -70,7 +64,7 @@ int srslte_conv_fft_cc_init(srslte_conv_fft_cc_t *q, uint32_t input_len, uint32_
 
 int srslte_conv_fft_cc_replan(srslte_conv_fft_cc_t *q, uint32_t input_len, uint32_t filter_len) {
   if (input_len > q->max_input_len || filter_len > q->max_filter_len) {
-    fprintf(stderr, "Error in conv_fft_cc_replan(): input_len and filter_len must be lower than initialized\n");
+    ERROR("Error in conv_fft_cc_replan(): input_len and filter_len must be lower than initialized\n");
     return -1;
   }
 
@@ -82,15 +76,15 @@ int srslte_conv_fft_cc_replan(srslte_conv_fft_cc_t *q, uint32_t input_len, uint3
     return SRSLTE_ERROR;
   }
   if (srslte_dft_replan(&q->input_plan,q->output_len)) {
-    fprintf(stderr, "Error initiating input plan\n");
+    ERROR("Error initiating input plan\n");
     return SRSLTE_ERROR;
   }
   if (srslte_dft_replan(&q->filter_plan,q->output_len)) {
-    fprintf(stderr, "Error initiating filter plan\n");
+    ERROR("Error initiating filter plan\n");
     return SRSLTE_ERROR;
   }
   if (srslte_dft_replan(&q->output_plan,q->output_len)) {
-    fprintf(stderr, "Error initiating output plan\n");
+    ERROR("Error initiating output plan\n");
     return SRSLTE_ERROR;
   }
   return SRSLTE_SUCCESS;
