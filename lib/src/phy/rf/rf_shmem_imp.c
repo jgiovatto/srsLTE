@@ -967,7 +967,7 @@ double rf_shmem_set_tx_srate(void *h, double rate)
  }
 
 
-double rf_shmem_set_rx_freq(void *h, double freq)
+double rf_shmem_set_rx_freq(void *h, uint32_t ch, double freq)
  {
    RF_SHMEM_GET_STATE(h);
 
@@ -980,7 +980,7 @@ double rf_shmem_set_rx_freq(void *h, double freq)
  }
 
 
-double rf_shmem_set_tx_freq(void *h, double freq)
+double rf_shmem_set_tx_freq(void *h, uint32_t ch, double freq)
  {
    RF_SHMEM_GET_STATE(h);
 

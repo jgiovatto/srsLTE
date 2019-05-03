@@ -311,7 +311,7 @@ double rf_dummy_set_tx_srate(void *h, double rate)
  }
 
 
-double rf_dummy_set_rx_freq(void *h, double freq)
+double rf_dummy_set_rx_freq(void *h, uint32_t ch, double freq)
  {
    GET_DEV_INFO(h);
 
@@ -324,7 +324,7 @@ double rf_dummy_set_rx_freq(void *h, double freq)
  }
 
 
-double rf_dummy_set_tx_freq(void *h, double freq)
+double rf_dummy_set_tx_freq(void *h, uint32_t ch, double freq)
  {
    GET_DEV_INFO(h);
 

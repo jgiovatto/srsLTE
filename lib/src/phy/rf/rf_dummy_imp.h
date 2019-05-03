@@ -74,11 +74,11 @@ SRSLTE_API   double rf_dummy_get_rx_gain(void *h);
 
 SRSLTE_API   double rf_dummy_get_tx_gain(void *h);
 
-SRSLTE_API   double rf_dummy_set_rx_freq(void *h, double freq);  
+SRSLTE_API   double rf_dummy_set_rx_freq(void *h, uint32_t ch, double freq);  
 
 SRSLTE_API   double rf_dummy_set_tx_srate(void *h, double freq);
 
-SRSLTE_API   double rf_dummy_set_tx_freq(void *h, double freq);
+SRSLTE_API   double rf_dummy_set_tx_freq(void *h, uint32_t ch, double freq);
 
 SRSLTE_API   void   rf_dummy_get_time(void *h, time_t *secs, double *frac_secs);  
 
