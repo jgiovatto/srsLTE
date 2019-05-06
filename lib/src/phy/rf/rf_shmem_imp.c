@@ -695,7 +695,6 @@ int rf_shmem_stop_rx_stream(void *h)
 
    pthread_mutex_lock(&_state->state_lock);
 
-   // XXX how important is this
    RF_SHMEM_WARN("end rx stream");
 
    _state->rx_stream = false;
@@ -880,7 +879,7 @@ double rf_shmem_set_rx_gain(void *h, double gain)
    RF_SHMEM_GET_STATE(h);
 
    if(_state->rx_gain != gain) {
-     RF_SHMEM_INFO("gain %3.2lf to %3.2lf", _state->rx_gain, gain);
+     RF_SHMEM_DBUG("gain %3.2lf to %3.2lf", _state->rx_gain, gain);
 
      _state->rx_gain = gain;
    }
@@ -894,7 +893,7 @@ double rf_shmem_set_tx_gain(void *h, double gain)
    RF_SHMEM_GET_STATE(h);
 
    if(_state->tx_gain != gain) {
-     RF_SHMEM_INFO("gain %3.2lf to %3.2lf", _state->tx_gain, gain);
+     RF_SHMEM_DBUG("gain %3.2lf to %3.2lf", _state->tx_gain, gain);
 
      _state->tx_gain = gain;
    }
@@ -971,8 +970,8 @@ double rf_shmem_set_rx_freq(void *h, uint32_t ch, double freq)
  {
    RF_SHMEM_GET_STATE(h);
 
-   RF_SHMEM_INFO("freq %4.2lf MHz to %4.2lf MHz", 
-                 _state->rx_freq / 1e6, freq / 1e6);
+   RF_SHMEM_INFO("ch %u, freq %4.2lf MHz to %4.2lf MHz", 
+                 ch, _state->rx_freq / 1e6, freq / 1e6);
 
    _state->rx_freq = freq;
 
@@ -985,8 +984,8 @@ double rf_shmem_set_tx_freq(void *h, uint32_t ch, double freq)
    RF_SHMEM_GET_STATE(h);
 
    if(_state->tx_freq != freq) {
-     RF_SHMEM_INFO("freq %4.2lf MHz to %4.2lf MHz", 
-                   _state->tx_freq / 1e6, freq / 1e6);
+     RF_SHMEM_INFO("ch %u, freq %4.2lf MHz to %4.2lf MHz", 
+                   ch, _state->tx_freq / 1e6, freq / 1e6);
 
      _state->tx_freq = freq;
    }
@@ -1196,13 +1195,13 @@ int rf_shmem_send_timed_multi(void *h, void *data[4], int nsamples,
         {
           memcpy(element->iqdata, data[0], nof_bytes);
 
-          element->meta.is_sob       = is_sob;
-          element->meta.is_eob       = is_eob;
-          element->meta.tx_srate     = _state->tx_srate;
-          element->meta.seqnum       = _state->tx_seqnum++;
-          element->meta.nof_bytes    = nof_bytes;
-          element->meta.tv_tx_time   = tv_now;
-          element->meta.tv_tx_tti    = tv_tx_tti;
+          element->meta.is_sob     = is_sob;
+          element->meta.is_eob     = is_eob;
+          element->meta.tx_srate   = _state->tx_srate;
+          element->meta.seqnum     = _state->tx_seqnum++;
+          element->meta.nof_bytes  = nof_bytes;
+          element->meta.tv_tx_time = tv_now;
+          element->meta.tv_tx_tti  = tv_tx_tti;
         }
        else
         {
