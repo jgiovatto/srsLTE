@@ -356,9 +356,9 @@ static inline double rf_shmem_get_fs(const struct timeval *tv)
 // XXX this could be a place where we introduce noise/jamming effects
 static int rf_shmem_resample(double srate_in, 
                              double srate_out, 
-                             cf_t * data_in, 
-                             cf_t * data_out,
-                             int nof_bytes)
+                             void * data_in, 
+                             void * data_out,
+                             int nbytes)
 {
   // downsample needed during initial sync since ue is at lowest sample rate
   if(srate_in && srate_out && (srate_in != srate_out))
@@ -385,16 +385,16 @@ static int rf_shmem_resample(double srate_in,
      srslte_resample_arb_init(&r, sratio, 0);
 
      return RF_SHMEM_BYTES_X_SAMPLE(srslte_resample_arb_compute(&r, 
-                                                                data_in, 
-                                                                data_out, 
-                                                                RF_SHMEM_SAMPLES_X_BYTE(nof_bytes)));
+                                                                (cf_t*)data_in, 
+                                                                (cf_t*)data_out, 
+                                                                RF_SHMEM_SAMPLES_X_BYTE(nbytes)));
    }
   else
    {
      // no resampling needed
-     memcpy(data_out, data_in, nof_bytes);
+     memcpy(data_out, data_in, nbytes);
 
-     return nof_bytes;
+     return nbytes;
    }
 }
 
@@ -940,12 +940,16 @@ double rf_shmem_set_rx_srate(void *h, double rate)
  {
    RF_SHMEM_GET_STATE(h);
 
+   pthread_mutex_lock(&_state->state_lock);
+
    if(_state->rx_srate != rate) {
      RF_SHMEM_INFO("srate %4.2lf MHz to %4.2lf MHz", 
                    _state->rx_srate / 1e6, rate / 1e6);
 
      _state->rx_srate = rate;
    }
+
+   pthread_mutex_unlock(&_state->state_lock);
 
    return _state->rx_srate;
  }
@@ -955,12 +959,16 @@ double rf_shmem_set_tx_srate(void *h, double rate)
  {
    RF_SHMEM_GET_STATE(h);
 
+   pthread_mutex_lock(&_state->state_lock);
+
    if(_state->tx_srate != rate) {
      RF_SHMEM_INFO("srate %4.2lf MHz to %4.2lf MHz", 
                    _state->tx_srate / 1e6, rate / 1e6);
 
      _state->tx_srate = rate;
    }
+
+   pthread_mutex_unlock(&_state->state_lock);
 
    return _state->tx_srate;
  }
@@ -1024,25 +1032,27 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
  {
    RF_SHMEM_GET_STATE(h);
 
+   pthread_mutex_lock(&_state->state_lock);
+
    struct timeval tv_now;
 
    // nof bytes requested
-   const uint32_t nof_bytes = RF_SHMEM_BYTES_X_SAMPLE(nsamples);
+   const uint32_t nbytes = RF_SHMEM_BYTES_X_SAMPLE(nsamples);
 
    // working in units of subframes
    const int nof_sf = (nsamples / (_state->rx_srate / 1000.0f));
 
-   RF_SHMEM_DBUG("get: nof_samples %u, nof_bytes %u, nof_sf %d", 
+   RF_SHMEM_DBUG("get: nof_samples %u, nbytes %u, nof_sf %d", 
                  nsamples,
-                 nof_bytes,
+                 nbytes,
                  nof_sf);
 
-   uint32_t nof_bytes_in = 0;
+   uint32_t offset = 0;
 
-   memset(data[0], 0x0, nof_bytes);
+   memset(data[0], 0x0, nbytes);
 
    // for each requested subframe
-   for(int i = 0; i < nof_sf; ++i)
+   for(int sf = 0; (sf < nof_sf) && (offset < RF_SHMEM_MAX_CF_LEN); ++sf)
      { 
         gettimeofday(&tv_now, NULL);
 
@@ -1063,18 +1073,18 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
         // check current tti w/bin tti 
         if(timercmp(&_state->tv_this_tti, &element->meta.tv_tx_tti, ==))
          {
-           const int new_len = rf_shmem_resample(element->meta.tx_srate,
-                                                 _state->rx_srate,
-                                                 element->iqdata,
-                                                 (cf_t*)(((uint8_t*)data[0]) + nof_bytes_in),
-                                                 element->meta.nof_bytes);
+           const int result = rf_shmem_resample(element->meta.tx_srate,
+                                                   _state->rx_srate,
+                                                   element->iqdata,
+                                                   ((uint8_t*)data[0]) + offset,
+                                                   element->meta.nof_bytes);
 
-           nof_bytes_in += new_len;
+           offset += result;
 
 #ifdef RF_SHMEM_DEBUG_MODE
            char logbuff[256] = {0};
            RF_SHMEM_DBUG("RX, bin %u, new_len %u, total %u, %s", 
-                         bin, new_len, nof_bytes_in, printMsg(element, logbuff, sizeof(logbuff)));
+                         bin, new_len, offset, printMsg(element, logbuff, sizeof(logbuff)));
 #endif
          }
 
@@ -1091,6 +1101,8 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
 
    // set rx timestamp to this tti
    rf_shmem_tv_to_fs(&_state->tv_this_tti, full_secs, frac_secs);
+
+   pthread_mutex_unlock(&_state->state_lock);
 
    return nsamples;
  }
@@ -1170,7 +1182,7 @@ int rf_shmem_send_timed_multi(void *h, void *data[4], int nsamples,
      }
    else
      {
-       const uint32_t nof_bytes = RF_SHMEM_BYTES_X_SAMPLE(nsamples);
+       const uint32_t nbytes = RF_SHMEM_BYTES_X_SAMPLE(nsamples);
 
        // get the bin for this tx_tti
        const uint32_t bin = get_bin(&tv_tx_tti);
@@ -1193,13 +1205,13 @@ int rf_shmem_send_timed_multi(void *h, void *data[4], int nsamples,
        // new bin entry
        if(element->meta.nof_sf == 0)
         {
-          memcpy(element->iqdata, data[0], nof_bytes);
+          memcpy(element->iqdata, data[0], nbytes);
 
           element->meta.is_sob     = is_sob;
           element->meta.is_eob     = is_eob;
           element->meta.tx_srate   = _state->tx_srate;
           element->meta.seqnum     = _state->tx_seqnum++;
-          element->meta.nof_bytes  = nof_bytes;
+          element->meta.nof_bytes  = nbytes;
           element->meta.tv_tx_time = tv_now;
           element->meta.tv_tx_tti  = tv_tx_tti;
         }
