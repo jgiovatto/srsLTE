@@ -28,42 +28,40 @@
 
 namespace srsepc {
 
-nas::nas(srslte::log* nas_log = nullptr) :
+nas::nas(nas_init_t args, nas_if_t itf, srslte::log* nas_log) :
   m_pool(srslte::byte_buffer_pool::get_instance()),
   m_nas_log(nas_log),
-  m_gtpc(nullptr),
-  m_s1ap(nullptr),
-  m_hss(nullptr),
-  m_mme(nullptr),
-  m_mcc(0),
-  m_mnc(0),
-  m_mme_group(0),
-  m_mme_code(0),
-  m_tac(0),
-  m_t3413(0)
+  m_gtpc(itf.gtpc),
+  m_s1ap(itf.s1ap),
+  m_hss(itf.hss),
+  m_mme(itf.mme),
+  m_mcc(args.mcc),
+  m_mnc(args.mnc),
+  m_mme_group(args.mme_group),
+  m_mme_code(args.mme_code),
+  m_tac(args.tac),
+  m_apn(args.apn),
+  m_dns(args.dns),
+  m_t3413(args.paging_timer)
 {
-}
-
-void nas::init(nas_init_t args, nas_if_t itf, srslte::log* nas_log)
-{
-  m_mcc       = args.mcc;
-  m_mnc       = args.mnc;
-  m_mme_code  = args.mme_code;
-  m_mme_group = args.mme_group;
-  m_tac       = args.tac;
-  m_apn       = args.apn;
-  m_dns       = args.dns;
-  m_t3413     = args.paging_timer;
-
   m_sec_ctx.integ_algo  = args.integ_algo;
   m_sec_ctx.cipher_algo = args.cipher_algo;
+  m_nas_log->debug("NAS Context Initialized. MCC: 0x%x, MNC 0x%x\n", m_mcc, m_mnc);
+}
 
-  m_s1ap    = itf.s1ap;
-  m_gtpc    = itf.gtpc;
-  m_hss     = itf.hss;
-  m_mme     = itf.mme;
-  m_nas_log = nas_log;
-  m_nas_log->info("NAS Context Initialized. MCC: 0x%x, MNC 0x%x\n", m_mcc, m_mnc);
+void nas::reset()
+{
+  m_emm_ctx = {};
+  m_ecm_ctx = {};
+  for (int i = 0; i < MAX_ERABS_PER_UE; ++i) {
+    m_esm_ctx[i] = {};
+  }
+
+  srslte::INTEGRITY_ALGORITHM_ID_ENUM integ_algo  = m_sec_ctx.integ_algo;
+  srslte::CIPHERING_ALGORITHM_ID_ENUM cipher_algo = m_sec_ctx.cipher_algo;
+  m_sec_ctx = {};
+  m_sec_ctx.integ_algo  = integ_algo;
+  m_sec_ctx.cipher_algo = cipher_algo;
 }
 
 /**********************************
@@ -106,15 +104,11 @@ bool nas::handle_attach_request(uint32_t                enb_ue_s1ap_id,
     for (int i = 0; i <= 14; i++) {
       imsi += attach_req.eps_mobile_id.imsi[i] * std::pow(10, 14 - i);
     }
-    nas_log->console("Attach request -- IMSI Style Attach request\n");
-    nas_log->info("Attach request -- IMSI Style Attach request\n");
     nas_log->console("Attach request -- IMSI: %015" PRIu64 "\n", imsi);
     nas_log->info("Attach request -- IMSI: %015" PRIu64 "\n", imsi);
   } else if (attach_req.eps_mobile_id.type_of_id == LIBLTE_MME_EPS_MOBILE_ID_TYPE_GUTI) {
     m_tmsi = attach_req.eps_mobile_id.guti.m_tmsi;
     imsi   = s1ap->find_imsi_from_m_tmsi(m_tmsi);
-    nas_log->console("Attach request -- GUTI Style Attach request\n");
-    nas_log->info("Attach request -- GUTI Style Attach request\n");
     nas_log->console("Attach request -- M-TMSI: 0x%x\n", m_tmsi);
     nas_log->info("Attach request -- M-TMSI: 0x%x\n", m_tmsi);
   } else {
@@ -207,8 +201,7 @@ bool nas::handle_imsi_attach_request_unknown_ue(uint32_t                        
   }
 
   // Create UE context
-  nas_ctx = new nas;
-  nas_ctx->init(args, itf, nas_log);
+  nas_ctx = new nas(args, itf, nas_log);
 
   // Save IMSI, eNB UE S1AP Id, MME UE S1AP Id and make sure UE is EMM_DEREGISTERED
   nas_ctx->m_emm_ctx.imsi           = imsi;
@@ -331,8 +324,7 @@ bool nas::handle_guti_attach_request_unknown_ue(uint32_t                        
   gtpc_interface_nas* gtpc = itf.gtpc;
 
   // Create new NAS context.
-  nas_ctx = new nas;
-  nas_ctx->init(args, itf, nas_log);
+  nas_ctx = new nas(args, itf, nas_log);
 
   // Could not find IMSI from M-TMSI, send Id request
   // The IMSI will be set when the identity response is received
@@ -575,7 +567,7 @@ bool nas::handle_service_request(uint32_t                m_tmsi,
   if (imsi == 0) {
     nas_log->console("Could not find IMSI from M-TMSI. M-TMSI 0x%x\n", m_tmsi);
     nas_log->error("Could not find IMSI from M-TMSI. M-TMSI 0x%x\n", m_tmsi);
-    nas nas_tmp(nas_log);
+    nas nas_tmp(args, itf, nas_log);
     nas_tmp.m_ecm_ctx.enb_ue_s1ap_id = enb_ue_s1ap_id;
     nas_tmp.m_ecm_ctx.mme_ue_s1ap_id = s1ap->get_next_mme_ue_s1ap_id();
 
@@ -590,7 +582,7 @@ bool nas::handle_service_request(uint32_t                m_tmsi,
   if (nas_ctx == NULL || nas_ctx->m_emm_ctx.state != EMM_STATE_REGISTERED) {
     nas_log->console("UE is not EMM-Registered.\n");
     nas_log->error("UE is not EMM-Registered.\n");
-    nas nas_tmp(nas_log);
+    nas nas_tmp(args, itf, nas_log);
     nas_tmp.m_ecm_ctx.enb_ue_s1ap_id = enb_ue_s1ap_id;
     nas_tmp.m_ecm_ctx.mme_ue_s1ap_id = s1ap->get_next_mme_ue_s1ap_id();
 
@@ -658,15 +650,33 @@ bool nas::handle_service_request(uint32_t                m_tmsi,
     s1ap->send_initial_context_setup_request(imsi, 5);
     sec_ctx->ul_nas_count++;
   } else {
-    uint32_t mme_ue_s1ap_id = s1ap->get_next_mme_ue_s1ap_id();
+    nas_log->console("Service Request -- Short MAC invalid\n");
+    nas_log->info("Service Request -- Short MAC invalid\n");
+    if (ecm_ctx->state == ECM_STATE_CONNECTED) {
+      nas_log->error("Service Request -- User is ECM CONNECTED\n");
+
+      // Release previous context
+      nas_log->info("Service Request -- Releasing previouse ECM context. eNB S1AP Id %d, MME UE S1AP Id %d\n",
+                    ecm_ctx->enb_ue_s1ap_id, ecm_ctx->mme_ue_s1ap_id);
+      s1ap->send_ue_context_release_command(ecm_ctx->mme_ue_s1ap_id);
+      s1ap->release_ue_ecm_ctx(ecm_ctx->mme_ue_s1ap_id);
+    }
+
+    // Reset and store context with new mme s1ap id
+    nas_ctx->reset();
+    memcpy(&ecm_ctx->enb_sri, enb_sri, sizeof(struct sctp_sndrcvinfo));
+    ecm_ctx->enb_ue_s1ap_id = enb_ue_s1ap_id;
+    ecm_ctx->mme_ue_s1ap_id = s1ap->get_next_mme_ue_s1ap_id();
+    s1ap->add_nas_ctx_to_mme_ue_s1ap_id_map(nas_ctx);
+    s1ap->add_ue_to_enb_set(enb_sri->sinfo_assoc_id, nas_ctx->m_ecm_ctx.mme_ue_s1ap_id);
     srslte::byte_buffer_t *nas_tx = pool->allocate();
     nas_ctx->pack_service_reject(nas_tx, LIBLTE_MME_EMM_CAUSE_UE_IDENTITY_CANNOT_BE_DERIVED_BY_THE_NETWORK);
-    s1ap->send_downlink_nas_transport(enb_ue_s1ap_id, mme_ue_s1ap_id, nas_tx, *enb_sri);
+    s1ap->send_downlink_nas_transport(ecm_ctx->enb_ue_s1ap_id, ecm_ctx->mme_ue_s1ap_id, nas_tx, *enb_sri);
     pool->deallocate(nas_tx);
     
     nas_log->console("Service Request -- Short MAC invalid. Sending service reject.\n");
     nas_log->warning("Service Request -- Short MAC invalid. Sending service reject.\n");
-    nas_log->info("Service Reject -- eNB_UE_S1AP_ID %d MME_UE_S1AP_ID %d.\n", enb_ue_s1ap_id, mme_ue_s1ap_id);
+    nas_log->info("Service Reject -- eNB_UE_S1AP_ID %d MME_UE_S1AP_ID %d.\n", enb_ue_s1ap_id, ecm_ctx->mme_ue_s1ap_id);
   }
   return true;
 }
@@ -772,6 +782,119 @@ bool nas::handle_tracking_area_update_request(uint32_t                m_tmsi,
  * Handle Uplink NAS Transport messages
  *
  ***************************************/
+bool nas::handle_attach_request(srslte::byte_buffer_t* nas_rx)
+{
+  uint32_t                                       m_tmsi      = 0;
+  uint64_t                                       imsi        = 0;
+  LIBLTE_MME_ATTACH_REQUEST_MSG_STRUCT           attach_req  = {};
+  LIBLTE_MME_PDN_CONNECTIVITY_REQUEST_MSG_STRUCT pdn_con_req = {};
+
+  // Get NAS Attach Request and PDN connectivity request messages
+  LIBLTE_ERROR_ENUM err = liblte_mme_unpack_attach_request_msg((LIBLTE_BYTE_MSG_STRUCT*)nas_rx, &attach_req);
+  if (err != LIBLTE_SUCCESS) {
+    m_nas_log->error("Error unpacking NAS attach request. Error: %s\n", liblte_error_text[err]);
+    return false;
+  }
+  // Get PDN Connectivity Request*/
+  err = liblte_mme_unpack_pdn_connectivity_request_msg(&attach_req.esm_msg, &pdn_con_req);
+  if (err != LIBLTE_SUCCESS) {
+    m_nas_log->error("Error unpacking NAS PDN Connectivity Request. Error: %s\n", liblte_error_text[err]);
+    return false;
+  }
+
+  // Get UE IMSI
+  if (attach_req.eps_mobile_id.type_of_id == LIBLTE_MME_EPS_MOBILE_ID_TYPE_IMSI) {
+    for (int i = 0; i <= 14; i++) {
+      imsi += attach_req.eps_mobile_id.imsi[i] * std::pow(10, 14 - i);
+    }
+    m_nas_log->console("Attach request -- IMSI: %015" PRIu64 "\n", imsi);
+    m_nas_log->info("Attach request -- IMSI: %015" PRIu64 "\n", imsi);
+  } else if (attach_req.eps_mobile_id.type_of_id == LIBLTE_MME_EPS_MOBILE_ID_TYPE_GUTI) {
+    m_tmsi = attach_req.eps_mobile_id.guti.m_tmsi;
+    imsi   = m_s1ap->find_imsi_from_m_tmsi(m_tmsi);
+    m_nas_log->console("Attach request -- M-TMSI: 0x%x\n", m_tmsi);
+    m_nas_log->info("Attach request -- M-TMSI: 0x%x\n", m_tmsi);
+  } else {
+    m_nas_log->error("Unhandled Mobile Id type in attach request\n");
+    return false;
+  }
+
+  // Is UE known?
+  if (m_emm_ctx.imsi == 0) {
+    m_nas_log->info("Attach request from Unkonwn UE\n");
+    // Get IMSI
+    uint64_t imsi = 0;
+    for (int i = 0; i <= 14; i++) {
+      imsi += attach_req.eps_mobile_id.imsi[i] * std::pow(10, 14 - i);
+    }
+
+    // Save IMSI, eNB UE S1AP Id, MME UE S1AP Id and make sure UE is EMM_DEREGISTERED
+    m_emm_ctx.imsi           = imsi;
+    m_emm_ctx.state          = EMM_STATE_DEREGISTERED;
+
+    // Save UE network capabilities
+    memcpy(&m_sec_ctx.ue_network_cap,
+           &attach_req.ue_network_cap,
+           sizeof(LIBLTE_MME_UE_NETWORK_CAPABILITY_STRUCT));
+    m_sec_ctx.ms_network_cap_present = attach_req.ms_network_cap_present;
+    if (attach_req.ms_network_cap_present) {
+      memcpy(&m_sec_ctx.ms_network_cap,
+             &attach_req.ms_network_cap,
+             sizeof(LIBLTE_MME_MS_NETWORK_CAPABILITY_STRUCT));
+    }
+
+    uint8_t eps_bearer_id              = pdn_con_req.eps_bearer_id; // TODO: Unused
+    m_emm_ctx.procedure_transaction_id = pdn_con_req.proc_transaction_id;
+
+    // Initialize NAS count
+    m_sec_ctx.ul_nas_count = 0;
+    m_sec_ctx.dl_nas_count = 0;
+
+    // Save whether secure ESM information transfer is necessary
+    m_ecm_ctx.eit = pdn_con_req.esm_info_transfer_flag_present;
+
+    // Initialize E-RABs
+    for (uint i = 0; i < MAX_ERABS_PER_UE; i++) {
+      m_esm_ctx[i].state   = ERAB_DEACTIVATED;
+      m_esm_ctx[i].erab_id = i;
+    }
+
+    // Save attach request type
+    m_emm_ctx.attach_type = attach_req.eps_attach_type;
+
+    // Get Authentication Vectors from HSS
+    if (!m_hss->gen_auth_info_answer(
+            m_emm_ctx.imsi, m_sec_ctx.k_asme, m_sec_ctx.autn, m_sec_ctx.rand, m_sec_ctx.xres)) {
+      m_nas_log->console("User not found. IMSI %015" PRIu64 "\n", m_emm_ctx.imsi);
+      m_nas_log->info("User not found. IMSI %015" PRIu64 "\n", m_emm_ctx.imsi);
+      return false;
+    }
+
+    // Allocate eKSI for this authentication vector
+    // Here we assume a new security context thus a new eKSI
+    m_sec_ctx.eksi = 0;
+
+    // Save the UE context
+    m_s1ap->add_nas_ctx_to_imsi_map(this);
+
+    // Pack NAS Authentication Request in Downlink NAS Transport msg
+    srslte::byte_buffer_t* nas_tx = m_pool->allocate();
+    pack_authentication_request(nas_tx);
+
+    // Send reply to eNB
+    m_s1ap->send_downlink_nas_transport(
+        m_ecm_ctx.enb_ue_s1ap_id, m_ecm_ctx.mme_ue_s1ap_id, nas_tx, m_ecm_ctx.enb_sri);
+    m_pool->deallocate(nas_tx);
+
+    m_nas_log->info("Downlink NAS: Sending Authentication Request\n");
+    m_nas_log->console("Downlink NAS: Sending Authentication Request\n");
+    return true;
+  } else {
+    m_nas_log->error("Attach request from known UE\n");
+  }
+  return true;
+}
+
 bool nas::handle_authentication_response(srslte::byte_buffer_t* nas_rx)
 {
   srslte::byte_buffer_t*                        nas_tx;
@@ -974,6 +1097,13 @@ bool nas::handle_identity_response(srslte::byte_buffer_t* nas_rx)
   }
   // Identity reponse from unknown GUTI atach. Assigning new eKSI.
   m_sec_ctx.eksi = 0;
+
+  // Make sure UE context was not previously stored in IMSI map
+  nas* nas_ctx = m_s1ap->find_nas_ctx_from_imsi(imsi);
+  if (nas_ctx != nullptr) {
+    m_nas_log->warning("UE context already exists.\n");
+    m_s1ap->delete_ue_ctx(imsi);
+  }
 
   // Store UE context im IMSI map
   m_s1ap->add_nas_ctx_to_imsi_map(this);
@@ -1520,6 +1650,9 @@ void nas::integrity_generate(srslte::byte_buffer_t* pdu, uint8_t* mac)
     default:
       break;
   }
+  m_nas_log->debug("Generating MAC with inputs: Algorithm %s, DL COUNT %d\n",
+                   srslte::integrity_algorithm_id_text[m_sec_ctx.integ_algo],
+                   m_sec_ctx.dl_nas_count);
 }
 
 void nas::cipher_decrypt(srslte::byte_buffer_t* pdu)

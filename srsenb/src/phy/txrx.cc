@@ -21,8 +21,9 @@
 
 #include <unistd.h>
 
-#include "srslte/common/threads.h"
 #include "srslte/common/log.h"
+#include "srslte/common/threads.h"
+#include "srslte/srslte.h"
 
 #include "srsenb/hdr/phy/sf_worker.h"
 #include "srsenb/hdr/phy/txrx.h"
@@ -37,7 +38,8 @@ using namespace std;
 
 namespace srsenb {
 
-txrx::txrx() : tx_worker_cnt(0), nof_workers(0), tti(0) {
+txrx::txrx() : tx_worker_cnt(0), nof_workers(0), tti(0), thread("TXRX")
+{
   running = false;   
   radio_h = NULL; 
   log_h   = NULL; 
@@ -46,12 +48,12 @@ txrx::txrx() : tx_worker_cnt(0), nof_workers(0), tti(0) {
   prach = NULL;
 }
 
-bool txrx::init(srslte::radio*       radio_h_,
-                srslte::thread_pool* workers_pool_,
-                phy_common*          worker_com_,
-                prach_worker*        prach_,
-                srslte::log*         log_h_,
-                uint32_t             prio_)
+bool txrx::init(srslte::radio_interface_phy* radio_h_,
+                srslte::thread_pool*         workers_pool_,
+                phy_common*                  worker_com_,
+                prach_worker*                prach_,
+                srslte::log*                 log_h_,
+                uint32_t                     prio_)
 {
   radio_h      = radio_h_;
   log_h        = log_h_;     
@@ -82,33 +84,16 @@ void txrx::run_thread()
   uint32_t sf_len = SRSLTE_SF_LEN_PRB(worker_com->cell.nof_prb);
   
   float samp_rate = srslte_sampling_freq_hz(worker_com->cell.nof_prb);
-#if 0
-  if (30720%((int) samp_rate/1000) == 0) {
-    radio_h->set_master_clock_rate(30.72e6);        
-  } else {
-    radio_h->set_master_clock_rate(23.04e6);        
-  }
-#else
-  if (samp_rate < 10e6) {
-    radio_h->set_master_clock_rate(4 * samp_rate);
-  } else {
-    radio_h->set_master_clock_rate(samp_rate);
-  }
-#endif
-  
   log_h->console("Setting Sampling frequency %.2f MHz\n", (float) samp_rate/1000000);
 
-  // Configure radio 
-  radio_h->set_rx_srate(samp_rate);
-  radio_h->set_tx_srate(samp_rate);
+  // Configure radio
+  radio_h->set_rx_srate(0, samp_rate);
+  radio_h->set_tx_srate(0, samp_rate);
 
   log_h->info("Starting RX/TX thread nof_prb=%d, sf_len=%d\n", worker_com->cell.nof_prb, sf_len);
 
   // Set TTI so that first TX is at tti=0
   tti = 10235;
-
-  log_h->console("\n==== eNodeB started ===\n");
-  log_h->console("Type <t> to view trace\n");
 
   // Main loop
   while (running) {
@@ -119,7 +104,7 @@ void txrx::run_thread()
         buffer[p] = worker->get_buffer_rx(p);
       }
 
-      radio_h->rx_now(buffer, sf_len, &rx_time);
+      radio_h->rx_now(0, buffer, sf_len, &rx_time);
 
       /* Compute TX time: Any transmission happens in TTI+4 thus advance 4 ms the reception time */
       srslte_timestamp_copy(&tx_time, &rx_time);

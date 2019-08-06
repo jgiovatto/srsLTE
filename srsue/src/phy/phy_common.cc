@@ -22,7 +22,6 @@
 #include <sstream>
 #include <string.h>
 
-#include "srslte/radio/radio_multi.h"
 #include "srslte/srslte.h"
 #include "srsue/hdr/phy/phy_common.h"
 
@@ -51,7 +50,7 @@ phy_common::phy_common(uint32_t max_workers) : tx_sem(max_workers)
   args              = NULL;
   log_h             = NULL;
   radio_h           = NULL;
-  mac               = NULL;
+  stack             = NULL;
   this->max_workers = max_workers;
   rx_gain_offset    = 0;
   // have_mtch_stop = false;
@@ -69,7 +68,7 @@ phy_common::phy_common(uint32_t max_workers) : tx_sem(max_workers)
   bzero(&ul_metrics, sizeof(ul_metrics_t) * SRSLTE_MAX_CARRIERS);
   ul_metrics_read  = true;
   ul_metrics_count = 0;
-  bzero(&sync_metrics, sizeof(sync_metrics_t));
+  ZERO_OBJECT(sync_metrics);
   sync_metrics_read  = true;
   sync_metrics_count = 0;
 
@@ -115,21 +114,27 @@ void phy_common::set_nof_workers(uint32_t nof_workers)
   this->nof_workers = nof_workers;
 }
 
-void phy_common::init(
-    phy_args_t* _args, srslte::log* _log, srslte::radio* _radio, rrc_interface_phy* _rrc, mac_interface_phy* _mac)
+void phy_common::init(phy_args_t*                  _args,
+                      srslte::log*                 _log,
+                      srslte::radio_interface_phy* _radio,
+                      stack_interface_phy_lte*     _stack)
 {
   log_h          = _log;
   radio_h        = _radio;
-  rrc            = _rrc;
-  mac            = _mac;
+  stack          = _stack;
   args           = _args;
   is_first_tx    = true;
   sr_last_tx_tti = -1;
+
+  // Instantiate UL channel emulator
+  if (args->ul_channel_args.enable) {
+    ul_channel =
+        srslte::channel_ptr(new srslte::channel(args->ul_channel_args, args->nof_rf_channels * args->nof_rx_ant));
+  }
 }
 
 void phy_common::set_ue_dl_cfg(srslte_ue_dl_cfg_t* ue_dl_cfg)
 {
-
   ue_dl_cfg->snr_to_cqi_offset = args->snr_to_cqi_offset;
 
   srslte_chest_dl_cfg_t* chest_cfg = &ue_dl_cfg->chest_cfg;
@@ -173,11 +178,16 @@ void phy_common::set_ue_ul_cfg(srslte_ue_ul_cfg_t* ue_ul_cfg)
   // Setup uplink configuration
   bzero(ue_ul_cfg, sizeof(srslte_ue_ul_cfg_t));
   ue_ul_cfg->cfo_en                              = true;
-  ue_ul_cfg->normalize_en                        = true;
+  if (args->force_ul_amplitude > 0.0f) {
+    ue_ul_cfg->force_peak_amplitude = args->force_ul_amplitude;
+    ue_ul_cfg->normalize_mode       = SRSLTE_UE_UL_NORMALIZE_MODE_FORCE_AMPLITUDE;
+  } else {
+    ue_ul_cfg->normalize_mode = SRSLTE_UE_UL_NORMALIZE_MODE_AUTO;
+  }
   ue_ul_cfg->ul_cfg.pucch.ack_nack_feedback_mode = SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_NORMAL;
 }
 
-srslte::radio* phy_common::get_radio()
+srslte::radio_interface_phy* phy_common::get_radio()
 {
   return radio_h;
 }
@@ -565,18 +575,28 @@ void phy_common::worker_end(uint32_t           tti,
 
   // For each radio, transmit
   for (uint32_t i = 0; i < args->nof_radios; i++) {
-    radio_h[i].set_tti(tti);
     if (tx_enable && !srslte_timestamp_iszero(&tx_time[i])) {
-      radio_h[i].tx(buffer[i], nof_samples[i], tx_time[i]);
+
+      if (ul_channel) {
+        ul_channel->run(buffer[i], buffer[i], nof_samples[i], tx_time[i]);
+      }
+
+      radio_h->tx(i, buffer[i], nof_samples[i], tx_time[i]);
       is_first_of_burst[i] = false;
     } else {
-      if (radio_h[i].is_continuous_tx()) {
+      if (radio_h->is_continuous_tx()) {
         if (!is_first_of_burst[i]) {
-          radio_h[i].tx(zeros_multi, nof_samples[i], tx_time[i]);
+
+          if (ul_channel && !srslte_timestamp_iszero(&tx_time[i])) {
+            bzero(zeros_multi[0], sizeof(cf_t) * nof_samples[i]);
+            ul_channel->run(zeros_multi, zeros_multi, nof_samples[i], tx_time[i]);
+          }
+
+          radio_h->tx(i, zeros_multi, nof_samples[i], tx_time[i]);
         }
       } else {
         if (!is_first_of_burst[i]) {
-          radio_h[i].tx_end();
+          radio_h->tx_end();
           is_first_of_burst[i] = true;
         }
       }
@@ -590,6 +610,10 @@ void phy_common::worker_end(uint32_t           tti,
 void phy_common::set_cell(const srslte_cell_t& c)
 {
   cell = c;
+
+  if (ul_channel) {
+    ul_channel->set_srate((uint32_t)srslte_sampling_freq_hz(cell.nof_prb));
+  }
 }
 
 uint32_t phy_common::get_nof_prb()
@@ -645,23 +669,26 @@ void phy_common::get_ul_metrics(ul_metrics_t m[SRSLTE_MAX_RADIOS])
   ul_metrics_read = true;
 }
 
-void phy_common::set_sync_metrics(const sync_metrics_t& m)
+void phy_common::set_sync_metrics(const uint32_t& cc_idx, const sync_metrics_t& m)
 {
-
   if (sync_metrics_read) {
-    sync_metrics       = m;
+    sync_metrics[cc_idx] = m;
     sync_metrics_count = 1;
-    sync_metrics_read  = false;
+    if (cc_idx == 0)
+      sync_metrics_read = false;
   } else {
-    sync_metrics_count++;
-    sync_metrics.cfo = sync_metrics.cfo + (m.cfo - sync_metrics.cfo) / sync_metrics_count;
-    sync_metrics.sfo = sync_metrics.sfo + (m.sfo - sync_metrics.sfo) / sync_metrics_count;
+    if (cc_idx == 0)
+      sync_metrics_count++;
+    sync_metrics[cc_idx].cfo = sync_metrics[cc_idx].cfo + (m.cfo - sync_metrics[cc_idx].cfo) / sync_metrics_count;
+    sync_metrics[cc_idx].sfo = sync_metrics[cc_idx].sfo + (m.sfo - sync_metrics[cc_idx].sfo) / sync_metrics_count;
   }
 }
 
-void phy_common::get_sync_metrics(sync_metrics_t& m)
+void phy_common::get_sync_metrics(sync_metrics_t m[SRSLTE_MAX_CARRIERS])
 {
-  m                 = sync_metrics;
+  for (uint32_t i = 0; i < args->nof_carriers; i++) {
+    m[i] = sync_metrics[i];
+  }
   sync_metrics_read = true;
 }
 
@@ -679,6 +706,7 @@ void phy_common::reset()
   ZERO_OBJECT(avg_snr_db_cqi);
   ZERO_OBJECT(avg_rsrp);
   ZERO_OBJECT(avg_rsrp_dbm);
+  ZERO_OBJECT(scell_cfg);
   avg_rsrq_db = 0;
 
   pcell_report_period = 20;
@@ -687,8 +715,6 @@ void phy_common::reset()
     is_first_of_burst[i] = true;
   }
 
-  ZERO_OBJECT(scell_configured);
-  ZERO_OBJECT(scell_enable);
   multiple_csi_request_enabled = false;
   cif_enabled                  = false;
   srs_request_enabled          = false;
@@ -869,8 +895,8 @@ bool phy_common::is_mbsfn_sf(srslte_mbsfn_cfg_t* cfg, uint32_t phy_tti)
 
 void phy_common::enable_scell(uint32_t cc_idx, bool enable)
 {
-  if (cc_idx < SRSLTE_MAX_RADIOS) {
-    scell_enable[cc_idx] = enable;
+  if (cc_idx < SRSLTE_MAX_CARRIERS) {
+    scell_cfg[cc_idx].enabled = enable;
   }
 }
 

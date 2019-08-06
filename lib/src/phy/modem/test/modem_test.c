@@ -39,7 +39,7 @@ srslte_mod_t modulation = SRSLTE_MOD_BPSK;
 void usage(char *prog) {
   printf("Usage: %s [nmse]\n", prog);
   printf("\t-n num_bits [Default %d]\n", num_bits);
-  printf("\t-m modulation (1: BPSK, 2: QPSK, 3: QAM16, 4: QAM64) [Default BPSK]\n");  
+  printf("\t-m modulation (1: BPSK, 2: QPSK, 4: QAM16, 6: QAM64, 8: QAM256) [Default BPSK]\n");
 }
 
 void parse_args(int argc, char **argv) {
@@ -63,9 +63,12 @@ void parse_args(int argc, char **argv) {
       case 6:
         modulation = SRSLTE_MOD_64QAM;
         break;
+      case 8:
+        modulation = SRSLTE_MOD_256QAM;
+        break;
       default:
         ERROR("Invalid modulation %d. Possible values: "
-              "(1: BPSK, 2: QPSK, 3: QAM16, 4: QAM64)\n",
+              "(1: BPSK, 2: QPSK, 4: QAM16, 6: QAM64, 8: QAM256)\n",
               atoi(argv[optind]));
         break;
       }
@@ -79,11 +82,12 @@ void parse_args(int argc, char **argv) {
 
 
 int main(int argc, char **argv) {
+  int                  ret = SRSLTE_SUCCESS;
   int i;
   srslte_modem_table_t mod;
   uint8_t *input, *input_bytes, *output;
   cf_t *symbols, *symbols_bytes;
-  float *llr, *llr2;
+  float*               llr;
 
   parse_args(argc, argv);
 
@@ -134,12 +138,6 @@ int main(int argc, char **argv) {
     exit(-1);
   }
 
-  llr2 = srslte_vec_malloc(sizeof(float) * num_bits);
-  if (!llr2) {
-    perror("malloc");
-    exit(-1);
-  }
-
   /* generate random data */
   for (i=0;i<num_bits;i++) {
     input[i] = rand()%2;
@@ -174,26 +172,27 @@ int main(int argc, char **argv) {
       exit(-1);
     }
   }
-  printf("Symbols OK\n");  
+
+  bzero(llr, sizeof(float) * num_bits / mod.nbits_x_symbol);
+
+  printf("Symbols OK\n");
   /* demodulate */
   gettimeofday(&x, NULL);
   srslte_demod_soft_demodulate(modulation, symbols, llr, num_bits / mod.nbits_x_symbol);
   gettimeofday(&y, NULL);
-  
   printf("\nElapsed time [us]: %ld\n", y.tv_usec - x.tv_usec);
   for (i=0;i<num_bits;i++) {
     output[i] = llr[i]>=0 ? 1 : 0;
   }
 
   /* check errors */
-  for (i=0;i<num_bits;i++) {
+  for (i = 0; i < num_bits && ret == SRSLTE_SUCCESS; i++) {
     if (input[i] != output[i]) {
       ERROR("Error in bit %d\n", i);
-      exit(-1);
+      ret = SRSLTE_ERROR;
     }
   }
 
-  free(llr2);
   free(llr);
   free(symbols);
   free(symbols_bytes);
@@ -203,6 +202,5 @@ int main(int argc, char **argv) {
 
   srslte_modem_table_free(&mod);
 
-  printf("Ok\n");
-  exit(0);
+  exit(ret);
 }

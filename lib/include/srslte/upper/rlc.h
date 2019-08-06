@@ -43,12 +43,10 @@ class rlc
     ,public srsue::rlc_interface_rrc
 {
 public:
-  rlc();
+  rlc(log* rlc_log_);
   virtual ~rlc();
   void init(srsue::pdcp_interface_rlc* pdcp_,
             srsue::rrc_interface_rlc*  rrc_,
-            srsue::ue_interface*       ue_,
-            log*                       rlc_log_,
             mac_interface_timers*      mac_timers_,
             uint32_t                   lcid_);
   void stop();
@@ -56,8 +54,8 @@ public:
   void get_metrics(rlc_metrics_t &m);
 
   // PDCP interface
-  void write_sdu(uint32_t lcid, byte_buffer_t *sdu, bool blocking = true);
-  void write_sdu_mch(uint32_t lcid, byte_buffer_t *sdu);
+  void write_sdu(uint32_t lcid, unique_byte_buffer_t sdu, bool blocking = true);
+  void write_sdu_mch(uint32_t lcid, unique_byte_buffer_t sdu);
   bool rb_is_um(uint32_t lcid);
 
   // MAC interface
@@ -78,23 +76,23 @@ public:
   void reestablish(uint32_t lcid);
   void reset();
   void empty_queue();
-  void add_bearer(uint32_t lcid);
-  void add_bearer(uint32_t lcid, srslte_rlc_config_t cnfg);
+  void add_bearer(uint32_t lcid, rlc_config_t cnfg);
   void add_bearer_mrb(uint32_t lcid);
   void del_bearer(uint32_t lcid);
   void del_bearer_mrb(uint32_t lcid);
+  void suspend_bearer(uint32_t lcid);
+  void resume_bearer(uint32_t lcid);
   void change_lcid(uint32_t old_lcid, uint32_t new_lcid);
   bool has_bearer(uint32_t lcid);
 
 private:
-  void reset_metrics(); 
-  
-  byte_buffer_pool            *pool;
-  srslte::log                 *rlc_log;
-  srsue::pdcp_interface_rlc   *pdcp;
-  srsue::rrc_interface_rlc    *rrc;
-  srslte::mac_interface_timers *mac_timers; 
-  srsue::ue_interface         *ue;
+  void reset_metrics();
+
+  byte_buffer_pool*             pool       = nullptr;
+  srslte::log*                  rlc_log    = nullptr;
+  srsue::pdcp_interface_rlc*    pdcp       = nullptr;
+  srsue::rrc_interface_rlc*     rrc        = nullptr;
+  srslte::mac_interface_timers* mac_timers = nullptr;
 
   typedef std::map<uint16_t, rlc_common*> rlc_map_t;
   typedef std::pair<uint16_t, rlc_common*> rlc_map_pair_t;
@@ -102,10 +100,10 @@ private:
   rlc_map_t rlc_array, rlc_array_mrb;
   pthread_rwlock_t rwlock;
 
-  uint32_t                     default_lcid;
+  uint32_t default_lcid = 0;
 
   // Timer needed for metrics calculation
-  struct timeval      metrics_time[3];
+  struct timeval metrics_time[3] = {};
 
   bool valid_lcid(uint32_t lcid);
   bool valid_lcid_mrb(uint32_t lcid);

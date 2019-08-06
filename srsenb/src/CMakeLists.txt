@@ -18,9 +18,9 @@
 # and at http://www.gnu.org/licenses/.
 #
 
+add_subdirectory(radio)
 add_subdirectory(phy)
-add_subdirectory(mac)
-add_subdirectory(upper)
+add_subdirectory(stack)
 
 
 # Link libstdc++ and libgcc
@@ -35,15 +35,18 @@ endif (RPATH)
 
 
 add_executable(srsenb main.cc enb.cc parser.cc enb_cfg_parser.cc metrics_stdout.cc metrics_csv.cc)
-target_link_libraries(srsenb  srsenb_upper
-                              srsenb_mac
+target_link_libraries(srsenb  srsenb_radio
                               srsenb_phy
+                              srsenb_stack
+                              srsenb_upper
+                              srsenb_mac
+                              srsenb_rrc
                               srslte_common
                               srslte_phy
                               srslte_upper
                               srslte_radio
                               rrc_asn1
-                              ${CMAKE_THREAD_LIBS_INIT} 
+                              ${CMAKE_THREAD_LIBS_INIT}
                               ${Boost_LIBRARIES} 
                               ${SEC_LIBRARIES}
                               ${LIBCONFIGPP_LIBRARIES}
@@ -52,8 +55,6 @@ target_link_libraries(srsenb  srsenb_upper
 if (RPATH)
   set_target_properties(srsenb PROPERTIES INSTALL_RPATH ".")
 endif (RPATH)
-
-install(TARGETS srsenb DESTINATION ${RUNTIME_DIR})
 
 ########################################################################
 # Option to run command after build (useful for remote builds)

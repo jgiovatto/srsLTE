@@ -26,8 +26,8 @@
 #include "srslte/common/common.h"
 #include "srslte/common/interfaces_common.h"
 #include "srslte/common/security.h"
+#include "srslte/interfaces/rrc_interface_types.h"
 #include "srslte/interfaces/sched_interface.h"
-#include "srslte/upper/rlc_interface.h"
 
 #include <vector>
 
@@ -37,7 +37,7 @@
 namespace srsenb {
 
 /* Interface PHY -> MAC */
-class mac_interface_phy
+class mac_interface_phy_lte
 {
 public:
   const static int MAX_GRANTS = 64;
@@ -89,7 +89,8 @@ public:
   virtual int get_dl_sched(uint32_t tti, dl_sched_t *dl_sched_res) = 0;
   virtual int get_mch_sched(uint32_t tti, bool is_mcch, dl_sched_t* dl_sched_res) = 0;
   virtual int get_ul_sched(uint32_t tti, ul_sched_t *ul_sched_res) = 0;
-  
+  virtual void set_sched_dl_tti_mask(uint8_t* tti_mask, uint32_t nof_sfs)          = 0;
+
   // Radio-Link status 
   virtual void rl_failure(uint16_t rnti) = 0;
   virtual void rl_ok(uint16_t rnti) = 0;
@@ -98,7 +99,7 @@ public:
 };
 
 /* Interface MAC -> PHY */
-class phy_interface_mac
+class phy_interface_mac_lte
 {
 public:
   
@@ -109,7 +110,7 @@ public:
 };
 
 /* Interface RRC -> PHY */
-class phy_interface_rrc
+class phy_interface_rrc_lte
 {
 public:
   struct phy_cfg_mbsfn_t {
@@ -179,7 +180,7 @@ class rlc_interface_pdcp
 public:
   /* PDCP calls RLC to push an RLC SDU. SDU gets placed into the RLC buffer and MAC pulls
    * RLC PDUs according to TB size. */
-  virtual void write_sdu(uint16_t rnti, uint32_t lcid,  srslte::byte_buffer_t *sdu) = 0;
+  virtual void write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu) = 0;
   virtual bool rb_is_um(uint16_t rnti, uint32_t lcid) = 0;
 };
 
@@ -189,17 +190,17 @@ class rlc_interface_rrc
 public:
   virtual void clear_buffer(uint16_t rnti) = 0;
   virtual void add_user(uint16_t rnti) = 0; 
-  virtual void rem_user(uint16_t rnti) = 0; 
-  virtual void add_bearer(uint16_t rnti, uint32_t lcid) = 0;
-  virtual void add_bearer(uint16_t rnti, uint32_t lcid, srslte::srslte_rlc_config_t cnfg) = 0;
+  virtual void rem_user(uint16_t rnti) = 0;
+  virtual void add_bearer(uint16_t rnti, uint32_t lcid, srslte::rlc_config_t cnfg)        = 0;
   virtual void add_bearer_mrb(uint16_t rnti, uint32_t lcid) = 0;
+  virtual void write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu)  = 0;
 };
 
 // PDCP interface for GTPU
 class pdcp_interface_gtpu
 {
 public:
-  virtual void write_sdu(uint16_t rnti, uint32_t lcid, srslte::byte_buffer_t *sdu) = 0;
+  virtual void write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu) = 0;
 };
 
 // PDCP interface for RRC
@@ -208,8 +209,8 @@ class pdcp_interface_rrc
 public:
   virtual void reset(uint16_t rnti) = 0;
   virtual void add_user(uint16_t rnti) = 0; 
-  virtual void rem_user(uint16_t rnti) = 0; 
-  virtual void write_sdu(uint16_t rnti, uint32_t lcid, srslte::byte_buffer_t *sdu) = 0;
+  virtual void rem_user(uint16_t rnti) = 0;
+  virtual void write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu)   = 0;
   virtual void add_bearer(uint16_t rnti, uint32_t lcid, srslte::srslte_pdcp_config_t cnfg) = 0;
   virtual void config_security(uint16_t rnti, 
                                uint32_t lcid,
@@ -227,7 +228,7 @@ class pdcp_interface_rlc
 {
 public:
   /* RLC calls PDCP to push a PDCP PDU. */
-  virtual void write_pdu(uint16_t rnti, uint32_t lcid, srslte::byte_buffer_t *sdu) = 0;
+  virtual void write_pdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu) = 0;
 };
 
 // RRC interface for RLC
@@ -237,6 +238,7 @@ public:
   virtual void read_pdu_bcch_dlsch(uint32_t sib_index, uint8_t *payload) = 0;
   virtual void read_pdu_pcch(uint8_t *payload, uint32_t payload_size) = 0; 
   virtual void max_retx_attempted(uint16_t rnti) = 0;
+  virtual void write_pdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu) = 0;
 };
 
 // RRC interface for MAC
@@ -255,14 +257,14 @@ public:
 class rrc_interface_pdcp
 {
 public:
-  virtual void write_pdu(uint16_t rnti, uint32_t lcid, srslte::byte_buffer_t *pdu) = 0;  
+  virtual void write_pdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t pdu) = 0;
 };
 
 // RRC interface for S1AP
 class rrc_interface_s1ap
 {
 public:
-  virtual void write_dl_info(uint16_t rnti, srslte::byte_buffer_t *sdu) = 0;
+  virtual void write_dl_info(uint16_t rnti, srslte::unique_byte_buffer_t sdu)                           = 0;
   virtual void release_complete(uint16_t rnti) = 0;
   virtual bool setup_ue_ctxt(uint16_t rnti, LIBLTE_S1AP_MESSAGE_INITIALCONTEXTSETUPREQUEST_STRUCT *msg) = 0;
   virtual bool setup_ue_erabs(uint16_t rnti, LIBLTE_S1AP_MESSAGE_E_RABSETUPREQUEST_STRUCT *msg) = 0;
@@ -274,7 +276,7 @@ public:
 class gtpu_interface_pdcp
 {
 public:
-  virtual void write_pdu(uint16_t rnti, uint32_t lcid, srslte::byte_buffer_t *pdu) = 0;
+  virtual void write_pdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t pdu) = 0;
 };
 
 // GTPU interface for RRC
@@ -290,9 +292,14 @@ public:
 class s1ap_interface_rrc
 {
 public:
-  virtual void initial_ue(uint16_t rnti, LIBLTE_S1AP_RRC_ESTABLISHMENT_CAUSE_ENUM cause, srslte::byte_buffer_t *pdu) = 0;
-  virtual void initial_ue(uint16_t rnti, LIBLTE_S1AP_RRC_ESTABLISHMENT_CAUSE_ENUM cause, srslte::byte_buffer_t *pdu, uint32_t m_tmsi, uint8_t mmec) = 0;
-  virtual void write_pdu(uint16_t rnti, srslte::byte_buffer_t *pdu) = 0;
+  virtual void
+               initial_ue(uint16_t rnti, LIBLTE_S1AP_RRC_ESTABLISHMENT_CAUSE_ENUM cause, srslte::unique_byte_buffer_t pdu) = 0;
+  virtual void initial_ue(uint16_t                                 rnti,
+                          LIBLTE_S1AP_RRC_ESTABLISHMENT_CAUSE_ENUM cause,
+                          srslte::unique_byte_buffer_t             pdu,
+                          uint32_t                                 m_tmsi,
+                          uint8_t                                  mmec)                                                                           = 0;
+  virtual void write_pdu(uint16_t rnti, srslte::unique_byte_buffer_t pdu)                                         = 0;
   virtual bool user_exists(uint16_t rnti) = 0; 
   virtual bool user_release(uint16_t rnti, LIBLTE_S1AP_CAUSERADIONETWORK_ENUM cause_radio) = 0;
   virtual void ue_ctxt_setup_complete(uint16_t rnti, LIBLTE_S1AP_MESSAGE_INITIALCONTEXTSETUPRESPONSE_STRUCT *res) = 0;
@@ -300,6 +307,32 @@ public:
   virtual bool is_mme_connected() = 0;
 };
 
+// Combined interface for PHY to access stack (MAC and RRC)
+class stack_interface_phy_lte : public mac_interface_phy_lte
+{
+};
+
+// Combined interface for stack (MAC and RRC) to access PHY
+class phy_interface_stack_lte : public phy_interface_mac_lte, public phy_interface_rrc_lte
+{
+};
+
+typedef struct {
+  uint32_t    enb_id;  // 20-bit id (lsb bits)
+  uint8_t     cell_id; // 8-bit cell id
+  uint16_t    tac;     // 16-bit tac
+  uint16_t    mcc;     // BCD-coded with 0xF filler
+  uint16_t    mnc;     // BCD-coded with 0xF filler
+  std::string mme_addr;
+  std::string gtp_bind_addr;
+  std::string s1c_bind_addr;
+  std::string enb_name;
+} s1ap_args_t;
+
+typedef struct {
+  sched_interface::sched_args_t sched;
+  int                           link_failure_nof_err;
+} mac_args_t;
 }
 
 #endif // SRSLTE_ENB_INTERFACES_H

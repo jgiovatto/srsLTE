@@ -26,6 +26,7 @@
                               INCLUDES
 *******************************************************************************/
 
+#include <memory>
 #include <stdint.h>
 #include <string.h>
 
@@ -61,20 +62,21 @@
 #define ASYNC_DL_SCHED (FDD_HARQ_DELAY_MS <= 4)
 
 // Cat 4 UE - Max number of DL-SCH transport block bits received within a TTI
-// 3GPP 36.306 Table 4.1.1
-#define SRSLTE_MAX_BUFFER_SIZE_BITS  150752
-#define SRSLTE_MAX_BUFFER_SIZE_BYTES (SRSLTE_MAX_BUFFER_SIZE_BITS/8)
+// 3GPP 36.306 v15.4.0 Table 4.1.1 for Category 11 with 2 layers and 256QAM
+#define SRSLTE_MAX_TBSIZE_BITS 97896
 #define SRSLTE_BUFFER_HEADER_OFFSET  1020
+#define SRSLTE_MAX_BUFFER_SIZE_BITS (SRSLTE_MAX_TBSIZE_BITS + SRSLTE_BUFFER_HEADER_OFFSET)
+#define SRSLTE_MAX_BUFFER_SIZE_BYTES (SRSLTE_MAX_TBSIZE_BITS / 8 + SRSLTE_BUFFER_HEADER_OFFSET)
 
 //#define SRSLTE_BUFFER_POOL_LOG_ENABLED
 
 #ifdef SRSLTE_BUFFER_POOL_LOG_ENABLED
-#define pool_allocate (pool->allocate(__PRETTY_FUNCTION__))
-#define pool_allocate_blocking (pool->allocate(__PRETTY_FUNCTION__, true))
+#define pool_allocate (srslte::allocate_unique_buffer(*pool, __PRETTY_FUNCTION__))
+#define pool_allocate_blocking (srslte::allocate_unique_buffer(*pool, __PRETTY_FUNCTION__, true))
 #define SRSLTE_BUFFER_POOL_LOG_NAME_LEN 128
 #else
-#define pool_allocate (pool->allocate())
-#define pool_allocate_blocking (pool->allocate(NULL, true))
+#define pool_allocate (srslte::allocate_unique_buffer(*pool))
+#define pool_allocate_blocking (srslte::allocate_unique_buffer(*pool, true))
 #endif
 
 #include "srslte/srslte.h"
@@ -84,22 +86,6 @@
 *******************************************************************************/
 
 namespace srslte {
-
-typedef enum{
-  ERROR_NONE = 0,
-  ERROR_INVALID_PARAMS,
-  ERROR_INVALID_COMMAND,
-  ERROR_OUT_OF_BOUNDS,
-  ERROR_CANT_START,
-  ERROR_ALREADY_STARTED,
-  ERROR_N_ITEMS,
-}error_t;
-static const char error_text[ERROR_N_ITEMS][20] = { "None",
-                                                    "Invalid parameters",
-                                                    "Invalid command",
-                                                    "Out of bounds",
-                                                    "Can't start",
-                                                    "Already started"};
 
 //#define ENABLE_TIMESTAMP
 
@@ -152,7 +138,7 @@ public:
       memcpy(msg, buf.msg, N_bytes);
       return *this;
     }
-    void reset()
+    void clear()
     {
       msg       = &buffer[SRSLTE_BUFFER_HEADER_OFFSET];
       N_bytes   = 0;
@@ -228,7 +214,7 @@ struct bit_buffer_t{
       memcpy(msg, buf.msg, N_bits);
       return *this;
     }
-    void reset()
+    void clear()
     {
       msg       = &buffer[SRSLTE_BUFFER_HEADER_OFFSET];
       N_bits    = 0;
@@ -265,6 +251,18 @@ private:
     bool           timestamp_is_set; 
 #endif
 };
+
+// Create a Managed Life-Time Byte Buffer
+class byte_buffer_pool;
+class byte_buffer_deleter
+{
+public:
+  explicit byte_buffer_deleter(byte_buffer_pool* pool_ = nullptr) : pool(pool_) {}
+  void              operator()(byte_buffer_t* buf) const;
+  byte_buffer_pool* pool;
+};
+
+typedef std::unique_ptr<byte_buffer_t, byte_buffer_deleter> unique_byte_buffer_t;
 
 } // namespace srslte
 

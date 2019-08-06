@@ -24,10 +24,15 @@
 #include "srslte/common/pcap.h"
 #include "srslte/common/mac_pcap.h"
 
-
-
 namespace srslte {
- 
+
+mac_pcap::mac_pcap() : enable_write(false), ue_id(0), pcap_file(nullptr) {}
+
+mac_pcap::~mac_pcap()
+{
+  close();
+}
+
 void mac_pcap::enable(bool en)
 {
   enable_write = true; 
@@ -40,8 +45,12 @@ void mac_pcap::open(const char* filename, uint32_t ue_id)
 }
 void mac_pcap::close()
 {
-  fprintf(stdout, "Saving MAC PCAP file\n");
-  LTE_PCAP_Close(pcap_file);
+  enable_write = false;
+  if (pcap_file != nullptr) {
+    fprintf(stdout, "Saving MAC PCAP file\n");
+    LTE_PCAP_Close(pcap_file);
+    pcap_file = nullptr;
+  }
 }
 
 void mac_pcap::set_ue_id(uint16_t ue_id) {

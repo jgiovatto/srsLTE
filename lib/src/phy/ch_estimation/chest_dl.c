@@ -246,12 +246,10 @@ int srslte_chest_dl_set_mbsfn_area_id(srslte_chest_dl_t* q, uint16_t mbsfn_area_
   if (mbsfn_area_id < SRSLTE_MAX_MBSFN_AREA_IDS) {
     if (!q->mbsfn_refs[mbsfn_area_id]) {
       q->mbsfn_refs[mbsfn_area_id] = calloc(1, sizeof(srslte_refsignal_t));
-        if(srslte_refsignal_mbsfn_init(q->mbsfn_refs[mbsfn_area_id], q->cell.nof_prb)) {
-          return SRSLTE_ERROR;
-        }
-    }
-    if(q->mbsfn_refs[mbsfn_area_id]) {
-      if(srslte_refsignal_mbsfn_set_cell(q->mbsfn_refs[mbsfn_area_id], q->cell, mbsfn_area_id)) {
+      if (srslte_refsignal_mbsfn_init(q->mbsfn_refs[mbsfn_area_id], q->cell.nof_prb)) {
+        return SRSLTE_ERROR;
+      }
+      if (srslte_refsignal_mbsfn_set_cell(q->mbsfn_refs[mbsfn_area_id], q->cell, mbsfn_area_id)) {
         return SRSLTE_ERROR;
       }
     }
@@ -851,7 +849,7 @@ static void fill_res(srslte_chest_dl_t* q, srslte_chest_dl_res_t* res)
   res->cfo                = q->cfo;
   res->rsrp               = get_rsrp(q);
   res->rsrp_dbm           = dbm(res->rsrp);
-  res->rsrp_neigh_dbm     = dbm(get_rsrp_neighbour(q));
+  res->rsrp_neigh         = get_rsrp_neighbour(q);
   res->rsrq               = get_rsrq(q);
   res->rsrq_db            = db(res->rsrq);
   res->snr_db             = db(get_snr(q));

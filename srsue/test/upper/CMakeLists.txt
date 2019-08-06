@@ -19,7 +19,7 @@
 #
 
 add_executable(usim_test usim_test.cc)
-target_link_libraries(usim_test srsue_upper srslte_upper srslte_phy)
+target_link_libraries(usim_test srsue_upper srslte_upper srslte_phy rrc_asn1)
 add_test(usim_test usim_test)
 
 if(HAVE_PCSC)
@@ -34,6 +34,10 @@ add_test(rrc_reconfig_test rrc_reconfig_test)
 add_executable(nas_test nas_test.cc)
 target_link_libraries(nas_test srsue_upper srslte_upper srslte_phy rrc_asn1)
 add_test(nas_test nas_test)
+
+add_executable(tft_test tft_test.cc)
+target_link_libraries(tft_test srsue_upper srslte_upper srslte_phy)
+add_test(tft_test tft_test)
 
 ########################################################################
 # Option to run command after build (useful for remote builds)

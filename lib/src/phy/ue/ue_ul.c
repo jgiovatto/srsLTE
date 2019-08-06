@@ -248,9 +248,34 @@ static void apply_cfo(srslte_ue_ul_t* q, srslte_ue_ul_cfg_t* cfg)
 
 static void apply_norm(srslte_ue_ul_t* q, srslte_ue_ul_cfg_t* cfg, float norm_factor)
 {
-  if (cfg->normalize_en) {
-    norm_factor = limit_norm_factor(q, norm_factor, q->out_buffer);
-    srslte_vec_sc_prod_cfc(q->out_buffer, norm_factor, q->out_buffer, SRSLTE_SF_LEN_PRB(q->cell.nof_prb));
+  uint32_t sf_len = SRSLTE_SF_LEN_PRB(q->cell.nof_prb);
+  float*   buf                  = NULL;
+  float    force_peak_amplitude = cfg->force_peak_amplitude > 0 ? cfg->force_peak_amplitude : 1.0f;
+
+  switch (cfg->normalize_mode) {
+    case SRSLTE_UE_UL_NORMALIZE_MODE_AUTO:
+    default:
+      // Automatic normalization (default)
+      norm_factor = limit_norm_factor(q, norm_factor, q->out_buffer);
+      srslte_vec_sc_prod_cfc(q->out_buffer, norm_factor, q->out_buffer, sf_len);
+      break;
+    case SRSLTE_UE_UL_NORMALIZE_MODE_FORCE_AMPLITUDE:
+      // Force amplitude
+      // Typecast buffer
+      buf = (float*)q->out_buffer;
+
+      // Get index of maximum absolute sample
+      uint32_t idx = srslte_vec_max_abs_fi(buf, sf_len * 2);
+
+      // Get maximum value
+      float scale = fabsf(buf[idx]);
+
+      // Avoid zero division
+      if (scale != 0.0f && scale != INFINITY) {
+        // Apply maximum peak amplitude
+        srslte_vec_sc_prod_cfc(q->out_buffer, force_peak_amplitude / scale, q->out_buffer, sf_len);
+      }
+      break;
   }
 }
 
@@ -996,9 +1021,6 @@ int srslte_ue_ul_encode(srslte_ue_ul_t* q, srslte_ul_sf_cfg_t* sf, srslte_ue_ul_
              cfg->cc_idx == 0) { // Send PUCCH over PCell only
     if (!cfg->ul_cfg.pucch.rnti) {
       cfg->ul_cfg.pucch.rnti = q->current_rnti;
-      if (!q->current_rnti) {
-        printf("PUCCH: Warning PUCCH rnti or current_rnti are not set\n");
-      }
     }
     ret = pucch_encode(q, sf, cfg, &data->uci) ? -1 : 1;
   } else if (srs_tx_enabled(&cfg->ul_cfg.srs, sf->tti)) {

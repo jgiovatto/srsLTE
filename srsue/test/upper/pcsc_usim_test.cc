@@ -22,8 +22,8 @@
 #include <assert.h>
 #include <iostream>
 
-#include "srsue/hdr/upper/pcsc_usim.h"
 #include "srslte/common/log_filter.h"
+#include "srsue/hdr/stack/upper/pcsc_usim.h"
 
 using namespace srsue;
 using namespace std;
@@ -47,14 +47,23 @@ int main(int argc, char **argv)
   args.pin = "6129";
   args.imei = "353490069873319";
 
-  srsue::pcsc_usim usim;
-  if (usim.init(&args, &usim_log)) {
+  srsue::pcsc_usim usim(&usim_log);
+  if (usim.init(&args)) {
     printf("Error initializing PC/SC USIM.\n");
     return SRSLTE_ERROR;
   };
 
   std::string imsi = usim.get_imsi_str();
   cout << "IMSI: " << imsi << endl;
+
+  srslte::plmn_id_t home_plmn_id = {};
+  if (usim.get_home_plmn_id(&home_plmn_id) == false) {
+    printf("Error reading home PLMN\n");
+    return SRSLTE_ERROR;
+  }
+
+  cout << "Home PLMN: " << home_plmn_id.to_string() << endl;
+
   auth_result_t result = usim.generate_authentication_response(rand_enb, autn_enb, mcc, mnc, res, &res_len, k_asme);
 
   return SRSLTE_SUCCESS;

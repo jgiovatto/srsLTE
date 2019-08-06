@@ -208,6 +208,8 @@ srslte_mod_t srslte_str2mod (char * mod_str) {
     return SRSLTE_MOD_16QAM;
   } else if (!strcmp(mod_str, "64QAM")) {
     return SRSLTE_MOD_64QAM;
+  } else if (!strcmp(mod_str, "256QAM")) {
+    return SRSLTE_MOD_256QAM;
   } else {
     return (srslte_mod_t) SRSLTE_ERROR_INVALID_INPUTS;
   }
@@ -224,6 +226,8 @@ char *srslte_mod_string(srslte_mod_t mod) {
     return "16QAM";
   case SRSLTE_MOD_64QAM:
     return "64QAM";
+  case SRSLTE_MOD_256QAM:
+    return "256QAM";
   default:
     return "N/A";
   } 
@@ -239,6 +243,8 @@ uint32_t srslte_mod_bits_x_symbol(srslte_mod_t mod) {
     return 4;
   case SRSLTE_MOD_64QAM:
     return 6;
+  case SRSLTE_MOD_256QAM:
+    return 8;
   default:
     return 0;
   }   
@@ -462,7 +468,7 @@ uint32_t srslte_re_x_prb(uint32_t ns, uint32_t symbol, uint32_t nof_ports, uint3
 
 
 struct lte_band {
-  uint32_t band;
+  uint8_t                     band;
   float fd_low_mhz;
   uint32_t dl_earfcn_offset;
   uint32_t ul_earfcn_offset;
@@ -596,7 +602,7 @@ bool srslte_band_is_tdd(uint32_t band)
   return lte_bands[i].ul_earfcn_offset == 0;
 }
 
-int srslte_band_get_band(uint32_t dl_earfcn)
+uint8_t srslte_band_get_band(uint32_t dl_earfcn)
 {
   uint32_t i = SRSLTE_NOF_LTE_BANDS - 1;
   if (dl_earfcn > lte_bands[i].dl_earfcn_offset) {

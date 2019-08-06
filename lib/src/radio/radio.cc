@@ -28,11 +28,9 @@ extern "C" {
 #include <string.h>
 #include <unistd.h>
 
-uint32_t zero_tti = 0;
-
 namespace srslte {
 
-bool radio::init(log_filter* _log_h, char* args, char* devname, uint32_t nof_channels, bool enable_synch)
+bool radio::init(log_filter* _log_h, char* args, char* devname, uint32_t nof_channels)
 {
   if (srslte_rf_open_devname(&rf_device, devname, args, nof_channels)) {
     ERROR("Error opening RF device\n");
@@ -71,19 +69,6 @@ bool radio::init(log_filter* _log_h, char* args, char* devname, uint32_t nof_cha
   }
   saved_nof_channels = nof_channels;
 
-  if (enable_synch) {
-    sync = new radio_sync();
-    if (sync) {
-      if (!sync->init(&rf_device)) {
-        ERROR("Error: initiating radio synchronization.\n");
-        return false;
-      }
-    } else {
-      ERROR("Error: creating radio synchronization.\n");
-      return false;
-    }
-  }
-
   is_initialized = true;
   return true;
 }
@@ -100,11 +85,6 @@ void radio::stop()
   }
   if (is_initialized) {
     srslte_rf_close(&rf_device);
-  }
-
-  if (sync) {
-    delete sync;
-    sync = NULL;
   }
 }
 
@@ -166,70 +146,27 @@ bool radio::rx_at(cf_t* buffer, uint32_t nof_samples, srslte_timestamp_t rx_time
 bool radio::rx_now(cf_t* buffer[SRSLTE_MAX_PORTS], uint32_t nof_samples, srslte_timestamp_t* rxd_time)
 {
   bool ret = true;
-  if (sync) {
-    sync->issue_rx(buffer, nof_samples, rxd_time, !radio_is_streaming);
+
+  if (!radio_is_streaming) {
+    srslte_rf_start_rx_stream(&rf_device, false);
     radio_is_streaming = true;
+  }
+
+  time_t* full_secs = rxd_time ? &rxd_time->full_secs : NULL;
+  double* frac_secs = rxd_time ? &rxd_time->frac_secs : NULL;
+
+  if (srslte_rf_recv_with_time_multi(&rf_device, (void**)buffer, nof_samples, true, full_secs, frac_secs) > 0) {
+    ret = true;
   } else {
-    if (!radio_is_streaming) {
-      srslte_rf_start_rx_stream(&rf_device, false);
-      radio_is_streaming = true;
-    }
-
-    time_t* full_secs = rxd_time ? &rxd_time->full_secs : NULL;
-    double* frac_secs = rxd_time ? &rxd_time->frac_secs : NULL;
-
-    if (srslte_rf_recv_with_time_multi(&rf_device, (void**)buffer, nof_samples, true, full_secs, frac_secs) > 0) {
-      ret = true;
-    } else {
-      ret = false;
-    }
-  }
-
-  if (zero_tti) {
-    bzero(buffer[0], sizeof(cf_t) * nof_samples);
-    zero_tti--;
-    if (!zero_tti) {
-      printf("-- end of zeros\n");
-    }
+    ret = false;
   }
 
   return ret;
 }
 
-void radio::get_time(srslte_timestamp_t *now) {
-  srslte_rf_get_time(&rf_device, &now->full_secs, &now->frac_secs);  
-}
-
-int radio::synch_wait()
+void radio::get_time(srslte_timestamp_t* now)
 {
-  int ret = SRSLTE_ERROR;
-
-  if (sync) {
-    ret = sync->wait();
-  }
-
-  return ret;
-}
-
-void radio::synch_issue()
-{
-  if (sync) {
-    sync->issue_sync();
-  }
-}
-
-// TODO: Use Calibrated values for this 
-float radio::set_tx_power(float power)
-{
-  if (power > 10) {
-    power = 10; 
-  }
-  if (power < -50) {
-    power = -50; 
-  }
-  float gain = power + 74;
-  srslte_rf_set_tx_gain(&rf_device, gain);
-  return gain; 
+  srslte_rf_get_time(&rf_device, &now->full_secs, &now->frac_secs);
 }
 
 float radio::get_max_tx_power()
@@ -318,10 +255,6 @@ void radio::tx_end()
   }
 }
 
-void radio::set_tti(uint32_t tti_) {
-  tti = tti_; 
-}
-
 void radio::set_freq_offset(double freq) {
   freq_offset = freq;
 }
@@ -343,13 +276,17 @@ double radio::set_rx_gain_th(float gain)
 
 void radio::set_master_clock_rate(double rate)
 {
-  srslte_rf_stop_rx_stream(&rf_device);
-  srslte_rf_set_master_clock_rate(&rf_device, rate);
-  srslte_rf_start_rx_stream(&rf_device, false);
+  if (rate != master_clock_rate) {
+    srslte_rf_stop_rx_stream(&rf_device);
+    srslte_rf_set_master_clock_rate(&rf_device, rate);
+    srslte_rf_start_rx_stream(&rf_device, false);
+    master_clock_rate = rate;
+  }
 }
 
 void radio::set_rx_srate(double srate)
 {
+  set_master_clock_rate(srate);
   srslte_rf_set_rx_srate(&rf_device, srate);
 }
 
@@ -390,6 +327,7 @@ float radio::get_rx_gain()
 
 void radio::set_tx_srate(double srate)
 {
+  set_master_clock_rate(srate);
   cur_tx_srate = srslte_rf_set_tx_srate(&rf_device, srate);
   burst_preamble_samples = (uint32_t) (cur_tx_srate * burst_preamble_sec);
   if (burst_preamble_samples > burst_preamble_max_samples) {
@@ -408,16 +346,16 @@ void radio::set_tx_srate(double srate)
       double srate_khz = round(cur_tx_srate/1e3);
       if (srate_khz == 1.92e3) {
         // 6 PRB
-        nsamples = 94;
+        nsamples = 57;
       } else if (srate_khz == 3.84e3) {
         // 15 PRB
-        nsamples = 94;
+        nsamples = 60;
       } else if (srate_khz == 5.76e3) {
         // 25 PRB
         nsamples = 92;
       } else if (srate_khz == 11.52e3) {
         // 50 PRB
-        nsamples = 167;
+        nsamples = 120;
       } else if (srate_khz == 15.36e3) {
         // 75 PRB
         nsamples = 160;
@@ -457,17 +395,17 @@ void radio::set_tx_srate(double srate)
     } else if(!strcmp(srslte_rf_name(&rf_device), "lime")) {
       double srate_khz = round(cur_tx_srate/1e3);
       if (srate_khz == 1.92e3) {
-        nsamples = 76;
+        nsamples = 28;
       } else if (srate_khz == 3.84e3) {
-        nsamples = 76;
+        nsamples = 51;
       } else if (srate_khz == 5.76e3) {
-        nsamples = 76;
+        nsamples = 74;
       } else if (srate_khz == 11.52e3) {
-        nsamples = 76;
+        nsamples = 78;
       } else if (srate_khz == 15.36e3) {
-        nsamples = 76;
+        nsamples = 86;
       } else if (srate_khz == 23.04e3) {
-        nsamples = 76;
+        nsamples = 102;
       } else {
         /* Interpolate from known values */
         log_h->console(
@@ -524,8 +462,9 @@ void radio::register_error_handler(srslte_rf_error_handler_t h)
   srslte_rf_register_error_handler(&rf_device, h);
 }
 
-srslte_rf_info_t *radio::get_info() {
-    return srslte_rf_get_info(&rf_device);
+srslte_rf_info_t* radio::get_info()
+{
+  return srslte_rf_get_info(&rf_device);
 }
   
 }

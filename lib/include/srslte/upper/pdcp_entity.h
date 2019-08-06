@@ -72,7 +72,7 @@ public:
   bool is_active();
 
   // RRC interface
-  void write_sdu(byte_buffer_t *sdu, bool blocking);
+  void     write_sdu(unique_byte_buffer_t sdu, bool blocking);
   void config_security(uint8_t *k_rrc_enc_,
                        uint8_t *k_rrc_int_,
                        uint8_t *k_up_enc_,
@@ -84,51 +84,47 @@ public:
   uint32_t get_ul_count();
 
   // RLC interface
-  void write_pdu(byte_buffer_t *pdu);
+  void write_pdu(unique_byte_buffer_t pdu);
 
 private:
-  byte_buffer_pool        *pool;
-  srslte::log             *log;
+  byte_buffer_pool* pool = byte_buffer_pool::get_instance();
+  srslte::log*      log  = nullptr;
 
-  srsue::rlc_interface_pdcp *rlc;
-  srsue::rrc_interface_pdcp *rrc;
-  srsue::gw_interface_pdcp  *gw;
+  srsue::rlc_interface_pdcp* rlc = nullptr;
+  srsue::rrc_interface_pdcp* rrc = nullptr;
+  srsue::gw_interface_pdcp*  gw  = nullptr;
 
-  bool                active;
-  uint32_t            lcid;
-  srslte_pdcp_config_t cfg;
-  uint8_t             sn_len_bytes;
-  bool                do_integrity;
-  bool                do_encryption;
+  bool                 active        = false;
+  uint32_t             lcid          = 0;
+  srslte_pdcp_config_t cfg           = {};
+  uint8_t              sn_len_bytes  = 0;
+  bool                 do_integrity  = false;
+  bool                 do_encryption = false;
 
-  uint32_t            rx_count;
-  uint32_t            tx_count;
-  uint8_t             k_rrc_enc[32];
-  uint8_t             k_rrc_int[32];
-  uint8_t             k_up_enc[32];
-  
-  CIPHERING_ALGORITHM_ID_ENUM cipher_algo;
-  INTEGRITY_ALGORITHM_ID_ENUM integ_algo;
+  uint32_t rx_count      = 0;
+  uint32_t tx_count      = 0;
+  uint8_t  k_rrc_enc[32] = {};
+  uint8_t  k_rrc_int[32] = {};
+  uint8_t  k_up_enc[32]  = {};
+
+  uint32_t rx_hfn                    = 0;
+  uint32_t next_pdcp_rx_sn           = 0;
+  uint32_t reordering_window         = 0;
+  uint32_t last_submitted_pdcp_rx_sn = 0;
+  uint32_t maximum_pdcp_sn           = 0;
+
+  CIPHERING_ALGORITHM_ID_ENUM cipher_algo = CIPHERING_ALGORITHM_ID_EEA0;
+  INTEGRITY_ALGORITHM_ID_ENUM integ_algo  = INTEGRITY_ALGORITHM_ID_EIA0;
 
   pthread_mutex_t mutex;
 
-  void integrity_generate(uint8_t  *msg,
-                          uint32_t  msg_len,
-                          uint8_t  *mac);
+  void handle_um_drb_pdu(const srslte::unique_byte_buffer_t& pdu);
+  void handle_am_drb_pdu(const srslte::unique_byte_buffer_t& pdu);
 
-  bool integrity_verify(uint8_t  *msg,
-                        uint32_t  count,
-                        uint32_t  msg_len,
-                        uint8_t  *mac);
-
-  void cipher_encrypt(uint8_t  *msg,
-                      uint32_t  msg_len,
-                      uint8_t  *ct);
-
-  void cipher_decrypt(uint8_t  *ct,
-                      uint32_t  count,
-                      uint32_t  ct_len,
-                      uint8_t  *msg);
+  void integrity_generate(uint8_t* msg, uint32_t msg_len, uint8_t* mac);
+  bool integrity_verify(uint8_t* msg, uint32_t count, uint32_t msg_len, uint8_t* mac);
+  void cipher_encrypt(uint8_t* msg, uint32_t msg_len, uint8_t* ct);
+  void cipher_decrypt(uint8_t* ct, uint32_t count, uint32_t ct_len, uint8_t* msg);
 };
 
 /****************************************************************************
@@ -145,6 +141,4 @@ void pdcp_pack_data_pdu_long_sn(uint32_t sn, byte_buffer_t *sdu);
 void pdcp_unpack_data_pdu_long_sn(byte_buffer_t *sdu, uint32_t *sn);
 
 } // namespace srslte
-
-
 #endif // SRSLTE_PDCP_ENTITY_H

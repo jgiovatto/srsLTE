@@ -33,10 +33,18 @@ namespace srsenb {
 class prach_worker : thread
 {
 public:
-  prach_worker() : initiated(false), prach_nof_det(0), max_prach_offset_us(0), buffer_pool(8),
-                   running(false), nof_sf(0), sf_cnt(0) {
+  prach_worker() :
+    initiated(false),
+    prach_nof_det(0),
+    max_prach_offset_us(0),
+    buffer_pool(8),
+    running(false),
+    nof_sf(0),
+    sf_cnt(0),
+    thread("PRACH_WORKER")
+  {
     log_h = NULL;
-    mac = NULL;
+    stack = NULL;
     bzero(&prach, sizeof(srslte_prach_t));
     bzero(&prach_indices, sizeof(prach_indices));
     bzero(&prach_offsets, sizeof(prach_offsets));
@@ -44,8 +52,12 @@ public:
     bzero(&cell, sizeof(cell));
     bzero(&prach_cfg, sizeof(prach_cfg));
   }
-  
-  int  init(srslte_cell_t *cell, srslte_prach_cfg_t *prach_cfg, mac_interface_phy *mac, srslte::log *log_h, int priority);
+
+  int  init(const srslte_cell_t&      cell_,
+            const srslte_prach_cfg_t& prach_cfg_,
+            stack_interface_phy_lte*  mac,
+            srslte::log*              log_h,
+            int                       priority);
   int  new_tti(uint32_t tti, cf_t *buffer);
   void set_max_prach_offset_us(float delay_us);
   void stop();
@@ -85,7 +97,7 @@ private:
   sf_buffer* current_buffer;
 
   srslte::log* log_h;
-  mac_interface_phy *mac;
+  stack_interface_phy_lte* stack;
   float max_prach_offset_us;
   bool initiated;
   bool running;

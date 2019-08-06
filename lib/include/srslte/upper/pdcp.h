@@ -35,14 +35,9 @@ class pdcp
     ,public srsue::pdcp_interface_rrc
 {
 public:
-  pdcp();
+  pdcp(log* log_);
   virtual ~pdcp();
-  void init(srsue::rlc_interface_pdcp *rlc_,
-            srsue::rrc_interface_pdcp *rrc_,
-            srsue::gw_interface_pdcp *gw_,
-            log *pdcp_log_,
-            uint32_t lcid_,
-            uint8_t direction_);
+  void init(srsue::rlc_interface_pdcp* rlc_, srsue::rrc_interface_pdcp* rrc_, srsue::gw_interface_pdcp* gw_);
   void stop();
 
   // GW interface
@@ -50,9 +45,10 @@ public:
 
   // RRC interface
   void reestablish();
+  void     reestablish(uint32_t lcid);
   void reset();
-  void write_sdu(uint32_t lcid, byte_buffer_t *sdu, bool blocking = true);
-  void write_sdu_mch(uint32_t lcid, byte_buffer_t *sdu);
+  void     write_sdu(uint32_t lcid, unique_byte_buffer_t sdu, bool blocking = true);
+  void     write_sdu_mch(uint32_t lcid, unique_byte_buffer_t sdu);
   void add_bearer(uint32_t lcid, srslte_pdcp_config_t cnfg = srslte_pdcp_config_t());
   void add_bearer_mrb(uint32_t lcid, srslte_pdcp_config_t cnfg = srslte_pdcp_config_t());
   void del_bearer(uint32_t lcid);
@@ -74,27 +70,23 @@ public:
   uint32_t get_ul_count(uint32_t lcid);
 
   // RLC interface
-  void write_pdu(uint32_t lcid, byte_buffer_t *sdu);
-  void write_pdu_mch(uint32_t lcid, byte_buffer_t *sdu);
-  void write_pdu_bcch_bch(byte_buffer_t *sdu);
-  void write_pdu_bcch_dlsch(byte_buffer_t *sdu);
-  void write_pdu_pcch(byte_buffer_t *sdu);
+  void write_pdu(uint32_t lcid, unique_byte_buffer_t sdu);
+  void write_pdu_mch(uint32_t lcid, unique_byte_buffer_t sdu);
+  void write_pdu_bcch_bch(unique_byte_buffer_t sdu);
+  void write_pdu_bcch_dlsch(unique_byte_buffer_t sdu);
+  void write_pdu_pcch(unique_byte_buffer_t sdu);
 
 private:
-  srsue::rlc_interface_pdcp *rlc;
-  srsue::rrc_interface_pdcp *rrc;
-  srsue::gw_interface_pdcp  *gw;
+  srsue::rlc_interface_pdcp* rlc = nullptr;
+  srsue::rrc_interface_pdcp* rrc = nullptr;
+  srsue::gw_interface_pdcp*  gw  = nullptr;
 
   typedef std::map<uint16_t, pdcp_entity_interface*> pdcp_map_t;
   typedef std::pair<uint16_t, pdcp_entity_interface*> pdcp_map_pair_t;
 
-  log         *pdcp_log;
+  log*             pdcp_log = nullptr;
   pdcp_map_t  pdcp_array, pdcp_array_mrb;
   pthread_rwlock_t rwlock;
-
-  // default PDCP entity that is maintained active by PDCP instance
-  srslte_pdcp_config_t default_cnfg;
-  uint32_t             default_lcid;
 
   bool valid_lcid(uint32_t lcid);
   bool valid_mch_lcid(uint32_t lcid);

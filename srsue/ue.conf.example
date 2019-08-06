@@ -1,6 +1,8 @@
 #####################################################################
 #                   srsUE configuration file
 #####################################################################
+
+#####################################################################
 # RF configuration
 #
 # dl_earfcn: Downlink EARFCN code.
@@ -36,26 +38,32 @@ tx_gain = 80
 
 #nof_radios = 1
 #nof_rx_ant = 1
-#device_name = auto
+
+# For best performance in 2x2 MIMO and >= 15 MHz use the following device_args settings:
+#     USRP B210: pass num_recv_frames=64,num_send_frames=64
+
 #device_args = auto
-#device_args_2 = auto
-#device_args_3 = auto
 #time_adv_nsamples = auto
 #burst_preamble_us = auto
 #continuous_tx     = auto
 
 
 #####################################################################
-# MAC-layer packet capture configuration
+# Packet capture configuration
 #
-# Packets are captured to file in the compact format decoded by 
-# the Wireshark mac-lte-framed dissector and with DLT 147. 
-# To use the dissector, edit the preferences for DLT_USER to 
+# Packet capture is supported at both MAC and NAS layers.
+# MAC-layer packets are captured to file in the compact format
+# decoded by the Wireshark mac-lte-framed dissector.
+# To use this dissector, edit the preferences for DLT_USER to
 # add an entry with DLT=147, Payload Protocol=mac-lte-framed.
 # For more information see: https://wiki.wireshark.org/MAC-LTE
+# NAS-layer packets are dissected with DLT=148, and
+# Payload Protocol = nas-eps.
 #
-# enable:   Enable MAC layer packet captures (true/false)
-# filename: File path to use for packet captures
+# enable:       Enable MAC layer packet captures (true/false)
+# filename:     File path to use for MAC packet captures
+# nas_enable:   Enable NAS layer packet captures (true/false)
+# nas_filename: File path to use for NAS packet captures
 #####################################################################
 [pcap]
 enable = false
@@ -75,7 +83,7 @@ nas_filename = /tmp/nas.pcap
 # configured.
 # Format: e.g. phy_hex_limit = 32
 #
-# Logging layers: phy, mac, rlc, pdcp, rrc, nas, gw, usim, all
+# Logging layers: rf, phy, mac, rlc, pdcp, rrc, nas, gw, usim, all
 # Logging levels: debug, info, warning, error, none
 #
 # filename: File path to use for log output. Can be set to stdout
@@ -116,15 +124,20 @@ imei = 353490069873319
 #####################################################################
 # RRC configuration
 #
-# ue_category:   Sets UE category (range 1-5). Default: 4
-# release:       UE Release (8 to 10)
-# feature_group: Hex value of the featureGroupIndicators field in the
-#                UECapabilityInformation message. Default 0xe6041000
+# ue_category:       Sets UE category (range 1-5). Default: 4
+# release:           UE Release (8 to 10)
+# feature_group:     Hex value of the featureGroupIndicators field in the
+#                    UECapabilityInformation message. Default 0xe6041000
+# mbms_service_id:   MBMS service id for autostarting MBMS reception
+#                    (default -1 means disabled)
+# mbms_service_port: Port of the MBMS service
 #####################################################################
 [rrc]
-#ue_category   = 4
-#release       = 8
-#feature_group = 0xe6041000
+#ue_category       = 4
+#release           = 8
+#feature_group     = 0xe6041000
+#mbms_service_id   = -1
+#mbms_service_port = 4321
 
 #####################################################################
 # NAS configuration
@@ -148,16 +161,71 @@ imei = 353490069873319
 #eia = 1,2
 #eea = 0,1,2
 
+#####################################################################
+# GW configuration
+#
+# tun_dev_name:         Name of the tun_srsue device. Default: tun_srsue
+# tun_dev_netmask:      Netmask of the tun_srsue device. Default: 255.255.255.0
+#####################################################################
+[gw]
+#tun_dev_name         = tun_srsue
+#tun_dev_netmask      = 255.255.255.0
+
+#####################################################################
+# GUI configuration
+#
+# Simple GUI displaying PDSCH constellation and channel freq response.
+# (Requires building with srsGUI)
+# enable:               Enable the graphical interface (true/false)
+#####################################################################
 [gui]
 enable = false
 
 #####################################################################
-# Expert configuration options
+# Channel emulator options:
+# dl.enable:            Enable/Disable internal Downlink channel emulator
 #
-# ip_netmask:           Netmask of the tun_srsue device. Default: 255.255.255.0
-# ip_devname:           Nanme of the tun_srsue device. Default: tun_srsue
-# rssi_sensor_enabled:  Enable or disable RF frontend RSSI sensor. Required for RSRP metrics but
-#                       can cause UHD instability for long-duration testing. Default true.
+# -- Fading emulator
+# dl.fading.enable:     Enable/disable fading simulator
+# dl.fading.model:      Fading model + maximum doppler (E.g. none, epa5, eva70, etu300, etc)
+#
+# -- Delay Emulator     delay(t) = delay_min + (delay_max - delay_min) * (1 + sin(2pi*t/period)) / 2
+#                       Maximum speed [m/s]: (delay_max - delay_min) * pi * 300 / period
+# dl.delay.enable:      Enable/disable delay simulator
+# dl.delay.period:      Delay period in seconds (integer).
+# dl.delay.maximum_us:  Maximum delay in microseconds
+# dl.delay.minumum_us:  Minimum delay in microseconds
+#
+# -- Radio-Link Failure (RLF) Emulator
+# dl.rlf.enable:        Enable/disable RLF simulator
+# dl.rlf.t_on_ms:       Time for On state of the channel (ms)
+# dl.rlf.t_off_ms:      Time for Off state of the channel (ms)
+#####################################################################
+[channel]
+#dl.enable           = false
+#dl.fading.enable    = false
+#dl.fading.model     = none
+#dl.delay.enable     = false
+#dl.delay.period     = 3600
+#dl.delay.maximum_us = 100
+#dl.delay.minimum_us = 10
+#dl.rlf.enable       = false
+#dl.rlf.t_on_ms      = 10000
+#dl.rlf.t_off_ms     = 2000
+#ul.enable           = false
+#ul.fading.enable    = false
+#ul.fading.model     = none
+#ul.delay.enable     = false
+#ul.delay.period     = 3600
+#ul.delay.maximum_us = 100
+#ul.delay.minimum_us = 10
+#ul.rlf.enable       = false
+#ul.rlf.t_on_ms      = 10000
+#ul.rlf.t_off_ms     = 2000
+
+#####################################################################
+# PHY configuration options
+#
 # rx_gain_offset:       RX Gain offset to add to rx_gain to calibrate RSRP readings
 # prach_gain:           PRACH gain (dB). If defined, forces a gain for the tranmsission of PRACH only.,
 #                       Default is to use tx_gain in [rf] section. 
@@ -192,40 +260,14 @@ enable = false
 #                       Must be disabled if cells have identical channel and timing, for instance if generated from
 #                       the same source.
 #
-# metrics_csv_enable:   Write UE metrics to CSV file.
-#
-# metrics_period_secs:  Sets the period at which metrics are requested from the UE. 
-#
-# metrics_csv_filename: File path to use for CSV metrics.
-#
-# cfo_integer_enabled:  Enables integer CFO estimation and correction. This needs improvement
-#                       and may lead to incorrect synchronization. Use with caution.
-# cfo_correct_tol_hz:   Tolerance (in Hz) for digial CFO compensation. Lower tolerance means that
-#                       a new table will be generated more often.
-#
-# cfo_is_doppler:        Assume detected CFO is doppler and correct the UL in the same direction. If disabled, the CFO is assumed
-#                        to be caused by the local oscillator and the UL correction is in the opposite direction. Default assumes oscillator.
-# cfo_pss_ema:           CFO Exponential Moving Average coefficient for PSS estimation during TRACK.
-# cfo_ref_ema:           CFO Exponential Moving Average coefficient for RS estimation after PSS acquisition
-# cfo_ref_mask:          Bitmask for subframes on which to run RS estimation (set to 0 to disable, default sf=[1, 5])
-# cfo_loop_bw:           CFO feedback loop bandwidth for samples from PSS or RS
-# cfo_loop_pss_tol:      Tolerance (in Hz) of the PSS estimation method. Below this value, PSS estimation does not feeds back the loop
-#                        and RS estimations are used instead (when available)
-# cfo_loop_ref_min:      Tolerance (in Hz) of the RS estimation method. Below this value, RS estimation does not feeds back the loop
-# cfo_loop_pss_timeout:  After the PSS estimation is below cfo_loop_pss_tol for cfo_loop_pss_timeout times consecutively,
-#                        RS adjustments are allowed.
-#
 # pdsch_csi_enabled:     Stores the Channel State Information and uses it for weightening the softbits. It is only
 #                        used in TM1. It is True by default.
 #
 # pdsch_8bit_decoder:    Use 8-bit for LLR representation and turbo decoder trellis computation (Experimental)
+# force_ul_amplitude:    Forces the peak amplitude in the PUCCH, PUSCH and SRS (set 0.0 to 1.0, set to 0 or negative for disabling)
 #
 #####################################################################
-[expert]
-#ip_netmask          = 255.255.255.0
-#ip_devname          = tun_srsue
-#mbms_service        = -1
-#rssi_sensor_enabled = false
+[phy]
 #rx_gain_offset      = 62
 #prach_gain          = 30
 #cqi_max             = 15
@@ -245,20 +287,21 @@ enable = false
 #interpolate_subframe_enabled = false
 #sic_pss_enabled     = true
 #pregenerate_signals = false
+#pdsch_csi_enabled  = true
+#pdsch_8bit_decoder = false
+#force_ul_amplitude = 0
+
+#####################################################################
+# General configuration options
+#
+# metrics_csv_enable:   Write UE metrics to CSV file.
+#
+# metrics_period_secs:  Sets the period at which metrics are requested from the UE.
+#
+# metrics_csv_filename: File path to use for CSV metrics.
+#
+#####################################################################
+[general]
 #metrics_csv_enable  = false
 #metrics_period_secs = 1
 #metrics_csv_filename = /tmp/ue_metrics.csv
-#pdsch_csi_enabled  = true
-#pdsch_8bit_decoder = false
-
-# CFO related values
-#cfo_is_doppler      = false
-#cfo_integer_enabled = false
-#cfo_correct_tol_hz  = 1.0
-#cfo_pss_ema         = 0.05
-#cfo_ref_mask        = 1023
-#cfo_loop_bw_pss     = 0.05
-#cfo_loop_bw_ref     = 0.01
-#cfo_loop_pss_tol    = 400
-#cfo_loop_ref_min    = 0
-#cfo_loop_pss_conv   = 20

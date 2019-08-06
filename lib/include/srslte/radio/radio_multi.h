@@ -19,108 +19,99 @@
  *
  */
 
-#include <string.h>
-
-#include "srslte/srslte.h"
-extern "C" {
-#include "srslte/phy/rf/rf.h"
-}
-#include "srslte/common/trace.h"
-
-#include "srslte/radio/radio.h"
+/******************************************************************************
+ * File:        radio_multi.h
+ * Description: Class for using multiple srslte::radio's for both eNB/UE
+ *****************************************************************************/
 
 #ifndef SRSLTE_RADIO_MULTI_H
 #define SRSLTE_RADIO_MULTI_H
 
+#include "srslte/common/logger.h"
+#include "srslte/interfaces/common_interfaces.h"
+#include "srslte/phy/rf/rf.h"
+#include "srslte/radio/radio.h"
+#include "srslte/radio/radio_base.h"
+#include "srslte/radio/radio_metrics.h"
 
 namespace srslte {
 
-/* Interface to the RF frontend. 
-  */
-class radio_multi
+class radio_multi : public radio_base, public radio_interface_phy
 {
-private:
-  /* Temporal buffer size for flushing the radios */
-  static const size_t TEMP_BUFFER_SIZE = 307200;
-
-  /* Maximum sample offset that can be compensated without isssuing PPS synchronism */
-  static const size_t MAX_NOF_ALIGN_SAMPLES = TEMP_BUFFER_SIZE * 10;
-
-  log_filter*                 log_h;
-  bool                        initiated;
-  double                      rx_srate;
-  std::vector<srslte::radio*> radios;
-  srslte_timestamp_t          ts_rx[SRSLTE_MAX_RADIOS];
-  cf_t*                       temp_buffers[SRSLTE_MAX_RADIOS][SRSLTE_MAX_PORTS];
-  bool                        align_radio_ts();
-  bool                        synch_wait();
-  void                        synch_issue();
-  pthread_mutex_t             mutex;
-  bool                        locked;
-  uint32_t                    nof_ports;
-
 public:
-  radio_multi();
-  bool init(log_filter* _log_h,
-            char*       args[SRSLTE_MAX_RADIOS] = NULL,
-            char*       devname                 = NULL,
-            uint32_t    nof_radios              = 1,
-            uint32_t    nof_rf_ports            = 1);
-  void stop();
-  void reset();
+  radio_multi(srslte::logger* logger_);
+  ~radio_multi() override;
 
-  bool start_agc(bool tx_gain_same_rx = false);
+  std::string get_type() override;
 
-  void set_burst_preamble(double preamble_us);
-  void set_tx_adv(int nsamples);
-  void set_tx_adv_neg(bool tx_adv_is_neg);
+  int init(const rf_args_t& args_, phy_interface_radio* phy_);
 
-  void set_manual_calibration(rf_cal_t* calibration);
+  void stop() override;
 
-  bool is_continuous_tx();
-  void set_continuous_tx(bool enable);
+  static void rf_msg(srslte_rf_error_t error);
+  void        handle_rf_msg(srslte_rf_error_t error);
 
-  bool tx_single(cf_t* buffer, uint32_t nof_samples, srslte_timestamp_t tx_time);
-  bool tx(cf_t* buffer[SRSLTE_MAX_RADIOS][SRSLTE_MAX_PORTS], uint32_t nof_samples, srslte_timestamp_t tx_time);
-  void tx_end();
-  bool rx_now(cf_t* buffer[SRSLTE_MAX_RADIOS][SRSLTE_MAX_PORTS], uint32_t nof_samples, srslte_timestamp_t* rxd_time);
+  bool get_metrics(rf_metrics_t* metrics) override;
 
-  void   set_tx_gain(float gain, uint32_t radio_idx = UINT32_MAX);
-  void   set_rx_gain(float gain, uint32_t radio_idx = UINT32_MAX);
-  void   set_tx_rx_gain_offset(float offset);
-  double set_rx_gain_th(float gain);
+  // radio_interface_phy
+  bool is_init() override { return radios.at(0)->is_init(); }
+  void reset() override { return radios.at(0)->reset(); }
+  bool is_continuous_tx() override { return radios.at(0)->is_continuous_tx(); }
+  bool tx(const uint32_t&           radio_idx,
+          cf_t*                     buffer[SRSLTE_MAX_PORTS],
+          const uint32_t&           nof_samples,
+          const srslte_timestamp_t& tx_time) override
+  {
+    return radios.at(radio_idx)->tx(buffer, nof_samples, tx_time);
+  }
+  void tx_end() override { return radios.at(0)->tx_end(); }
 
-  float get_tx_gain(uint32_t radio_idx = 0);
-  float get_rx_gain(uint32_t radio_idx = 0);
+  bool rx_now(const uint32_t&     radio_idx,
+              cf_t*               buffer[SRSLTE_MAX_PORTS],
+              const uint32_t&     nof_samples,
+              srslte_timestamp_t* rxd_time) override
+  {
+    return radios.at(radio_idx)->rx_now(buffer, nof_samples, rxd_time);
+  }
+  void   set_rx_gain(const uint32_t& radio_idx, const float& gain) override { radios.at(radio_idx)->set_rx_gain(gain); }
+  double set_rx_gain_th(const float& gain) override { return radios.at(0)->set_rx_gain_th(gain); }
+  float  get_rx_gain(const uint32_t& radio_idx) override { return radios.at(radio_idx)->get_rx_gain(); }
+  void   set_tx_freq(const uint32_t& radio_idx, const uint32_t& channel_idx, const double& freq) override
+  {
+    radios.at(radio_idx)->set_tx_freq(channel_idx, freq);
+  }
+  void set_rx_freq(const uint32_t& radio_idx, const uint32_t& channel_idx, const double& freq) override
+  {
+    radios.at(radio_idx)->set_rx_freq(channel_idx, freq);
+  }
+  double get_freq_offset() override { return radios.at(0)->get_freq_offset(); }
+  double get_tx_freq(const uint32_t& radio_idx) override { return radios.at(radio_idx)->get_tx_freq(); }
+  double get_rx_freq(const uint32_t& radio_idx) override { return radios.at(radio_idx)->get_rx_freq(); }
+  float  get_max_tx_power() override { return args.tx_max_power; }
+  float  get_tx_gain_offset() override { return args.tx_gain_offset; }
+  float  get_rx_gain_offset() override { return args.rx_gain_offset; }
+  void   set_tx_srate(const uint32_t& radio_idx, const double& srate) override
+  {
+    radios.at(radio_idx)->set_tx_srate(srate);
+  }
+  void set_rx_srate(const uint32_t& radio_idx, const double& srate) override
+  {
+    radios.at(radio_idx)->set_rx_srate(srate);
+  }
+  srslte_rf_info_t* get_info(const uint32_t& radio_idx) override { return radios.at(radio_idx)->get_info(); }
 
-  void set_freq_offset(double freq);
-  void set_tx_freq(double freq, uint32_t radio_idx = UINT32_MAX);
-  void set_rx_freq(double freq, uint32_t radio_idx = UINT32_MAX);
+protected:
+  rf_args_t args = {};
 
-  double            get_freq_offset();
-  double            get_tx_freq(uint32_t radio_idx = 0);
-  double            get_rx_freq(uint32_t radio_idx = 0);
-  srslte_rf_info_t* get_info(uint32_t radio_idx = 0);
+  std::vector<std::unique_ptr<radio> > radios;
 
-  void set_master_clock_rate(double rate);
-  void set_tx_srate(double srate);
-  void set_rx_srate(double srate);
+  srslte::logger*    logger = nullptr;
+  srslte::log_filter log;
+  bool               running = false;
 
-  float  get_max_tx_power();
-  float  set_tx_power(float power);
-  float  get_rssi();
-  bool   has_rssi();
-  radio* get_radio_ptr(uint32_t idx);
-
-  void start_trace();
-  void write_trace(std::string filename);
-
-  void set_tti(uint32_t tti);
-
-  bool is_init();
-
-  void register_error_handler(srslte_rf_error_handler_t h);
+  srslte::rf_metrics_t rf_metrics = {};
+  phy_interface_radio* phy        = nullptr;
 };
-}
+} // namespace srslte
 
 #endif // SRSLTE_RADIO_MULTI_H

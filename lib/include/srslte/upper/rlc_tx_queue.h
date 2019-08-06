@@ -36,7 +36,7 @@
 
 namespace srslte {
 
-class rlc_tx_queue : public block_queue<byte_buffer_t*>::call_mutexed_itf
+class rlc_tx_queue : public block_queue<unique_byte_buffer_t>::call_mutexed_itf
 {
 public:
   rlc_tx_queue(int capacity = 128) : queue(capacity) {
@@ -44,36 +44,22 @@ public:
     queue.set_mutexed_itf(this);
   }
   // increase/decrease unread_bytes inside push/pop mutexed operations
-  void pushing(byte_buffer_t *msg) {
-    unread_bytes += msg->N_bytes;
-  }
-  void popping(byte_buffer_t *msg) {
+  void pushing(const unique_byte_buffer_t& msg) final { unread_bytes += msg->N_bytes; }
+  void popping(const unique_byte_buffer_t& msg) final
+  {
     if (unread_bytes > msg->N_bytes) {
       unread_bytes -= msg->N_bytes;
     } else {
       unread_bytes = 0;
     }
   }
-  void write(byte_buffer_t *msg)
-  {
-    queue.push(msg);
-  }
+  void write(unique_byte_buffer_t msg) { queue.push(std::move(msg)); }
 
-  bool try_write(byte_buffer_t *msg)
-  {
-    return queue.try_push(msg);
-  }
+  std::pair<bool, unique_byte_buffer_t> try_write(unique_byte_buffer_t&& msg) { return queue.try_push(std::move(msg)); }
 
-  void read(byte_buffer_t **msg)
-  {
-    byte_buffer_t *m = queue.wait_pop();
-    *msg = m;
-  }
+  unique_byte_buffer_t read() { return queue.wait_pop(); }
 
-  bool try_read(byte_buffer_t **msg)
-  {
-    return queue.try_pop(msg);
-  }
+  bool try_read(unique_byte_buffer_t* msg) { return queue.try_pop(msg); }
 
   void resize(uint32_t capacity)
   {
@@ -92,8 +78,8 @@ public:
   uint32_t size_tail_bytes()
   {
     if (!queue.empty()) {
-      byte_buffer_t *m = queue.front();
-      if (m) {
+      const unique_byte_buffer_t& m = queue.front();
+      if (m.get()) {
         return m->N_bytes;
       }
     }
@@ -110,8 +96,7 @@ public:
   }
 
 private:
-
-  block_queue<byte_buffer_t*> queue;
+  block_queue<unique_byte_buffer_t> queue;
   uint32_t                    unread_bytes;
 };
 

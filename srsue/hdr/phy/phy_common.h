@@ -27,8 +27,9 @@
 #include "phy_metrics.h"
 #include "srslte/common/gen_mch_tables.h"
 #include "srslte/common/log.h"
+#include "srslte/interfaces/common_interfaces.h"
 #include "srslte/interfaces/ue_interfaces.h"
-#include "srslte/radio/radio_multi.h"
+#include "srslte/radio/radio.h"
 #include "srslte/srslte.h"
 #include <pthread.h>
 #include <semaphore.h>
@@ -53,10 +54,9 @@ class phy_common
 public:
   /* Common variables used by all phy workers */
   phy_args_t*        args;
-  rrc_interface_phy* rrc;
-  mac_interface_phy* mac;
+  stack_interface_phy_lte* stack;
 
-  phy_interface_rrc::phy_cfg_mbsfn_t mbsfn_config;
+  phy_interface_rrc_lte::phy_cfg_mbsfn_t mbsfn_config;
 
   /* Power control variables */
   float pathloss[SRSLTE_MAX_CARRIERS];
@@ -68,7 +68,6 @@ public:
   float avg_rsrp_dbm[SRSLTE_MAX_CARRIERS];
   float avg_rsrq_db;
   float avg_rssi_dbm;
-  float last_radio_rssi;
   float rx_gain_offset;
   float avg_snr_db_cqi[SRSLTE_MAX_CARRIERS];
   float avg_snr_db_sync;
@@ -79,9 +78,15 @@ public:
   uint32_t pcell_report_period;
   bool     pcell_first_measurement;
 
-  /* SCell enable for Activation / Deactivation */
-  bool scell_configured[SRSLTE_MAX_CARRIERS];
-  bool scell_enable[SRSLTE_MAX_CARRIERS]; /* Entry index 0 is reserved, do NOT use it for PCell */
+  // SCell EARFCN, PCI, configured and enabled list
+  typedef struct {
+    uint32_t earfcn     = 0;
+    uint32_t pci        = 0;
+    bool     configured = false;
+    bool     enabled    = false;
+  } scell_cfg_t;
+  scell_cfg_t scell_cfg[SRSLTE_MAX_CARRIERS];
+
   bool multiple_csi_request_enabled;      /* True means cross scheduling enabled */
   bool cif_enabled;                       /* True means cross scheduling enabled */
   bool srs_request_enabled;
@@ -96,8 +101,7 @@ public:
 
   ~phy_common();
 
-  void
-  init(phy_args_t* args, srslte::log* _log, srslte::radio* _radio, rrc_interface_phy* rrc, mac_interface_phy* _mac);
+  void init(phy_args_t* args, srslte::log* _log, srslte::radio_interface_phy* _radio, stack_interface_phy_lte* _stack);
 
   uint32_t ul_pidof(uint32_t tti, srslte_tdd_config_t* tdd_config);
 
@@ -144,7 +148,7 @@ public:
   bool sr_enabled;
   int  sr_last_tx_tti;
 
-  srslte::radio* get_radio();
+  srslte::radio_interface_phy* get_radio();
 
   void     set_cell(const srslte_cell_t& c);
   uint32_t get_nof_prb();
@@ -153,8 +157,8 @@ public:
   void get_dl_metrics(dl_metrics_t m[SRSLTE_MAX_CARRIERS]);
   void set_ul_metrics(const ul_metrics_t m, uint32_t cc_idx);
   void get_ul_metrics(ul_metrics_t m[SRSLTE_MAX_CARRIERS]);
-  void set_sync_metrics(const sync_metrics_t& m);
-  void get_sync_metrics(sync_metrics_t& m);
+  void set_sync_metrics(const uint32_t& cc_idx, const sync_metrics_t& m);
+  void get_sync_metrics(sync_metrics_t m[SRSLTE_MAX_CARRIERS]);
 
   void reset();
 
@@ -177,9 +181,10 @@ private:
   uint32_t           max_workers;
 
   bool           is_first_of_burst[SRSLTE_MAX_RADIOS];
-  srslte::radio* radio_h;
+  srslte::radio_interface_phy* radio_h;
   float          cfo;
   srslte::log*   log_h;
+  srslte::channel_ptr  ul_channel = nullptr;
 
   int rar_grant_tti;
 
@@ -226,7 +231,7 @@ private:
   ul_metrics_t   ul_metrics[SRSLTE_MAX_CARRIERS];
   uint32_t       ul_metrics_count;
   bool           ul_metrics_read;
-  sync_metrics_t sync_metrics;
+  sync_metrics_t sync_metrics[SRSLTE_MAX_CARRIERS];
   uint32_t       sync_metrics_count;
   bool           sync_metrics_read;
 

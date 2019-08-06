@@ -28,97 +28,105 @@
 #ifndef SRSUE_UE_H
 #define SRSUE_UE_H
 
+#include <pthread.h>
 #include <stdarg.h>
 #include <string>
-#include <pthread.h>
 
-#include "ue_base.h"
-#include "srslte/radio/radio_multi.h"
-#include "phy/phy.h"
-#include "mac/mac.h"
-#include "srslte/upper/rlc.h"
-#include "srslte/upper/pdcp.h"
-#include "upper/rrc.h"
-#include "upper/nas.h"
-#include "upper/gw.h"
-#include "upper/usim.h"
-
+#include "phy/ue_phy_base.h"
 #include "srslte/common/buffer_pool.h"
-#include "srslte/interfaces/ue_interfaces.h"
-#include "srslte/common/logger_file.h"
 #include "srslte/common/log_filter.h"
+#include "srslte/common/logger_file.h"
+#include "srslte/interfaces/ue_interfaces.h"
+#include "srslte/radio/radio_base.h"
+#include "stack/ue_stack_base.h"
 
 #include "ue_metrics_interface.h"
 
 namespace srsue {
 
 /*******************************************************************************
+  UE Parameters
+*******************************************************************************/
+
+typedef struct {
+  bool        enable;
+  std::string phy_filename;
+  std::string radio_filename;
+} trace_args_t;
+
+typedef struct {
+  std::string all_level;
+  int         all_hex_limit;
+  int         file_max_size;
+  std::string filename;
+} log_args_t;
+
+typedef struct {
+  bool enable;
+} gui_args_t;
+
+typedef struct {
+  float       metrics_period_secs;
+  bool        metrics_csv_enable;
+  std::string metrics_csv_filename;
+} general_args_t;
+
+typedef struct {
+  srslte::rf_args_t rf;
+  trace_args_t      trace;
+  log_args_t        log;
+  gui_args_t        gui;
+
+  phy_args_t   phy;
+  stack_args_t stack;
+  gw_args_t    gw;
+
+  general_args_t general;
+} all_args_t;
+
+/*******************************************************************************
   Main UE class
 *******************************************************************************/
 
-class ue
-    :public ue_base
+class ue : public ue_metrics_interface
 {
 public:
   ue();
+  ~ue();
 
-  bool init(all_args_t *args_);
+  int  init(const all_args_t& args_, srslte::logger* logger_);
   void stop();
   bool switch_on();
   bool switch_off();
-  bool is_attached();
   void start_plot();
-  void print_mbms();
-  bool mbms_service_start(uint32_t serv, uint32_t port);
-
-  void print_pool();
-
-  static void rf_msg(srslte_rf_error_t error);
 
   // UE metrics interface
-  bool get_metrics(ue_metrics_t &m);
-
-  void pregenerate_signals(bool enable);
+  bool get_metrics(ue_metrics_t* m);
 
   void radio_overflow();
 
 private:
-  virtual ~ue();
+  // UE consists of a radio, a PHY and a stack element
+  std::unique_ptr<ue_phy_base>   phy;
+  std::unique_ptr<srslte::radio_base> radio;
+  std::unique_ptr<ue_stack_base> stack;
+  std::unique_ptr<gw>            gw_inst;
 
-  srslte::radio      radios[SRSLTE_MAX_RADIOS];
-  srsue::phy         phy;
-  srsue::mac         mac;
-  srslte::mac_pcap   mac_pcap;
-  srslte::nas_pcap   nas_pcap;
-  srslte::rlc        rlc;
-  srslte::pdcp       pdcp;
-  srsue::rrc         rrc;
-  srsue::nas         nas;
-  srsue::gw          gw;
-  srsue::usim_base*  usim;
+  // Generic logger members
+  srslte::logger*    logger = nullptr;
+  srslte::log_filter log; // Own logger for UE
 
-  srslte::logger_stdout logger_stdout;
-  srslte::logger_file   logger_file;
-  srslte::logger        *logger;
+  all_args_t                args;
+  srslte::byte_buffer_pool* pool = nullptr;
 
-  // rf_log is on ue_base
-  std::vector<srslte::log_filter*>  phy_log;
-  srslte::log_filter  mac_log;
-  srslte::log_filter  rlc_log;
-  srslte::log_filter  pdcp_log;
-  srslte::log_filter  rrc_log;
-  srslte::log_filter  nas_log;
-  srslte::log_filter  gw_log;
-  srslte::log_filter  usim_log;
-  srslte::log_filter  pool_log;
+  // Helper functions
+  int parse_args(const all_args_t& args); // parse and validate arguments
 
-  all_args_t       *args;
-  bool              started;
-
-  bool check_srslte_version();
+  std::string get_build_mode();
+  std::string get_build_info();
+  std::string get_build_string();
 };
 
 } // namespace srsue
 
 #endif // SRSUE_UE_H
-  

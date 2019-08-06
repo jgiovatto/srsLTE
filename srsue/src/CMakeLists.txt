@@ -19,8 +19,7 @@
 #
 
 add_subdirectory(phy)
-add_subdirectory(mac)
-add_subdirectory(upper)
+add_subdirectory(stack)
 
 # Link libstdc++ and libgcc
 if(BUILD_STATIC)
@@ -31,14 +30,16 @@ if (RPATH)
   set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 endif (RPATH)
 
-add_executable(srsue main.cc ue_base.cc ue.cc metrics_stdout.cc metrics_csv.cc)
-target_link_libraries(srsue   srsue_mac
-                              srsue_phy
+add_executable(srsue main.cc ue.cc metrics_stdout.cc metrics_csv.cc)
+target_link_libraries(srsue   srsue_phy
+                              srsue_stack
                               srsue_upper
+                              srsue_mac
+                              srsue_rrc
                               srslte_common
                               srslte_phy
-                              srslte_upper
                               srslte_radio
+                              srslte_upper
                               rrc_asn1
                               ${CMAKE_THREAD_LIBS_INIT}
                               ${Boost_LIBRARIES})
@@ -47,7 +48,20 @@ if (RPATH)
   set_target_properties(srsue PROPERTIES INSTALL_RPATH ".")
 endif (RPATH)
 
-install(TARGETS srsue DESTINATION ${RUNTIME_DIR})
+########################################################################
+# UE initialization test
+########################################################################
+
+if(NOT SRSGUI_FOUND)
+# Make sure srsue returns 0 and it does not leak
+add_test(srsue_version srsue --version)
+add_test(srsue_help srsue --help)
+endif(NOT SRSGUI_FOUND)
+
+# Checks that ue.conf.example is valid and it does not leak memory if RF fails
+if (ZEROMQ_FOUND)
+  add_test(ue_rf_failure srsue ${CMAKE_SOURCE_DIR}/srsue/ue.conf.example --rf.device_name=zmq)
+endif(ZEROMQ_FOUND)
 
 ########################################################################
 # Option to run command after build (useful for remote builds)

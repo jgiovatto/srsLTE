@@ -20,8 +20,10 @@
  */
 
 #include "srslte/asn1/rrc_asn1.h"
+#include "srslte/asn1/rrc_asn1_utils.h"
 #include "srslte/common/bcd_helpers.h"
 #include "srslte/common/log_filter.h"
+#include "srslte/interfaces/rrc_interface_types.h"
 #include <iostream>
 
 using namespace asn1::rrc;
@@ -84,9 +86,9 @@ int basic_test()
                  .mbms_session_info_list_r9[0]
                  .tmgi_r9.plmn_id_r9.explicit_value_r9()
                  .mcc_present);
-  std::string mccmnc_str = srslte::plmn_id_to_string(
+  srslte::plmn_id_t plmn = srslte::make_plmn_id_t(
       area_cfg_r9->pmch_info_list_r9[0].mbms_session_info_list_r9[0].tmgi_r9.plmn_id_r9.explicit_value_r9());
-  TESTASSERT(mccmnc_str == "987654");
+  TESTASSERT(plmn.to_string() == "987654");
   TESTASSERT(area_cfg_r9->pmch_info_list_r9[0].mbms_session_info_list_r9[0].tmgi_r9.service_id_r9.to_string() ==
              "000001");
   TESTASSERT(area_cfg_r9->pmch_info_list_r9[0].mbms_session_info_list_r9[0].session_id_r9.to_string() == "01");
@@ -107,9 +109,9 @@ int basic_test()
                  .mbms_session_info_list_r9[0]
                  .tmgi_r9.plmn_id_r9.explicit_value_r9()
                  .mcc_present);
-  mccmnc_str = srslte::plmn_id_to_string(
+  plmn = srslte::make_plmn_id_t(
       area_cfg_r9->pmch_info_list_r9[0].mbms_session_info_list_r9[0].tmgi_r9.plmn_id_r9.explicit_value_r9());
-  TESTASSERT(mccmnc_str == "987654");
+  TESTASSERT(plmn.to_string() == "987654");
   TESTASSERT(area_cfg_r9->pmch_info_list_r9[1].mbms_session_info_list_r9[0].tmgi_r9.service_id_r9.to_string() ==
              "000002");
   TESTASSERT(area_cfg_r9->pmch_info_list_r9[1].mbms_session_info_list_r9[0].session_id_r9.to_string() == "02");

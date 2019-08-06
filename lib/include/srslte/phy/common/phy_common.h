@@ -239,10 +239,11 @@ typedef enum SRSLTE_API {
 typedef enum SRSLTE_API { SRSLTE_MIMO_DECODER_ZF, SRSLTE_MIMO_DECODER_MMSE } srslte_mimo_decoder_t;
 
 typedef enum SRSLTE_API {
-  SRSLTE_MOD_BPSK = 0, 
-  SRSLTE_MOD_QPSK, 
-  SRSLTE_MOD_16QAM, 
+  SRSLTE_MOD_BPSK = 0,
+  SRSLTE_MOD_QPSK,
+  SRSLTE_MOD_16QAM,
   SRSLTE_MOD_64QAM,
+  SRSLTE_MOD_256QAM,
 } srslte_mod_t;
 
 typedef enum {
@@ -352,7 +353,7 @@ SRSLTE_API char *srslte_mod_string(srslte_mod_t mod);
 
 SRSLTE_API uint32_t srslte_mod_bits_x_symbol(srslte_mod_t mod);
 
-SRSLTE_API int srslte_band_get_band(uint32_t dl_earfcn);
+SRSLTE_API uint8_t srslte_band_get_band(uint32_t dl_earfcn);
 
 SRSLTE_API bool srslte_band_is_tdd(uint32_t band);
 

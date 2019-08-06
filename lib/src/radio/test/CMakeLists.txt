@@ -20,8 +20,11 @@
 
 if(RF_FOUND)
   add_executable(benchmark_radio benchmark_radio.cc)
-  target_link_libraries(benchmark_radio srsue_phy srslte_common srslte_phy srslte_radio ${CMAKE_THREAD_LIBS_INIT} ${Boost_LIBRARIES})
-
+  target_link_libraries(benchmark_radio srslte_common srslte_phy srslte_radio)
+  if(SRSGUI_FOUND)
+    include_directories(${SRSGUI_INCLUDE_DIRS})
+    target_link_libraries(benchmark_radio ${SRSGUI_LIBRARIES})
+  endif(SRSGUI_FOUND)
 endif(RF_FOUND)
 
 

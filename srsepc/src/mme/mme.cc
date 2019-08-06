@@ -31,7 +31,7 @@ namespace srsepc {
 mme*            mme::m_instance    = NULL;
 pthread_mutex_t mme_instance_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-mme::mme() : m_running(false)
+mme::mme() : m_running(false), thread("MME")
 {
   m_pool = srslte::byte_buffer_pool::get_instance();
   return;
@@ -124,7 +124,7 @@ void mme::run_thread()
   int s11   = m_mme_gtpc->get_s11();
 
   while (m_running) {
-    pdu->reset();
+    pdu->clear();
     int max_fd = std::max(s1mme, s11);
 
     FD_ZERO(&m_set);
