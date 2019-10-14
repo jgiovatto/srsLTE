@@ -119,14 +119,6 @@ char* rf_dummy_devname(void *h)
  }
 
 
-bool rf_dummy_rx_wait_lo_locked(void *h)
- {
-   LOG_INFO("");
-
-   return false;
- }
-
-
 int rf_dummy_start_rx_stream(void *h, bool now)
  {
    GET_DEV_INFO(h);
@@ -208,24 +200,6 @@ int rf_dummy_close(void *h)
    LOG_INFO("");
 
    return 0;
- }
-
-
-void rf_dummy_set_master_clock_rate(void *h, double rate)
- {
-   GET_DEV_INFO(h);
-
-   LOG_INFO("rate %6.4lf to %6.4lf", _info->clock_rate, rate);
-
-   _info->clock_rate = rate;
- }
-
-
-bool rf_dummy_is_master_clock_dynamic(void *h)
- {
-   LOG_INFO("false");
-
-   return false;
  }
 
 

@@ -194,6 +194,7 @@ public:
   virtual void add_bearer(uint16_t rnti, uint32_t lcid, srslte::rlc_config_t cnfg)        = 0;
   virtual void add_bearer_mrb(uint16_t rnti, uint32_t lcid) = 0;
   virtual void write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu)  = 0;
+  virtual bool has_bearer(uint16_t rnti, uint32_t lcid)                                   = 0;
 };
 
 // PDCP interface for GTPU
@@ -207,20 +208,20 @@ public:
 class pdcp_interface_rrc
 {
 public:
-  virtual void reset(uint16_t rnti) = 0;
-  virtual void add_user(uint16_t rnti) = 0; 
-  virtual void rem_user(uint16_t rnti) = 0;
+  virtual void reset(uint16_t rnti)                                                        = 0;
+  virtual void add_user(uint16_t rnti)                                                     = 0;
+  virtual void rem_user(uint16_t rnti)                                                     = 0;
   virtual void write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu)   = 0;
-  virtual void add_bearer(uint16_t rnti, uint32_t lcid, srslte::srslte_pdcp_config_t cnfg) = 0;
-  virtual void config_security(uint16_t rnti, 
-                               uint32_t lcid,
-                               uint8_t *k_rrc_enc_,
-                               uint8_t *k_rrc_int_,
-                               uint8_t *k_up_enc_,
+  virtual void add_bearer(uint16_t rnti, uint32_t lcid, srslte::pdcp_config_t cnfg)        = 0;
+  virtual void config_security(uint16_t                            rnti,
+                               uint32_t                            lcid,
+                               uint8_t*                            k_rrc_enc_,
+                               uint8_t*                            k_rrc_int_,
+                               uint8_t*                            k_up_enc_,
                                srslte::CIPHERING_ALGORITHM_ID_ENUM cipher_algo_,
-                               srslte::INTEGRITY_ALGORITHM_ID_ENUM integ_algo_) = 0;
-  virtual void enable_integrity(uint16_t rnti, uint32_t lcid) = 0;
-  virtual void enable_encryption(uint16_t rnti, uint32_t lcid) = 0;
+                               srslte::INTEGRITY_ALGORITHM_ID_ENUM integ_algo_)            = 0;
+  virtual void enable_integrity(uint16_t rnti, uint32_t lcid)                              = 0;
+  virtual void enable_encryption(uint16_t rnti, uint32_t lcid)                             = 0;
 };
 
 // PDCP interface for RLC
@@ -267,6 +268,7 @@ public:
   virtual void write_dl_info(uint16_t rnti, srslte::unique_byte_buffer_t sdu)                           = 0;
   virtual void release_complete(uint16_t rnti) = 0;
   virtual bool setup_ue_ctxt(uint16_t rnti, LIBLTE_S1AP_MESSAGE_INITIALCONTEXTSETUPREQUEST_STRUCT *msg) = 0;
+  virtual bool modify_ue_ctxt(uint16_t rnti, LIBLTE_S1AP_MESSAGE_UECONTEXTMODIFICATIONREQUEST_STRUCT *msg) = 0;
   virtual bool setup_ue_erabs(uint16_t rnti, LIBLTE_S1AP_MESSAGE_E_RABSETUPREQUEST_STRUCT *msg) = 0;
   virtual bool release_erabs(uint32_t rnti) = 0;
   virtual void add_paging_id(uint32_t ueid, LIBLTE_S1AP_UEPAGINGID_STRUCT UEPagingID) = 0; 

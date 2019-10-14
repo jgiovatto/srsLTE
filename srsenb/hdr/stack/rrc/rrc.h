@@ -54,10 +54,11 @@ typedef enum {
 static const char rrc_cfg_cqi_mode_text[RRC_CFG_CQI_MODE_N_ITEMS][20] = {"periodic", "aperiodic"};
 
 typedef struct {
-  uint32_t           sf_mapping[80]; 
-  uint32_t           nof_subframes; 
-  uint32_t           nof_prb; 
-  uint32_t           period; 
+  uint32_t           sf_mapping[80];
+  uint32_t           nof_subframes;
+  uint32_t           nof_prb;
+  uint32_t           period;
+  uint32_t           m_ri;
   bool               simultaneousAckCQI;
   rrc_cfg_cqi_mode_t mode; 
 } rrc_cfg_cqi_t; 
@@ -156,6 +157,7 @@ public:
   void write_dl_info(uint16_t rnti, srslte::unique_byte_buffer_t sdu);
   void release_complete(uint16_t rnti);
   bool setup_ue_ctxt(uint16_t rnti, LIBLTE_S1AP_MESSAGE_INITIALCONTEXTSETUPREQUEST_STRUCT *msg);
+  bool modify_ue_ctxt(uint16_t rnti, LIBLTE_S1AP_MESSAGE_UECONTEXTMODIFICATIONREQUEST_STRUCT *msg);
   bool setup_ue_erabs(uint16_t rnti, LIBLTE_S1AP_MESSAGE_E_RABSETUPREQUEST_STRUCT *msg);
   bool release_erabs(uint32_t rnti);
   void add_paging_id(uint32_t ueid, LIBLTE_S1AP_UEPAGINGID_STRUCT UEPagingID);
@@ -244,6 +246,8 @@ public:
     void cqi_get(uint16_t* pmi_idx, uint16_t* n_pucch);
     int  cqi_free();
 
+    int ri_get(uint32_t m_ri, uint16_t* ri_idx);
+
     bool select_security_algorithms();
     void send_dl_ccch(asn1::rrc::dl_ccch_msg_s* dl_ccch_msg);
     void send_dl_dcch(asn1::rrc::dl_dcch_msg_s*    dl_dcch_msg,
@@ -253,6 +257,8 @@ public:
     rrc*     parent;
 
     bool connect_notified;
+
+    bool is_csfb;
 
   private:
     srslte::byte_buffer_pool  *pool;
@@ -378,6 +384,7 @@ private:
   rrc_cfg_t              cfg;
   uint32_t               nof_si_messages;
   asn1::rrc::sib_type2_s sib2;
+  asn1::rrc::sib_type7_s sib7;
 
   void run_thread();
   void rem_user_thread(uint16_t rnti);

@@ -785,11 +785,6 @@ int main(int argc, char **argv) {
     
     int srate = srslte_sampling_freq_hz(cell.nof_prb);    
     if (srate != -1) {  
-      if (srate < 10e6) {          
-        srslte_rf_set_master_clock_rate(&rf, 4*srate);        
-      } else {
-        srslte_rf_set_master_clock_rate(&rf, srate);        
-      }
       printf("Setting sampling rate %.2f MHz\n", (float) srate/1000000);
       float srate_rf = srslte_rf_set_tx_srate(&rf, (double)srate);
       if (srate_rf != srate) {
@@ -917,8 +912,8 @@ int main(int argc, char **argv) {
           /* Encode PDCCH */
           INFO("Putting DCI to location: n=%d, L=%d\n", locations[sf_idx][0].ncce, locations[sf_idx][0].L);
 
-          dci_msg.location = locations[sf_idx][0];
           srslte_dci_msg_pack_pdsch(&cell, &dl_sf, NULL, &dci_dl, &dci_msg);
+          dci_msg.location = locations[sf_idx][0];
           if (srslte_pdcch_encode(&pdcch, &dl_sf, &dci_msg, sf_symbols)) {
             ERROR("Error encoding DCI message\n");
             exit(-1);

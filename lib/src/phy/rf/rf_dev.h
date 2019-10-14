@@ -23,7 +23,6 @@
 typedef struct {
   const char *name;
   char*  (*srslte_rf_devname) (void *h);
-  bool   (*srslte_rf_rx_wait_lo_locked) (void *h);
   int    (*srslte_rf_start_rx_stream)(void *h, bool now);
   int    (*srslte_rf_stop_rx_stream)(void *h);
   void   (*srslte_rf_flush_buffer)(void *h);
@@ -34,8 +33,6 @@ typedef struct {
   int    (*srslte_rf_open)(char *args, void **h);
   int    (*srslte_rf_open_multi)(char *args, void **h, uint32_t nof_channels);
   int    (*srslte_rf_close)(void *h);
-  void   (*srslte_rf_set_master_clock_rate)(void *h, double rate);
-  bool   (*srslte_rf_is_master_clock_dynamic)(void *h);
   double (*srslte_rf_set_rx_srate)(void *h, double freq);
   double (*srslte_rf_set_rx_gain)(void *h, double gain);
   double (*srslte_rf_set_tx_gain)(void *h, double gain);
@@ -66,7 +63,6 @@ typedef struct {
 
 static rf_dev_t dev_uhd = {"UHD",
                            rf_uhd_devname,
-                           rf_uhd_rx_wait_lo_locked,
                            rf_uhd_start_rx_stream,
                            rf_uhd_stop_rx_stream,
                            rf_uhd_flush_buffer,
@@ -77,8 +73,6 @@ static rf_dev_t dev_uhd = {"UHD",
                            rf_uhd_open,
                            .srslte_rf_open_multi = rf_uhd_open_multi,
                            rf_uhd_close,
-                           rf_uhd_set_master_clock_rate,
-                           rf_uhd_is_master_clock_dynamic,
                            rf_uhd_set_rx_srate,
                            rf_uhd_set_rx_gain,
                            rf_uhd_set_tx_gain,
@@ -103,7 +97,6 @@ static rf_dev_t dev_uhd = {"UHD",
 
 static rf_dev_t dev_blade = {"bladeRF",
                              rf_blade_devname,
-                             rf_blade_rx_wait_lo_locked,
                              rf_blade_start_rx_stream,
                              rf_blade_stop_rx_stream,
                              rf_blade_flush_buffer,
@@ -114,8 +107,6 @@ static rf_dev_t dev_blade = {"bladeRF",
                              rf_blade_open,
                              .srslte_rf_open_multi = rf_blade_open_multi,
                              rf_blade_close,
-                             rf_blade_set_master_clock_rate,
-                             rf_blade_is_master_clock_dynamic,
                              rf_blade_set_rx_srate,
                              rf_blade_set_rx_gain,
                              rf_blade_set_tx_gain,
@@ -139,7 +130,6 @@ static rf_dev_t dev_blade = {"bladeRF",
 
 static rf_dev_t dev_soapy = {"soapy",
                              rf_soapy_devname,
-                             rf_soapy_rx_wait_lo_locked,
                              rf_soapy_start_rx_stream,
                              rf_soapy_stop_rx_stream,
                              rf_soapy_flush_buffer,
@@ -150,8 +140,6 @@ static rf_dev_t dev_soapy = {"soapy",
                              rf_soapy_open,
                              rf_soapy_open_multi,
                              rf_soapy_close,
-                             rf_soapy_set_master_clock_rate,
-                             rf_soapy_is_master_clock_dynamic,
                              rf_soapy_set_rx_srate,
                              rf_soapy_set_rx_gain,
                              rf_soapy_set_tx_gain,
@@ -177,7 +165,6 @@ static rf_dev_t dev_soapy = {"soapy",
 
 static rf_dev_t dev_zmq = {"zmq",
                            rf_zmq_devname,
-                           rf_zmq_rx_wait_lo_locked,
                            rf_zmq_start_rx_stream,
                            rf_zmq_stop_rx_stream,
                            rf_zmq_flush_buffer,
@@ -188,8 +175,6 @@ static rf_dev_t dev_zmq = {"zmq",
                            rf_zmq_open,
                            .srslte_rf_open_multi = rf_zmq_open_multi,
                            rf_zmq_close,
-                           rf_zmq_set_master_clock_rate,
-                           rf_zmq_is_master_clock_dynamic,
                            rf_zmq_set_rx_srate,
                            rf_zmq_set_rx_gain,
                            rf_zmq_set_tx_gain,
@@ -213,7 +198,6 @@ static rf_dev_t dev_zmq = {"zmq",
 static rf_dev_t dev_dummy = {
   .name                              = "dummyrf", 
   .srslte_rf_devname                 = rf_dummy_devname,
-  .srslte_rf_rx_wait_lo_locked       = rf_dummy_rx_wait_lo_locked,
   .srslte_rf_start_rx_stream         = rf_dummy_start_rx_stream,
   .srslte_rf_stop_rx_stream          = rf_dummy_stop_rx_stream,
   .srslte_rf_flush_buffer            = rf_dummy_flush_buffer,
@@ -224,8 +208,6 @@ static rf_dev_t dev_dummy = {
   .srslte_rf_open                    = rf_dummy_open,
   .srslte_rf_open_multi              = rf_dummy_open_multi,
   .srslte_rf_close                   = rf_dummy_close,
-  .srslte_rf_set_master_clock_rate   = rf_dummy_set_master_clock_rate,
-  .srslte_rf_is_master_clock_dynamic = rf_dummy_is_master_clock_dynamic,
   .srslte_rf_set_rx_srate            = rf_dummy_set_rx_srate,
   .srslte_rf_set_rx_gain             = rf_dummy_set_rx_gain,
   .srslte_rf_set_tx_gain             = rf_dummy_set_tx_gain,
@@ -251,7 +233,6 @@ static rf_dev_t dev_dummy = {
 static rf_dev_t dev_shmem = {
   .name                              = "shmemrf", 
   .srslte_rf_devname                 = rf_shmem_devname,
-  .srslte_rf_rx_wait_lo_locked       = rf_shmem_rx_wait_lo_locked,
   .srslte_rf_start_rx_stream         = rf_shmem_start_rx_stream,
   .srslte_rf_stop_rx_stream          = rf_shmem_stop_rx_stream,
   .srslte_rf_flush_buffer            = rf_shmem_flush_buffer,
@@ -262,8 +243,6 @@ static rf_dev_t dev_shmem = {
   .srslte_rf_open                    = rf_shmem_open,
   .srslte_rf_open_multi              = rf_shmem_open_multi,
   .srslte_rf_close                   = rf_shmem_close,
-  .srslte_rf_set_master_clock_rate   = rf_shmem_set_master_clock_rate,
-  .srslte_rf_is_master_clock_dynamic = rf_shmem_is_master_clock_dynamic,
   .srslte_rf_set_rx_srate            = rf_shmem_set_rx_srate,
   .srslte_rf_set_rx_gain             = rf_shmem_set_rx_gain,
   .srslte_rf_set_tx_gain             = rf_shmem_set_tx_gain,

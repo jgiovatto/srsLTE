@@ -193,11 +193,14 @@ void rrc::add_user(uint16_t rnti)
   }
 
   if (rnti == SRSLTE_MRNTI) {
-    srslte::srslte_pdcp_config_t cfg;
-    cfg.is_control   = false;
-    cfg.is_data      = true;
-    cfg.sn_len       = 12;
-    cfg.direction    = SECURITY_DIRECTION_DOWNLINK;
+    srslte::pdcp_config_t cfg = {
+        .bearer_id    = 1,
+        .rb_type      = srslte::PDCP_RB_IS_DRB,
+        .tx_direction = srslte::SECURITY_DIRECTION_DOWNLINK,
+        .rx_direction = srslte::SECURITY_DIRECTION_UPLINK,
+        .sn_len       = srslte::PDCP_SN_LEN_12,
+    };
+
     uint32_t teid_in = 1;
 
     for (uint32_t i = 0; i < mcch.msg.c1().mbsfn_area_cfg_r9().pmch_info_list_r9[0].mbms_session_info_list_r9.size();
@@ -292,9 +295,6 @@ bool rrc::setup_ue_ctxt(uint16_t rnti, LIBLTE_S1AP_MESSAGE_INITIALCONTEXTSETUPRE
     return false;
   }
 
-  if(msg->CSFallbackIndicator_present) {
-    rrc_log->warning("Not handling CSFallbackIndicator\n");
-  }
   if(msg->AdditionalCSFallbackIndicator_present) {
     rrc_log->warning("Not handling AdditionalCSFallbackIndicator\n");
   }
@@ -343,6 +343,14 @@ bool rrc::setup_ue_ctxt(uint16_t rnti, LIBLTE_S1AP_MESSAGE_INITIALCONTEXTSETUPRE
   liblte_pack(msg->SecurityKey.buffer, LIBLTE_S1AP_SECURITYKEY_BIT_STRING_LEN, key);
   users[rnti].set_security_key(key, LIBLTE_S1AP_SECURITYKEY_BIT_STRING_LEN/8);
 
+  // CSFB
+  if (msg->CSFallbackIndicator_present) {
+    if (msg->CSFallbackIndicator.e == LIBLTE_S1AP_CSFALLBACKINDICATOR_CS_FALLBACK_REQUIRED ||
+        msg->CSFallbackIndicator.e == LIBLTE_S1AP_CSFALLBACKINDICATOR_CS_FALLBACK_HIGH_PRIORITY) {
+      users[rnti].is_csfb = true;
+    }
+  }
+
   // Send RRC security mode command
   users[rnti].send_security_mode_command();
 
@@ -353,6 +361,76 @@ bool rrc::setup_ue_ctxt(uint16_t rnti, LIBLTE_S1AP_MESSAGE_INITIALCONTEXTSETUPRE
 
   return true;
 }
+
+bool rrc::modify_ue_ctxt(uint16_t rnti, LIBLTE_S1AP_MESSAGE_UECONTEXTMODIFICATIONREQUEST_STRUCT *msg)
+{
+  bool err = false;
+  pthread_mutex_lock(&user_mutex);
+
+  rrc_log->info("Modifying context for 0x%x\n", rnti);
+
+  if (users.count(rnti) == 0) {
+    rrc_log->warning("Unrecognised rnti: 0x%x\n", rnti);
+    pthread_mutex_unlock(&user_mutex);
+    return false;
+  }
+
+  if (msg->CSFallbackIndicator_present) {
+    if (msg->CSFallbackIndicator.e == LIBLTE_S1AP_CSFALLBACKINDICATOR_CS_FALLBACK_REQUIRED ||
+        msg->CSFallbackIndicator.e == LIBLTE_S1AP_CSFALLBACKINDICATOR_CS_FALLBACK_HIGH_PRIORITY) {
+      /* Remember that we are in a CSFB right now */
+      users[rnti].is_csfb = true;
+    }
+  }
+
+  if (msg->AdditionalCSFallbackIndicator_present) {
+    rrc_log->warning("Not handling AdditionalCSFallbackIndicator\n");
+    err = true;
+  }
+  if (msg->CSGMembershipStatus_present) {
+    rrc_log->warning("Not handling CSGMembershipStatus\n");
+    err = true;
+  }
+  if (msg->RegisteredLAI_present) {
+    rrc_log->warning("Not handling RegisteredLAI\n");
+    err = true;
+  }
+  if (msg->SubscriberProfileIDforRFP_present) {
+    rrc_log->warning("Not handling SubscriberProfileIDforRFP\n");
+    err = true;
+  }
+
+  if (err) {
+    // maybe pass a cause value?
+    pthread_mutex_unlock(&user_mutex);
+    return false;
+  }
+
+  // UEAggregateMaximumBitrate
+  if (msg->uEaggregateMaximumBitrate_present) {
+    users[rnti].set_bitrates(&msg->uEaggregateMaximumBitrate);
+  }
+
+  // UESecurityCapabilities
+  if (msg->UESecurityCapabilities_present) {
+    users[rnti].set_security_capabilities(&msg->UESecurityCapabilities);
+  }
+
+  // SecurityKey
+  if (msg->SecurityKey_present) {
+    uint8_t key[32];
+    liblte_pack(msg->SecurityKey.buffer, LIBLTE_S1AP_SECURITYKEY_BIT_STRING_LEN, key);
+    users[rnti].set_security_key(key, LIBLTE_S1AP_SECURITYKEY_BIT_STRING_LEN / 8);
+
+    // Send RRC security mode command ??
+    users[rnti].send_security_mode_command();
+  }
+
+  pthread_mutex_unlock(&user_mutex);
+
+  return true;
+}
+
 
 bool rrc::setup_ue_erabs(uint16_t rnti, LIBLTE_S1AP_MESSAGE_E_RABSETUPREQUEST_STRUCT *msg)
 {
@@ -739,6 +817,10 @@ uint32_t rrc::generate_sibs()
     log_rrc_message("SIB payload", Tx, sib_buffer[msg_index].get(), msg[msg_index]);
   }
 
+  if (cfg.sibs[6].type() == asn1::rrc::sys_info_r8_ies_s::sib_type_and_info_item_c_::types::sib7) {
+    sib7 = cfg.sibs[6].sib7();
+  }
+
   return nof_messages;
 }
 
@@ -949,6 +1031,7 @@ rrc::ue::ue()
   integ_algo        = srslte::INTEGRITY_ALGORITHM_ID_EIA0;
   cipher_algo       = srslte::CIPHERING_ALGORITHM_ID_EEA0;
   nas_pending       = false;
+  is_csfb           = false;
   state             = RRC_STATE_IDLE;
   pool              = srslte::byte_buffer_pool::get_instance();
 }
@@ -1529,12 +1612,11 @@ void rrc::ue::send_connection_setup(bool is_setup)
   parent->rlc->add_bearer(rnti, 1, srslte::rlc_config_t::srb_config(1));
 
   // Configure SRB1 in PDCP
-  srslte::srslte_pdcp_config_t pdcp_cnfg;
-  pdcp_cnfg.bearer_id  = 1;
-  pdcp_cnfg.is_control = true;
-  pdcp_cnfg.is_data    = false;
-  pdcp_cnfg.sn_len     = 5;
-  pdcp_cnfg.direction  = SECURITY_DIRECTION_DOWNLINK;
+  srslte::pdcp_config_t pdcp_cnfg{.bearer_id    = 1,
+                                  .rb_type      = srslte::PDCP_RB_IS_SRB,
+                                  .tx_direction = srslte::SECURITY_DIRECTION_DOWNLINK,
+                                  .rx_direction = srslte::SECURITY_DIRECTION_UPLINK,
+                                  .sn_len       = srslte::PDCP_SN_LEN_5};
   parent->pdcp->add_bearer(rnti, 1, pdcp_cnfg);
 
   // Configure PHY layer
@@ -1544,7 +1626,7 @@ void rrc::ue::send_connection_setup(bool is_setup)
 
   rr_cfg->drb_to_add_mod_list_present      = false;
   rr_cfg->drb_to_release_list_present      = false;
-  rr_cfg->rlf_timers_and_consts_r9_present = false;
+  rr_cfg->rlf_timers_and_consts_r9.set_present(false);
   rr_cfg->sps_cfg_present                  = false;
   //  rr_cfg->rlf_timers_and_constants_present = false;
 
@@ -1563,6 +1645,12 @@ void rrc::ue::send_connection_release()
   dl_dcch_msg.msg.c1().rrc_conn_release().rrc_transaction_id = (uint8_t)((transaction_id++) % 4);
   dl_dcch_msg.msg.c1().rrc_conn_release().crit_exts.set_c1().set_rrc_conn_release_r8();
   dl_dcch_msg.msg.c1().rrc_conn_release().crit_exts.c1().rrc_conn_release_r8().release_cause = release_cause_e::other;
+  if (is_csfb) {
+    rrc_conn_release_r8_ies_s& rel_ies = dl_dcch_msg.msg.c1().rrc_conn_release().crit_exts.c1().rrc_conn_release_r8();
+    rel_ies.redirected_carrier_info_present = true;
+    rel_ies.redirected_carrier_info.set_geran();
+    rel_ies.redirected_carrier_info.geran() = parent->sib7.carrier_freqs_info_list[0].carrier_freqs;
+  }
 
   send_dl_dcch(&dl_dcch_msg);
 }
@@ -1692,10 +1780,14 @@ void rrc::ue::send_connection_reconf(srslte::unique_byte_buffer_t pdu)
     if (phy_cfg->ant_info_present and
         ((phy_cfg->ant_info.explicit_value().tx_mode == ant_info_ded_s::tx_mode_e_::tm3) ||
          (phy_cfg->ant_info.explicit_value().tx_mode == ant_info_ded_s::tx_mode_e_::tm4))) {
-      phy_cfg->cqi_report_cfg.cqi_report_periodic.set_setup();
-      phy_cfg->cqi_report_cfg.cqi_report_periodic.setup().ri_cfg_idx_present = true;
-      phy_cfg->cqi_report_cfg.cqi_report_periodic.setup().ri_cfg_idx         = 483;
-      parent->rrc_log->console("\nWarning: Only 1 user is supported in TM3 and TM4\n\n");
+      uint16_t ri_idx = 0;
+      if (ri_get(parent->cfg.cqi_cfg.m_ri, &ri_idx) == SRSLTE_SUCCESS) {
+        phy_cfg->cqi_report_cfg.cqi_report_periodic.set_setup();
+        phy_cfg->cqi_report_cfg.cqi_report_periodic.setup().ri_cfg_idx_present = true;
+        phy_cfg->cqi_report_cfg.cqi_report_periodic.setup().ri_cfg_idx         = ri_idx;
+      } else {
+        parent->rrc_log->console("\nWarning: Configured wrong M_ri parameter.\n\n");
+      }
     } else {
       phy_cfg->cqi_report_cfg.cqi_report_periodic.setup().ri_cfg_idx_present = false;
     }
@@ -1739,13 +1831,12 @@ void rrc::ue::send_connection_reconf(srslte::unique_byte_buffer_t pdu)
   parent->rlc->add_bearer(rnti, 2, srslte::rlc_config_t::srb_config(2));
 
   // Configure SRB2 in PDCP
-  srslte::srslte_pdcp_config_t pdcp_cnfg;
-  pdcp_cnfg.bearer_id  = 2;
-  pdcp_cnfg.direction  = SECURITY_DIRECTION_DOWNLINK;
-  pdcp_cnfg.is_control = true;
-  pdcp_cnfg.is_data    = false;
-  pdcp_cnfg.sn_len     = 5;
-  parent->pdcp->add_bearer(rnti, 2, pdcp_cnfg);
+  srslte::pdcp_config_t pdcp_cnfg_srb = {.bearer_id    = 2,
+                                         .rb_type      = srslte::PDCP_RB_IS_SRB,
+                                         .tx_direction = srslte::SECURITY_DIRECTION_DOWNLINK,
+                                         .rx_direction = srslte::SECURITY_DIRECTION_UPLINK,
+                                         .sn_len       = srslte::PDCP_SN_LEN_5};
+  parent->pdcp->add_bearer(rnti, 2, pdcp_cnfg_srb);
   parent->pdcp->config_security(rnti, 2, k_rrc_enc, k_rrc_int, k_up_enc, cipher_algo, integ_algo);
   parent->pdcp->enable_integrity(rnti, 2);
   parent->pdcp->enable_encryption(rnti, 2);
@@ -1754,17 +1845,18 @@ void rrc::ue::send_connection_reconf(srslte::unique_byte_buffer_t pdu)
   parent->rlc->add_bearer(rnti, 3, srslte::make_rlc_config_t(conn_reconf->rr_cfg_ded.drb_to_add_mod_list[0].rlc_cfg));
 
   // Configure DRB1 in PDCP
-  pdcp_cnfg.is_control = false;
-  pdcp_cnfg.is_data    = true;
-  pdcp_cnfg.sn_len     = 12;
-  pdcp_cnfg.bearer_id  = 1; // TODO: Review all ID mapping LCID DRB ERAB EPSBID Mapping
+  srslte::pdcp_config_t pdcp_cnfg_drb = {.bearer_id    = 1,
+                                         .rb_type      = srslte::PDCP_RB_IS_DRB,
+                                         .tx_direction = srslte::SECURITY_DIRECTION_DOWNLINK,
+                                         .rx_direction = srslte::SECURITY_DIRECTION_UPLINK,
+                                         .sn_len       = srslte::PDCP_SN_LEN_12};
   if (conn_reconf->rr_cfg_ded.drb_to_add_mod_list[0].pdcp_cfg.rlc_um_present) {
     if (conn_reconf->rr_cfg_ded.drb_to_add_mod_list[0].pdcp_cfg.rlc_um.pdcp_sn_size.value ==
         pdcp_cfg_s::rlc_um_s_::pdcp_sn_size_e_::len7bits) {
-      pdcp_cnfg.sn_len = 7;
+      pdcp_cnfg_drb.sn_len = srslte::PDCP_SN_LEN_7;
     }
   }
-  parent->pdcp->add_bearer(rnti, 3, pdcp_cnfg);
+  parent->pdcp->add_bearer(rnti, 3, pdcp_cnfg_drb);
   parent->pdcp->config_security(rnti, 3, k_rrc_enc, k_rrc_int, k_up_enc, cipher_algo, integ_algo);
   parent->pdcp->enable_integrity(rnti, 3);
   parent->pdcp->enable_encryption(rnti, 3);
@@ -1821,12 +1913,12 @@ void rrc::ue::send_connection_reconf_new_bearer(LIBLTE_S1AP_E_RABTOBESETUPLISTBE
     parent->rlc->add_bearer(rnti, lcid, srslte::make_rlc_config_t(drb_item.rlc_cfg));
 
     // Configure DRB in PDCP
-    srslte::srslte_pdcp_config_t pdcp_config;
-    pdcp_config.bearer_id  = drb_item.drb_id - 1; // TODO: Review all ID mapping LCID DRB ERAB EPSBID Mapping
-    pdcp_config.is_control = false;
-    pdcp_config.is_data    = true;
-    pdcp_config.sn_len     = 12;
-    pdcp_config.direction  = SECURITY_DIRECTION_DOWNLINK;
+    srslte::pdcp_config_t pdcp_config = {
+        .bearer_id    = (uint8_t)(drb_item.drb_id - 1), // TODO: Review all ID mapping LCID DRB ERAB EPSBID Mapping
+        .rb_type      = srslte::PDCP_RB_IS_DRB,
+        .tx_direction = srslte::SECURITY_DIRECTION_DOWNLINK,
+        .rx_direction = srslte::SECURITY_DIRECTION_UPLINK,
+        .sn_len       = srslte::PDCP_SN_LEN_12};
     parent->pdcp->add_bearer(rnti, lcid, pdcp_config);
 
     // DRB has already been configured in GTPU through bearer setup
@@ -1926,6 +2018,17 @@ bool rrc::ue::select_security_algorithms()
         parent->rrc_log->info("Failed to selected EEA2 as RRC encryption algorithm, due to unsupported algorithm\n");
       }
       break;
+    case srslte::CIPHERING_ALGORITHM_ID_128_EEA3:
+      // “third bit” – 128-EEA3,
+      if (security_capabilities.encryptionAlgorithms.buffer[srslte::CIPHERING_ALGORITHM_ID_128_EEA3 - 1]) {
+        cipher_algo    = srslte::CIPHERING_ALGORITHM_ID_128_EEA3;
+        enc_algo_found = true;
+        parent->rrc_log->info("Selected EEA3 as RRC encryption algorithm\n");
+        break;
+      } else {
+        parent->rrc_log->info("Failed to selected EEA2 as RRC encryption algorithm, due to unsupported algorithm\n");
+      }
+      break;
     default:
       enc_algo_found = false;
       break;
@@ -1959,6 +2062,16 @@ bool rrc::ue::select_security_algorithms()
         parent->rrc_log->info("Selected EIA2 as RRC integrity algorithm.\n");
       } else {
         parent->rrc_log->info("Failed to selected EIA2 as RRC encryption algorithm, due to unsupported algorithm\n");
+      }
+      break;
+    case srslte::INTEGRITY_ALGORITHM_ID_128_EIA3:
+      // “third bit” – 128-EIA3,
+      if (security_capabilities.integrityProtectionAlgorithms.buffer[srslte::INTEGRITY_ALGORITHM_ID_128_EIA3 - 1]) {
+        integ_algo       = srslte::INTEGRITY_ALGORITHM_ID_128_EIA3;
+        integ_algo_found = true;
+        parent->rrc_log->info("Selected EIA3 as RRC integrity algorithm.\n");
+      } else {
+        parent->rrc_log->info("Failed to selected EIA3 as RRC encryption algorithm, due to unsupported algorithm\n");
       }
       break;
     default:
@@ -2007,10 +2120,15 @@ void rrc::ue::send_dl_dcch(dl_dcch_msg_s* dl_dcch_msg, srslte::unique_byte_buffe
     dl_dcch_msg->pack(bref);
     pdu->N_bytes = 1u + (uint32_t)bref.distance_bytes(pdu->msg);
 
+    // send on SRB2 if user is fully registered (after RRC reconfig complete)
+    uint32_t lcid =
+        parent->rlc->has_bearer(rnti, RB_ID_SRB2) && state == RRC_STATE_REGISTERED ? RB_ID_SRB2 : RB_ID_SRB1;
+
     char buf[32] = {};
-    sprintf(buf, "SRB1 - rnti=0x%x", rnti);
+    sprintf(buf, "SRB%d - rnti=0x%x", lcid, rnti);
     parent->log_rrc_message(buf, Tx, pdu.get(), *dl_dcch_msg);
-    parent->pdcp->write_sdu(rnti, RB_ID_SRB1, std::move(pdu));
+
+    parent->pdcp->write_sdu(rnti, lcid, std::move(pdu));
   } else {
     parent->rrc_log->error("Allocating pdu\n");
   }
@@ -2186,4 +2304,43 @@ int rrc::ue::cqi_allocate(uint32_t period, uint16_t* pmi_idx, uint16_t* n_pucch)
   return 0; 
 }
 
+int rrc::ue::ri_get(uint32_t m_ri, uint16_t* ri_idx)
+{
+  int32_t ret = SRSLTE_SUCCESS;
+
+  uint32_t I_ri        = 0;
+  int32_t  N_offset_ri = 0; // Naivest approach: overlap RI with PMI
+  switch (m_ri) {
+    case 0:
+      // Disabled
+      break;
+    case 1:
+      I_ri = -N_offset_ri;
+      break;
+    case 2:
+      I_ri = 161 - N_offset_ri;
+      break;
+    case 4:
+      I_ri = 322 - N_offset_ri;
+      break;
+    case 8:
+      I_ri = 483 - N_offset_ri;
+      break;
+    case 16:
+      I_ri = 644 - N_offset_ri;
+      break;
+    case 32:
+      I_ri = 805 - N_offset_ri;
+      break;
+    default:
+      parent->rrc_log->error("Allocating RI: invalid m_ri=%d\n", m_ri);
+  }
+
+  // If ri_dix is available, copy
+  if (ri_idx) {
+    *ri_idx = I_ri;
+  }
+
+  return ret;
+}
 }

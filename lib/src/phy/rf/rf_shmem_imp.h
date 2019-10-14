@@ -35,8 +35,6 @@
 
 SRSLTE_API   char*  rf_shmem_devname (void *h);
 
-SRSLTE_API   bool   rf_shmem_rx_wait_lo_locked(void *h);
-
 SRSLTE_API   int    rf_shmem_start_rx_stream(void *h, bool now);
 
 SRSLTE_API   int    rf_shmem_stop_rx_stream(void *h);
@@ -57,10 +55,6 @@ SRSLTE_API   int    rf_shmem_open(char *args, void **h);
 SRSLTE_API   int    rf_shmem_open_multi(char *args, void **h, uint32_t nof_channels);
 
 SRSLTE_API   int    rf_shmem_close(void *h);
-
-SRSLTE_API   void   rf_shmem_set_master_clock_rate(void *h, double rate);
-
-SRSLTE_API   bool   rf_shmem_is_master_clock_dynamic(void *h);
 
 SRSLTE_API   double rf_shmem_set_rx_srate(void *h, double freq);
 

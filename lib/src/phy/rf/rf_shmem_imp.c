@@ -646,14 +646,6 @@ char* rf_shmem_devname(void *h)
  }
 
 
-bool rf_shmem_rx_wait_lo_locked(void *h)
- {
-   RF_SHMEM_LOG_FUNC_TODO;
-
-   return false;
- }
-
-
 int rf_shmem_start_rx_stream(void *h, bool now)
  {
    RF_SHMEM_GET_STATE(h);
@@ -852,25 +844,6 @@ int rf_shmem_close(void *h)
   close(_state->ctrl_fd);
  
   return 0;
- }
-
-
-void rf_shmem_set_master_clock_rate(void *h, double rate)
- {
-   RF_SHMEM_GET_STATE(h);
-
-   RF_SHMEM_INFO("rate %4.2lf MHz to %4.2lf MHz", 
-                 _state->clock_rate / 1e6, rate / 1e6);
-
-   _state->clock_rate = rate;
- }
-
-
-bool rf_shmem_is_master_clock_dynamic(void *h)
- {
-   RF_SHMEM_LOG_FUNC_TODO;
-
-   return false;
  }
 
 
