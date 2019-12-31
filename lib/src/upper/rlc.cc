@@ -20,9 +20,10 @@
  */
 
 #include "srslte/upper/rlc.h"
+#include "srslte/upper/rlc_am_lte.h"
 #include "srslte/upper/rlc_tm.h"
-#include "srslte/upper/rlc_um.h"
-#include "srslte/upper/rlc_am.h"
+#include "srslte/upper/rlc_um_lte.h"
+#include "srslte/upper/rlc_um_nr.h"
 
 namespace srslte {
 
@@ -38,12 +39,12 @@ rlc::~rlc()
   // destroy all remaining entities
   pthread_rwlock_wrlock(&rwlock);
   for (rlc_map_t::iterator it = rlc_array.begin(); it != rlc_array.end(); ++it) {
-    delete(it->second);
+    delete (it->second);
   }
   rlc_array.clear();
 
   for (rlc_map_t::iterator it = rlc_array_mrb.begin(); it != rlc_array_mrb.end(); ++it) {
-    delete(it->second);
+    delete (it->second);
   }
   rlc_array_mrb.clear();
 
@@ -53,7 +54,7 @@ rlc::~rlc()
 
 void rlc::init(srsue::pdcp_interface_rlc* pdcp_,
                srsue::rrc_interface_rlc*  rrc_,
-               srslte::timers*            timers_,
+               srslte::timer_handler*     timers_,
                uint32_t                   lcid_)
 {
   pdcp         = pdcp_;
@@ -68,7 +69,7 @@ void rlc::init(srsue::pdcp_interface_rlc* pdcp_,
   add_bearer(default_lcid, rlc_config_t());
 }
 
-void rlc::reset_metrics() 
+void rlc::reset_metrics()
 {
   for (rlc_map_t::iterator it = rlc_array.begin(); it != rlc_array.end(); ++it) {
     it->second->reset_metrics();
@@ -91,29 +92,30 @@ void rlc::stop()
   pthread_rwlock_unlock(&rwlock);
 }
 
-void rlc::get_metrics(rlc_metrics_t &m)
+void rlc::get_metrics(rlc_metrics_t& m)
 {
   pthread_rwlock_rdlock(&rwlock);
 
   gettimeofday(&metrics_time[2], NULL);
   get_time_interval(metrics_time);
-  double secs = (double)metrics_time[0].tv_sec + metrics_time[0].tv_usec*1e-6;
+  double secs = (double)metrics_time[0].tv_sec + metrics_time[0].tv_usec * 1e-6;
 
   for (rlc_map_t::iterator it = rlc_array.begin(); it != rlc_array.end(); ++it) {
-    m.dl_tput_mbps[it->first] = (it->second->get_num_rx_bytes()*8/static_cast<double>(1e6))/secs;
-    m.ul_tput_mbps[it->first] = (it->second->get_num_tx_bytes()*8/static_cast<double>(1e6))/secs;
+    rlc_bearer_metrics_t metrics = it->second->get_metrics();
     rlc_log->info("LCID=%d, RX throughput: %4.6f Mbps. TX throughput: %4.6f Mbps.\n",
-                    it->first,
-                    (it->second->get_num_rx_bytes()*8/static_cast<double>(1e6))/secs,
-                    (it->second->get_num_tx_bytes()*8/static_cast<double>(1e6))/secs);
+                  it->first,
+                  (metrics.num_rx_bytes * 8 / static_cast<double>(1e6)) / secs,
+                  (metrics.num_tx_bytes * 8 / static_cast<double>(1e6)) / secs);
+    m.bearer[it->first] = metrics;
   }
 
   // Add multicast metrics
   for (rlc_map_t::iterator it = rlc_array_mrb.begin(); it != rlc_array_mrb.end(); ++it) {
-    m.dl_tput_mbps[it->first] = (it->second->get_num_rx_bytes()*8/static_cast<double>(1e6))/secs;
+    rlc_bearer_metrics_t metrics = it->second->get_metrics();
     rlc_log->info("MCH_LCID=%d, RX throughput: %4.6f Mbps\n",
                   it->first,
-                  (it->second->get_num_rx_bytes()*8/static_cast<double>(1e6))/secs);
+                  (metrics.num_rx_bytes * 8 / static_cast<double>(1e6)) / secs);
+    m.bearer[it->first] = metrics;
   }
 
   memcpy(&metrics_time[1], &metrics_time[2], sizeof(struct timeval));
@@ -159,13 +161,13 @@ void rlc::reset()
 
   for (rlc_map_t::iterator it = rlc_array.begin(); it != rlc_array.end(); ++it) {
     it->second->stop();
-    delete(it->second);
+    delete (it->second);
   }
   rlc_array.clear();
 
   for (rlc_map_t::iterator it = rlc_array_mrb.begin(); it != rlc_array_mrb.end(); ++it) {
     it->second->stop();
-    delete(it->second);
+    delete (it->second);
   }
   rlc_array_mrb.clear();
 
@@ -191,7 +193,7 @@ void rlc::empty_queue()
 
 void rlc::write_sdu(uint32_t lcid, unique_byte_buffer_t sdu, bool blocking)
 {
-  // FIXME: rework build PDU logic to allow large SDUs (without concatenation)
+  // TODO: rework build PDU logic to allow large SDUs (without concatenation)
   if (sdu->N_bytes > RLC_MAX_SDU_SIZE) {
     rlc_log->warning("Dropping too long SDU of size %d B (Max. size %d B).\n", sdu->N_bytes, RLC_MAX_SDU_SIZE);
     return;
@@ -217,7 +219,6 @@ void rlc::write_sdu_mch(uint32_t lcid, unique_byte_buffer_t sdu)
   pthread_rwlock_unlock(&rwlock);
 }
 
-
 bool rlc::rb_is_um(uint32_t lcid)
 {
   bool ret = false;
@@ -231,6 +232,17 @@ bool rlc::rb_is_um(uint32_t lcid)
   pthread_rwlock_unlock(&rwlock);
 
   return ret;
+}
+
+void rlc::discard_sdu(uint32_t lcid, uint32_t discard_sn)
+{
+  pthread_rwlock_rdlock(&rwlock);
+  if (valid_lcid(lcid)) {
+    rlc_array.at(lcid)->discard_sdu(discard_sn);
+  } else {
+    rlc_log->warning("RLC LCID %d doesn't exist. Ignoring discard SDU\n", lcid);
+  }
+  pthread_rwlock_unlock(&rwlock);
 }
 
 /*******************************************************************************
@@ -276,7 +288,7 @@ uint32_t rlc::get_total_mch_buffer_state(uint32_t lcid)
   return ret;
 }
 
-int rlc::read_pdu(uint32_t lcid, uint8_t *payload, uint32_t nof_bytes)
+int rlc::read_pdu(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes)
 {
   uint32_t ret = 0;
 
@@ -291,7 +303,7 @@ int rlc::read_pdu(uint32_t lcid, uint8_t *payload, uint32_t nof_bytes)
   return ret;
 }
 
-int rlc::read_pdu_mch(uint32_t lcid, uint8_t *payload, uint32_t nof_bytes)
+int rlc::read_pdu_mch(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes)
 {
   uint32_t ret = 0;
 
@@ -306,7 +318,7 @@ int rlc::read_pdu_mch(uint32_t lcid, uint8_t *payload, uint32_t nof_bytes)
   return ret;
 }
 
-void rlc::write_pdu(uint32_t lcid, uint8_t *payload, uint32_t nof_bytes)
+void rlc::write_pdu(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes)
 {
   pthread_rwlock_rdlock(&rwlock);
   if (valid_lcid(lcid)) {
@@ -318,7 +330,7 @@ void rlc::write_pdu(uint32_t lcid, uint8_t *payload, uint32_t nof_bytes)
 }
 
 // Pass directly to PDCP, no DL througput counting done
-void rlc::write_pdu_bcch_bch(uint8_t *payload, uint32_t nof_bytes)
+void rlc::write_pdu_bcch_bch(uint8_t* payload, uint32_t nof_bytes)
 {
   rlc_log->info_hex(payload, nof_bytes, "BCCH BCH message received.");
   unique_byte_buffer_t buf = allocate_unique_buffer(*pool);
@@ -333,7 +345,7 @@ void rlc::write_pdu_bcch_bch(uint8_t *payload, uint32_t nof_bytes)
 }
 
 // Pass directly to PDCP, no DL througput counting done
-void rlc::write_pdu_bcch_dlsch(uint8_t *payload, uint32_t nof_bytes)
+void rlc::write_pdu_bcch_dlsch(uint8_t* payload, uint32_t nof_bytes)
 {
   rlc_log->info_hex(payload, nof_bytes, "BCCH TXSCH message received.");
   unique_byte_buffer_t buf = allocate_unique_buffer(*pool);
@@ -348,7 +360,7 @@ void rlc::write_pdu_bcch_dlsch(uint8_t *payload, uint32_t nof_bytes)
 }
 
 // Pass directly to PDCP, no DL througput counting done
-void rlc::write_pdu_pcch(uint8_t *payload, uint32_t nof_bytes)
+void rlc::write_pdu_pcch(uint8_t* payload, uint32_t nof_bytes)
 {
   rlc_log->info_hex(payload, nof_bytes, "PCCH message received.");
   unique_byte_buffer_t buf = allocate_unique_buffer(*pool);
@@ -362,7 +374,7 @@ void rlc::write_pdu_pcch(uint8_t *payload, uint32_t nof_bytes)
   }
 }
 
-void rlc::write_pdu_mch(uint32_t lcid, uint8_t *payload, uint32_t nof_bytes)
+void rlc::write_pdu_mch(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes)
 {
   pthread_rwlock_rdlock(&rwlock);
   if (valid_lcid_mrb(lcid)) {
@@ -379,22 +391,41 @@ void rlc::add_bearer(uint32_t lcid, rlc_config_t cnfg)
 {
   pthread_rwlock_wrlock(&rwlock);
 
-  rlc_common *rlc_entity = NULL;
+  rlc_common* rlc_entity = NULL;
 
   if (not valid_lcid(lcid)) {
-    switch (cnfg.rlc_mode) {
-      case rlc_mode_t::tm:
-        rlc_entity = new rlc_tm(rlc_log, lcid, pdcp, rrc, timers);
-        break;
-      case rlc_mode_t::am:
-        rlc_entity = new rlc_am(rlc_log, lcid, pdcp, rrc, timers);
-        break;
-      case rlc_mode_t::um:
-        rlc_entity = new rlc_um(rlc_log, lcid, pdcp, rrc, timers);
-        break;
-      default:
-        rlc_log->error("Cannot add RLC entity - invalid mode\n");
-        goto unlock_and_exit;
+    if (cnfg.rat == srslte_rat_t::lte) {
+      switch (cnfg.rlc_mode) {
+        case rlc_mode_t::tm:
+          rlc_entity = new rlc_tm(rlc_log, lcid, pdcp, rrc, timers);
+          break;
+        case rlc_mode_t::am:
+          rlc_entity = new rlc_am_lte(rlc_log, lcid, pdcp, rrc, timers);
+          break;
+        case rlc_mode_t::um:
+          rlc_entity = new rlc_um_lte(rlc_log, lcid, pdcp, rrc, timers);
+          break;
+        default:
+          rlc_log->error("Cannot add RLC entity - invalid mode\n");
+          goto unlock_and_exit;
+      }
+#ifdef HAVE_5GNR
+    } else if (cnfg.rat == srslte_rat_t::nr) {
+      switch (cnfg.rlc_mode) {
+        case rlc_mode_t::tm:
+          rlc_entity = new rlc_tm(rlc_log, lcid, pdcp, rrc, timers);
+          break;
+        case rlc_mode_t::um:
+          rlc_entity = new rlc_um_nr(rlc_log, lcid, pdcp, rrc, timers);
+          break;
+        default:
+          rlc_log->error("Cannot add RLC entity - invalid mode\n");
+          goto unlock_and_exit;
+      }
+#endif
+    } else {
+      rlc_log->error("RAT not supported\n");
+      goto unlock_and_exit;
     }
 
     if (not rlc_array.insert(rlc_map_pair_t(lcid, rlc_entity)).second) {
@@ -406,7 +437,7 @@ void rlc::add_bearer(uint32_t lcid, rlc_config_t cnfg)
   }
 
   // configure and add to array
-  if (cnfg.rlc_mode != rlc_mode_t::tm) {
+  if (cnfg.rlc_mode != rlc_mode_t::tm and rlc_array.find(lcid) != rlc_array.end()) {
     if (not rlc_array.at(lcid)->configure(cnfg)) {
       rlc_log->error("Error configuring RLC entity\n.");
       goto delete_and_exit;
@@ -417,13 +448,12 @@ void rlc::add_bearer(uint32_t lcid, rlc_config_t cnfg)
 
 delete_and_exit:
   if (rlc_entity) {
-    delete(rlc_entity);
+    delete (rlc_entity);
   }
 
 unlock_and_exit:
   pthread_rwlock_unlock(&rwlock);
 }
-
 
 void rlc::add_bearer_mrb(uint32_t lcid)
 {
@@ -431,7 +461,7 @@ void rlc::add_bearer_mrb(uint32_t lcid)
   rlc_common* rlc_entity = NULL;
 
   if (not valid_lcid_mrb(lcid)) {
-    rlc_entity = new rlc_um(rlc_log, lcid, pdcp, rrc, timers);
+    rlc_entity = new rlc_um_lte(rlc_log, lcid, pdcp, rrc, timers);
     // configure and add to array
     if (not rlc_entity->configure(rlc_config_t::mch_config())) {
       rlc_log->error("Error configuring RLC entity\n.");
@@ -449,13 +479,12 @@ void rlc::add_bearer_mrb(uint32_t lcid)
 
 delete_and_exit:
   if (rlc_entity != NULL) {
-    delete(rlc_entity);
+    delete (rlc_entity);
   }
 
 unlock_and_exit:
   pthread_rwlock_unlock(&rwlock);
 }
-
 
 void rlc::del_bearer(uint32_t lcid)
 {
@@ -464,7 +493,7 @@ void rlc::del_bearer(uint32_t lcid)
   if (valid_lcid(lcid)) {
     rlc_map_t::iterator it = rlc_array.find(lcid);
     it->second->stop();
-    delete(it->second);
+    delete (it->second);
     rlc_array.erase(it);
     rlc_log->warning("Deleted RLC bearer %s\n", rrc->get_rb_name(lcid).c_str());
   } else {
@@ -474,7 +503,6 @@ void rlc::del_bearer(uint32_t lcid)
   pthread_rwlock_unlock(&rwlock);
 }
 
-
 void rlc::del_bearer_mrb(uint32_t lcid)
 {
   pthread_rwlock_wrlock(&rwlock);
@@ -482,7 +510,7 @@ void rlc::del_bearer_mrb(uint32_t lcid)
   if (valid_lcid_mrb(lcid)) {
     rlc_map_t::iterator it = rlc_array_mrb.find(lcid);
     it->second->stop();
-    delete(it->second);
+    delete (it->second);
     rlc_array_mrb.erase(it);
     rlc_log->warning("Deleted RLC MRB bearer %s\n", rrc->get_rb_name(lcid).c_str());
   } else {
@@ -492,7 +520,6 @@ void rlc::del_bearer_mrb(uint32_t lcid)
   pthread_rwlock_unlock(&rwlock);
 }
 
-
 void rlc::change_lcid(uint32_t old_lcid, uint32_t new_lcid)
 {
   pthread_rwlock_wrlock(&rwlock);
@@ -500,8 +527,8 @@ void rlc::change_lcid(uint32_t old_lcid, uint32_t new_lcid)
   // make sure old LCID exists and new LCID is still free
   if (valid_lcid(old_lcid) && not valid_lcid(new_lcid)) {
     // insert old rlc entity into new LCID
-    rlc_map_t::iterator it = rlc_array.find(old_lcid);
-    rlc_common *rlc_entity = it->second;
+    rlc_map_t::iterator it         = rlc_array.find(old_lcid);
+    rlc_common*         rlc_entity = it->second;
     if (not rlc_array.insert(rlc_map_pair_t(new_lcid, rlc_entity)).second) {
       rlc_log->error("Error inserting RLC entity into array\n.");
       goto exit;
@@ -515,7 +542,10 @@ void rlc::change_lcid(uint32_t old_lcid, uint32_t new_lcid)
       rlc_log->error("Error during LCID change of RLC bearer from %d to %d\n", old_lcid, new_lcid);
     }
   } else {
-    rlc_log->error("Can't change LCID of bearer %s from %d to %d. Bearer doesn't exist or new LCID already occupied.\n", rrc->get_rb_name(old_lcid).c_str(), old_lcid, new_lcid);
+    rlc_log->error("Can't change LCID of bearer %s from %d to %d. Bearer doesn't exist or new LCID already occupied.\n",
+                   rrc->get_rb_name(old_lcid).c_str(),
+                   old_lcid,
+                   new_lcid);
   }
 exit:
   pthread_rwlock_unlock(&rwlock);
@@ -563,7 +593,6 @@ bool rlc::has_bearer(uint32_t lcid)
   pthread_rwlock_unlock(&rwlock);
   return ret;
 }
-
 
 /*******************************************************************************
   Helpers (Lock must be hold when calling those)

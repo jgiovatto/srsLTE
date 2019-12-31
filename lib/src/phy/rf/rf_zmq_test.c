@@ -27,7 +27,7 @@
 #include <zmq.h>
 
 #define NOF_RX_ANT 1
-#define NUM_SF (10240)
+#define NUM_SF (500)
 #define SF_LEN (1920)
 #define RF_BUFFER_SIZE (SF_LEN * NUM_SF)
 #define TX_OFFSET_MS (4)
@@ -42,7 +42,7 @@ pthread_t          rx_thread;
 void* ue_rx_thread_function(void* args)
 {
   char rf_args[PARAM_LEN];
-  strncpy(rf_args, (char*)args, PARAM_LEN);
+  strncpy(rf_args, (char*)args, PARAM_LEN - 1);
   rf_args[PARAM_LEN - 1] = 0;
 
   // sleep(1);
@@ -74,7 +74,7 @@ void* ue_rx_thread_function(void* args)
 void enb_tx_function(const char* tx_args, bool timed_tx)
 {
   char rf_args[PARAM_LEN];
-  strncpy(rf_args, tx_args, PARAM_LEN);
+  strncpy(rf_args, tx_args, PARAM_LEN - 1);
   rf_args[PARAM_LEN - 1] = 0;
 
   printf("opening tx device with args=%s\n", rf_args);
@@ -113,8 +113,8 @@ void enb_tx_function(const char* tx_args, bool timed_tx)
       // subframes)
       srslte_timestamp_copy(&tx_time, &rx_time);
       srslte_timestamp_add(&tx_time, 0, TX_OFFSET_MS * 1e-3);
-      ret = srslte_rf_send_timed_multi(&enb_radio, (void**)data_ptr, SF_LEN, tx_time.full_secs, tx_time.frac_secs, true,
-                                       true, false);
+      ret = srslte_rf_send_timed_multi(
+          &enb_radio, (void**)data_ptr, SF_LEN, tx_time.full_secs, tx_time.frac_secs, true, true, false);
     } else {
       // normal tx
       ret = srslte_rf_send_multi(&enb_radio, (void**)data_ptr, SF_LEN, true, true, false);
@@ -193,14 +193,16 @@ int main()
 
   // two trx radios with continous tx (no timed tx) using TCP transport for both directions
   if (run_test("tx_port=tcp://*:5554,rx_port=tcp://localhost:5555,id=ue,base_srate=1.92e6",
-               "rx_port=tcp://localhost:5554,tx_port=tcp://*:5555,id=enb,base_srate=1.92e6", false) != SRSLTE_SUCCESS) {
+               "rx_port=tcp://localhost:5554,tx_port=tcp://*:5555,id=enb,base_srate=1.92e6",
+               false) != SRSLTE_SUCCESS) {
     fprintf(stderr, "Two TRx radio test failed!\n");
     return -1;
   }
 
   // two trx radios with continous tx (no timed tx) using TCP for UL (UE tx) and IPC for eNB DL (eNB tx)
   if (run_test("tx_port=tcp://*:5554,rx_port=ipc://dl,id=ue,base_srate=1.92e6",
-               "rx_port=tcp://localhost:5554,tx_port=ipc://dl,id=enb,base_srate=1.92e6", true) != SRSLTE_SUCCESS) {
+               "rx_port=tcp://localhost:5554,tx_port=ipc://dl,id=enb,base_srate=1.92e6",
+               true) != SRSLTE_SUCCESS) {
     fprintf(stderr, "Two TRx radio test with timed tx failed!\n");
     return -1;
   }

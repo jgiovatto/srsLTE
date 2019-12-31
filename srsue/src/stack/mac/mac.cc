@@ -19,14 +19,14 @@
  *
  */
 
-#define Error(fmt, ...)   log_h->error(fmt, ##__VA_ARGS__)
+#define Error(fmt, ...) log_h->error(fmt, ##__VA_ARGS__)
 #define Warning(fmt, ...) log_h->warning(fmt, ##__VA_ARGS__)
-#define Info(fmt, ...)    log_h->info(fmt, ##__VA_ARGS__)
-#define Debug(fmt, ...)   log_h->debug(fmt, ##__VA_ARGS__)
+#define Info(fmt, ...) log_h->info(fmt, ##__VA_ARGS__)
+#define Debug(fmt, ...) log_h->debug(fmt, ##__VA_ARGS__)
 
+#include <pthread.h>
 #include <string.h>
 #include <strings.h>
-#include <pthread.h>
 #include <unistd.h>
 
 #include "srslte/common/log.h"
@@ -68,7 +68,7 @@ mac::~mac()
 bool mac::init(phy_interface_mac_lte* phy,
                rlc_interface_mac*     rlc,
                rrc_interface_mac*     rrc,
-               srslte::timers*        timers_,
+               srslte::timer_handler* timers_,
                stack_interface_mac*   stack_)
 {
   phy_h   = phy;
@@ -77,26 +77,20 @@ bool mac::init(phy_interface_mac_lte* phy,
   timers  = timers_;
   stack_h = stack_;
 
-  timer_alignment                      = timers->get_unique_id();
-  uint32_t contention_resolution_timer = timers->get_unique_id();
+  timer_alignment                                                 = timers->get_unique_timer();
+  srslte::timer_handler::unique_timer contention_resolution_timer = timers->get_unique_timer();
 
   bsr_procedure.init(rlc_h, log_h, timers);
   phr_procedure.init(phy_h, log_h, timers);
   mux_unit.init(rlc_h, &bsr_procedure, &phr_procedure);
-  demux_unit.init(phy_h, rlc_h, this, timers->get(timer_alignment));
-  ra_procedure.init(phy_h,
-                    rrc,
-                    log_h,
-                    &uernti,
-                    timers->get(timer_alignment),
-                    timers->get(contention_resolution_timer),
-                    &mux_unit,
-                    stack_h);
+  demux_unit.init(phy_h, rlc_h, this, &timer_alignment);
+  ra_procedure.init(
+      phy_h, rrc, log_h, &uernti, &timer_alignment, std::move(contention_resolution_timer), &mux_unit, stack_h);
   sr_procedure.init(phy_h, rrc, log_h);
 
   // Create UL/DL unique HARQ pointers
   ul_harq.at(0)->init(log_h, &uernti, &ra_procedure, &mux_unit);
-  dl_harq.at(0)->init(log_h, &uernti, timers->get(timer_alignment), &demux_unit);
+  dl_harq.at(0)->init(log_h, &uernti, &timer_alignment, &demux_unit);
 
   reset();
 
@@ -129,7 +123,7 @@ void mac::start_pcap(srslte::mac_pcap* pcap_)
   ra_procedure.start_pcap(pcap);
 }
 
-// FIXME: Change the function name and implement reconfiguration as in specs
+// TODO: Change the function name and implement reconfiguration as in specs
 // Implement Section 5.8
 void mac::reconfiguration(const uint32_t& cc_idx, const bool& enable)
 {
@@ -143,7 +137,7 @@ void mac::reconfiguration(const uint32_t& cc_idx, const bool& enable)
     }
     while (dl_harq.size() < cc_idx + 1) {
       auto dl = dl_harq_entity_ptr(new dl_harq_entity());
-      dl->init(log_h, &uernti, timers->get(timer_alignment), &demux_unit);
+      dl->init(log_h, &uernti, &timer_alignment, &demux_unit);
 
       if (pcap) {
         dl->start_pcap(pcap);
@@ -154,10 +148,11 @@ void mac::reconfiguration(const uint32_t& cc_idx, const bool& enable)
   }
 }
 
-void mac::wait_uplink() {
-  int cnt=0;
+void mac::wait_uplink()
+{
+  int cnt = 0;
   Info("Waiting to uplink...\n");
-  while(mux_unit.is_pending_any_sdu() && cnt<20) {
+  while (mux_unit.is_pending_any_sdu() && cnt < 20) {
     usleep(1000);
     cnt++;
   }
@@ -170,7 +165,7 @@ void mac::reset()
 
   Info("Resetting MAC\n");
 
-  timers->get(timer_alignment)->stop();
+  timer_alignment.stop();
 
   timer_alignment_expire();
 
@@ -233,8 +228,10 @@ void mac::run_tti(const uint32_t tti)
   sr_procedure.step(tti);
 
   // Check SR if we need to start RA
-  if (sr_procedure.need_random_access()) {
-    ra_procedure.start_mac_order();
+  if (enable_ra_proc) {
+    if (sr_procedure.need_random_access()) {
+      ra_procedure.start_mac_order();
+    }
   }
 
   ra_procedure.step(tti);
@@ -268,8 +265,8 @@ void mac::pcch_start_rx()
 
 void mac::clear_rntis()
 {
-  p_window_start  = 0;
-  si_window_start = 0;
+  p_window_start   = 0;
+  si_window_start  = 0;
   ra_window_start  = -1;
   ra_window_length = -1;
   bzero(&uernti, sizeof(ue_rnti_t));
@@ -333,7 +330,7 @@ uint16_t mac::get_dl_sched_rnti(uint32_t tti)
   // Priority: SI-RNTI, P-RNTI, RA-RNTI, Temp-RNTI, CRNTI
   if (si_window_start > 0) {
     if (is_in_window(tti, &si_window_start, &si_window_length)) {
-      // FIXME: This scheduling decision belongs to RRC
+      // TODO: This scheduling decision belongs to RRC
       if (si_window_length > 1) {                     // This is not a SIB1
         if ((tti / 10) % 2 == 0 && (tti % 10) == 5) { // Skip subframe #5 for which SFN mod 2 = 0
           return 0;
@@ -529,18 +526,18 @@ void mac::new_mch_dl(srslte_pdsch_grant_t phy_grant, tb_action_dl_t* action)
 void mac::setup_timers(int time_alignment_timer)
 {
   // stop currently running time alignment timer
-  if (timers->get(timer_alignment)->is_running()) {
-    timers->get(timer_alignment)->stop();
+  if (timer_alignment.is_running()) {
+    timer_alignment.stop();
   }
 
   if (time_alignment_timer > 0) {
-    timers->get(timer_alignment)->set(this, time_alignment_timer);
+    timer_alignment.set(time_alignment_timer, [this](uint32_t tid) { timer_expired(tid); });
   }
 }
 
 void mac::timer_expired(uint32_t timer_id)
 {
-  if(timer_id == timer_alignment) {
+  if (timer_id == timer_alignment.id()) {
     timer_alignment_expire();
   } else {
     Warning("Received callback from unknown timer_id=%d\n", timer_id);
@@ -667,26 +664,6 @@ void mac::get_metrics(mac_metrics_t m[SRSLTE_MAX_CARRIERS])
   memcpy(m, metrics, sizeof(mac_metrics_t) * SRSLTE_MAX_CARRIERS);
   m = metrics;
   bzero(&metrics, sizeof(mac_metrics_t) * SRSLTE_MAX_CARRIERS);
-}
-
-/********************************************************
- *
- * Interface for timers used by upper layers
- *
- *******************************************************/
-srslte::timers::timer* mac::timer_get(uint32_t timer_id)
-{
-  return timers->get(timer_id);
-}
-
-void mac::timer_release_id(uint32_t timer_id)
-{
-  timers->release_id(timer_id);
-}
-
-uint32_t mac::timer_get_unique_id()
-{
-  return timers->get_unique_id();
 }
 
 } // namespace srsue

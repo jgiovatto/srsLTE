@@ -19,36 +19,45 @@
  *
  */
 
-#include <string>
+#include <pthread.h>
 #include <sstream>
 #include <string.h>
+#include <string>
 #include <strings.h>
-#include <pthread.h>
-#include <unistd.h>
 #include <sys/mman.h>
+#include <unistd.h>
 
-#include "srslte/srslte.h"
-#include "srslte/common/threads.h"
 #include "srslte/common/log.h"
+#include "srslte/common/threads.h"
+#include "srslte/srslte.h"
 #include "srsue/hdr/phy/phy.h"
 
-#define Error(fmt, ...)   if (SRSLTE_DEBUG_ENABLED) log_h->error(fmt, ##__VA_ARGS__)
-#define Warning(fmt, ...) if (SRSLTE_DEBUG_ENABLED) log_h->warning(fmt, ##__VA_ARGS__)
-#define Info(fmt, ...)    if (SRSLTE_DEBUG_ENABLED) log_h->info(fmt, ##__VA_ARGS__)
-#define Debug(fmt, ...)   if (SRSLTE_DEBUG_ENABLED) log_h->debug(fmt, ##__VA_ARGS__)
+#define Error(fmt, ...)                                                                                                \
+  if (SRSLTE_DEBUG_ENABLED)                                                                                            \
+  log_h->error(fmt, ##__VA_ARGS__)
+#define Warning(fmt, ...)                                                                                              \
+  if (SRSLTE_DEBUG_ENABLED)                                                                                            \
+  log_h->warning(fmt, ##__VA_ARGS__)
+#define Info(fmt, ...)                                                                                                 \
+  if (SRSLTE_DEBUG_ENABLED)                                                                                            \
+  log_h->info(fmt, ##__VA_ARGS__)
+#define Debug(fmt, ...)                                                                                                \
+  if (SRSLTE_DEBUG_ENABLED)                                                                                            \
+  log_h->debug(fmt, ##__VA_ARGS__)
 
 using namespace std;
 using namespace asn1::rrc;
 
 namespace srsue {
 
-
-static void srslte_phy_handler(phy_logger_level_t log_level, void *ctx, char *str) {
-  phy *r = (phy *) ctx;
+static void srslte_phy_handler(phy_logger_level_t log_level, void* ctx, char* str)
+{
+  phy* r = (phy*)ctx;
   r->srslte_phy_logger(log_level, str);
 }
 
-void phy::srslte_phy_logger(phy_logger_level_t log_level, char *str) {
+void phy::srslte_phy_logger(phy_logger_level_t log_level, char* str)
+{
   if (log_phy_lib_h) {
     switch (log_level) {
       case LOG_LEVEL_INFO_S:
@@ -68,22 +77,22 @@ void phy::srslte_phy_logger(phy_logger_level_t log_level, char *str) {
   }
 }
 
-void phy::set_default_args(phy_args_t *args)
+void phy::set_default_args(phy_args_t* args)
 {
-  args->nof_rx_ant          = 1;
-  args->ul_pwr_ctrl_en      = false; 
-  args->prach_gain          = -1;
-  args->cqi_max             = -1; 
-  args->cqi_fixed           = -1; 
-  args->snr_ema_coeff       = 0.1; 
-  args->snr_estim_alg       = "refs";
-  args->pdsch_max_its       = 4; 
-  args->nof_phy_threads     = DEFAULT_WORKERS;
-  args->equalizer_mode      = "mmse"; 
-  args->cfo_integer_enabled = false; 
-  args->cfo_correct_tol_hz  = 50; 
-  args->sss_algorithm       = "full";
-  args->estimator_fil_auto  = false;
+  args->nof_rx_ant           = 1;
+  args->ul_pwr_ctrl_en       = false;
+  args->prach_gain           = -1;
+  args->cqi_max              = -1;
+  args->cqi_fixed            = -1;
+  args->snr_ema_coeff        = 0.1;
+  args->snr_estim_alg        = "refs";
+  args->pdsch_max_its        = 4;
+  args->nof_phy_threads      = DEFAULT_WORKERS;
+  args->equalizer_mode       = "mmse";
+  args->cfo_integer_enabled  = false;
+  args->cfo_correct_tol_hz   = 50;
+  args->sss_algorithm        = "full";
+  args->estimator_fil_auto   = false;
   args->estimator_fil_stddev = 1.0f;
   args->estimator_fil_order  = 4;
 }
@@ -92,21 +101,19 @@ bool phy::check_args(const phy_args_t& args)
 {
   if (args.nof_phy_threads > MAX_WORKERS) {
     log_h->console("Error in PHY args: nof_phy_threads must be 1, 2 or 3\n");
-    return false; 
+    return false;
   }
   if (args.snr_ema_coeff > 1.0) {
     log_h->console("Error in PHY args: snr_ema_coeff must be 0<=w<=1\n");
-    return false; 
+    return false;
   }
-  return true; 
+  return true;
 }
 
-int phy::init(const phy_args_t&            args_,
-              stack_interface_phy_lte*     stack_,
-              srslte::radio_interface_phy* radio_)
+int phy::init(const phy_args_t& args_, stack_interface_phy_lte* stack_, srslte::radio_interface_phy* radio_)
 {
-  stack         = stack_;
-  radio         = radio_;
+  stack = stack_;
+  radio = radio_;
 
   init(args_);
 
@@ -115,6 +122,7 @@ int phy::init(const phy_args_t&            args_,
 
 int phy::init(const phy_args_t& args_)
 {
+  std::unique_lock<std::mutex> lock(config_mutex);
   mlockall(MCL_CURRENT | MCL_FUTURE);
 
   args = args_;
@@ -128,8 +136,8 @@ int phy::init(const phy_args_t& args_)
 
   // Create array of pointers to phy_logs
   for (int i = 0; i < args.nof_phy_threads; i++) {
-    auto*               mylog = new srslte::log_filter;
-    char                tmp[16];
+    auto* mylog = new srslte::log_filter;
+    char  tmp[16];
     sprintf(tmp, "PHY%d", i);
     mylog->init(tmp, logger, true);
     mylog->set_level(args.log.phy_level);
@@ -139,8 +147,8 @@ int phy::init(const phy_args_t& args_)
 
   // Add PHY lib log
   if (log_vec.at(0)->get_level_from_string(args.log.phy_lib_level) != srslte::LOG_LEVEL_NONE) {
-    auto*               lib_log = new srslte::log_filter;
-    char                tmp[16];
+    auto* lib_log = new srslte::log_filter;
+    char  tmp[16];
     sprintf(tmp, "PHY_LIB");
     lib_log->init(tmp, logger, true);
     lib_log->set_level(args.log.phy_lib_level);
@@ -165,7 +173,7 @@ int phy::init(const phy_args_t& args_)
     this->log_phy_lib_h = nullptr;
   }
 
-  initiated = false;
+  is_configured = false;
   start();
   return true;
 }
@@ -173,11 +181,12 @@ int phy::init(const phy_args_t& args_)
 // Initializes PHY in a thread
 void phy::run_thread()
 {
+  std::unique_lock<std::mutex> lock(config_mutex);
   prach_buffer.init(SRSLTE_MAX_PRB, log_h);
   common.init(&args, (srslte::log*)log_vec[0].get(), radio, stack);
 
   // Add workers to workers pool and start threads
-  for (uint32_t i=0;i<nof_workers;i++) {
+  for (uint32_t i = 0; i < nof_workers; i++) {
     auto w = std::unique_ptr<sf_worker>(new sf_worker(
         SRSLTE_MAX_PRB, &common, (srslte::log*)log_vec[i].get(), (srslte::log*)log_vec[nof_workers].get(), &sfsync));
     workers_pool.init_worker(i, w.get(), WORKERS_THREAD_PRIO, args.worker_cpu_mask);
@@ -203,24 +212,31 @@ void phy::run_thread()
               SF_RECV_THREAD_PRIO,
               args.sync_cpu_affinity);
 
-  // Disable UL signal pregeneration until the attachment 
+  // Disable UL signal pregeneration until the attachment
   enable_pregen_signals(false);
 
-  initiated = true;
+  is_configured = true;
+  config_cond.notify_all();
 }
 
-void phy::wait_initialize() {
-  wait_thread_finish();
+void phy::wait_initialize()
+{
+  // wait until PHY is configured
+  std::unique_lock<std::mutex> lock(config_mutex);
+  while (!is_configured) {
+    config_cond.wait(lock);
+  }
 }
 
 bool phy::is_initiated()
 {
-  return initiated;
+  return is_configured;
 }
 
 void phy::stop()
 {
-  if (initiated) {
+  std::unique_lock<std::mutex> lock(config_mutex);
+  if (is_configured) {
     sfsync.stop();
     for (uint32_t i = 0; i < args.nof_radios - 1; i++) {
       scell_sync.at(i)->stop();
@@ -229,25 +245,38 @@ void phy::stop()
     workers_pool.stop();
     prach_buffer.stop();
 
-    initiated = false;
+    is_configured = false;
   }
 }
 
 void phy::get_metrics(phy_metrics_t* m)
 {
+  uint32_t      dl_earfcn = 0;
+  srslte_cell_t cell      = {};
+  get_current_cell(&cell, &dl_earfcn);
+  m->info[0].pci       = cell.id;
+  m->info[0].dl_earfcn = dl_earfcn;
+
+  for (uint32_t i = 1; i < args.nof_carriers; i++) {
+    m->info[i].dl_earfcn = common.scell_cfg[i].earfcn;
+    m->info[i].pci       = common.scell_cfg[i].pci;
+  }
+
   common.get_dl_metrics(m->dl);
   common.get_ul_metrics(m->ul);
   common.get_sync_metrics(m->sync);
   m->nof_active_cc = args.nof_carriers;
 }
 
-void phy::set_timeadv_rar(uint32_t ta_cmd) {
+void phy::set_timeadv_rar(uint32_t ta_cmd)
+{
   n_ta = srslte_N_ta_new_rar(ta_cmd);
   sfsync.set_time_adv_sec(((float)n_ta) * SRSLTE_LTE_TS);
-  Info("PHY:   Set TA RAR: ta_cmd: %d, n_ta: %d, ta_usec: %.1f\n", ta_cmd, n_ta, ((float) n_ta)*SRSLTE_LTE_TS*1e6);
+  Info("PHY:   Set TA RAR: ta_cmd: %d, n_ta: %d, ta_usec: %.1f\n", ta_cmd, n_ta, ((float)n_ta) * SRSLTE_LTE_TS * 1e6);
 }
 
-void phy::set_timeadv(uint32_t ta_cmd) {
+void phy::set_timeadv(uint32_t ta_cmd)
+{
   uint32_t new_nta = srslte_N_ta_new(n_ta, ta_cmd);
   sfsync.set_time_adv_sec(((float)new_nta) * SRSLTE_LTE_TS);
   Info("PHY:   Set TA: ta_cmd: %d, n_ta: %d, old_n_ta: %d, ta_usec: %.1f\n",
@@ -286,19 +315,23 @@ void phy::configure_prach_params()
   }
 }
 
-void phy::meas_reset() {
+void phy::meas_reset()
+{
   sfsync.meas_reset();
 }
 
-int phy::meas_start(uint32_t earfcn, int pci) {
+int phy::meas_start(uint32_t earfcn, int pci)
+{
   return sfsync.meas_start(earfcn, pci);
 }
 
-int phy::meas_stop(uint32_t earfcn, int pci) {
+int phy::meas_stop(uint32_t earfcn, int pci)
+{
   return sfsync.meas_stop(earfcn, pci);
 }
 
-bool phy::cell_select(phy_cell_t *cell) {
+bool phy::cell_select(phy_cell_t* cell)
+{
   return sfsync.cell_select(cell);
 }
 
@@ -307,14 +340,15 @@ phy_interface_rrc_lte::cell_search_ret_t phy::cell_search(phy_cell_t* cell)
   return sfsync.cell_search(cell);
 }
 
-bool phy::cell_is_camping() {
+bool phy::cell_is_camping()
+{
   return sfsync.cell_is_camping();
 }
 
 float phy::get_phr()
 {
   float phr = radio->get_max_tx_power() - common.cur_pusch_power;
-  return phr; 
+  return phr;
 }
 
 float phy::get_pathloss_db()
@@ -327,13 +361,15 @@ void phy::get_current_cell(srslte_cell_t* cell, uint32_t* current_earfcn)
   sfsync.get_current_cell(cell, current_earfcn);
 }
 
-uint32_t phy::get_current_pci() {
+uint32_t phy::get_current_pci()
+{
   srslte_cell_t cell;
   sfsync.get_current_cell(&cell);
   return cell.id;
 }
 
-uint32_t phy::get_current_earfcn() {
+uint32_t phy::get_current_earfcn()
+{
   uint32_t earfcn;
   sfsync.get_current_cell(nullptr, &earfcn);
   return earfcn;
@@ -394,7 +430,7 @@ int phy::sr_last_tx_tti()
   return common.sr_last_tx_tti;
 }
 
-void phy::set_earfcn(vector< uint32_t > earfcns)
+void phy::set_earfcn(vector<uint32_t> earfcns)
 {
   sfsync.set_earfcn(earfcns);
 }
@@ -406,13 +442,14 @@ void phy::set_rar_grant(uint8_t grant_payload[SRSLTE_RAR_GRANT_LEN], uint16_t rn
 
 void phy::set_crnti(uint16_t rnti)
 {
-  for(uint32_t i=0;i<nof_workers;i++) {
+  for (uint32_t i = 0; i < nof_workers; i++) {
     workers[i]->set_crnti(rnti);
-  }    
+  }
 }
 
 // Start GUI
-void phy::start_plot() {
+void phy::start_plot()
+{
   workers[0]->start_plot();
 }
 
@@ -423,7 +460,7 @@ void phy::enable_pregen_signals(bool enable)
   }
 }
 
-void phy::set_config(srslte::phy_cfg_t& config, uint32_t cc_idx, uint32_t earfcn, srslte_cell_t* cell_info)
+void phy::set_config(srslte::phy_cfg_t& config_, uint32_t cc_idx, uint32_t earfcn, srslte_cell_t* cell_info)
 {
   if (!is_initiated()) {
     fprintf(stderr, "Error calling set_config(): PHY not initialized\n");
@@ -432,18 +469,18 @@ void phy::set_config(srslte::phy_cfg_t& config, uint32_t cc_idx, uint32_t earfcn
 
   // Component carrier index zero should be reserved for PCell
   if (cc_idx < args.nof_carriers) {
-    carrier_map_t* m      = &args.carrier_map[cc_idx];
+    carrier_map_t* m = &args.carrier_map[cc_idx];
 
     // Send configuration to workers
     for (uint32_t i = 0; i < nof_workers; i++) {
       if (cell_info) {
         workers[i]->set_cell(cc_idx, *cell_info);
       }
-      workers[i]->set_config(cc_idx, config);
+      workers[i]->set_config(cc_idx, config_);
     }
 
     if (cc_idx == 0) {
-      prach_cfg = config.prach_cfg;
+      prach_cfg = config_.prach_cfg;
     } else if (cell_info) {
       // If SCell does not share synchronism with PCell ...
       if (m->radio_idx > 0) {
@@ -524,4 +561,4 @@ void phy::set_mch_period_stop(uint32_t stop)
   common.set_mch_period_stop(stop);
 }
 
-}
+} // namespace srsue

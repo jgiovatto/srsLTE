@@ -25,6 +25,7 @@
  */
 
 #include "rf_zmq_imp_trx.h"
+#include <inttypes.h>
 #include <srslte/phy/utils/vector.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,15 +42,19 @@ static void* rf_zmq_async_rx_thread(void* h)
 
     rf_zmq_info(q->id, "-- ASYNC RX wait...\n");
 
-    // Send request
-    while (n < 0 && q->running) {
-      rf_zmq_info(q->id, " - tx'ing rx request\n");
-      n = zmq_send(q->sock, &dummy, sizeof(dummy), 0);
-      if (n < 0) {
-        if (rf_zmq_handle_error(q->id, "synchronous rx request send")) {
-          return NULL;
+    // Send request if socket type is REQUEST
+    if (q->socket_type == ZMQ_REQ) {
+      while (n < 0 && q->running) {
+        rf_zmq_info(q->id, " - tx'ing rx request\n");
+        n = zmq_send(q->sock, &dummy, sizeof(dummy), 0);
+        if (n < 0) {
+          if (rf_zmq_handle_error(q->id, "synchronous rx request send")) {
+            return NULL;
+          }
         }
       }
+    } else {
+      n = 0;
     }
 
     // Receive baseband
@@ -62,7 +67,7 @@ static void* rf_zmq_async_rx_thread(void* h)
 
       } else if (n > ZMQ_MAX_BUFFER_SIZE) {
         fprintf(stderr,
-                "[zmq] Error: receiver expected <= %ld bytes and received %d at channel %d.\n",
+                "[zmq] Error: receiver expected <= %zu bytes and received %d at channel %d.\n",
                 ZMQ_MAX_BUFFER_SIZE,
                 n,
                 0);
@@ -95,7 +100,7 @@ static void* rf_zmq_async_rx_thread(void* h)
   return NULL;
 }
 
-int rf_zmq_rx_open(rf_zmq_rx_t* q, char* id, void* zmq_ctx, char* sock_args)
+int rf_zmq_rx_open(rf_zmq_rx_t* q, rf_zmq_opts_t opts, void* zmq_ctx, char* sock_args)
 {
   int ret = SRSLTE_ERROR;
 
@@ -104,14 +109,21 @@ int rf_zmq_rx_open(rf_zmq_rx_t* q, char* id, void* zmq_ctx, char* sock_args)
     bzero(q, sizeof(rf_zmq_rx_t));
 
     // Copy id
-    strncpy(q->id, id, ZMQ_ID_STRLEN - 1);
+    strncpy(q->id, opts.id, ZMQ_ID_STRLEN - 1);
     q->id[ZMQ_ID_STRLEN - 1] = '\0';
 
     // Create socket
-    q->sock = zmq_socket(zmq_ctx, ZMQ_REQ);
+    q->sock = zmq_socket(zmq_ctx, opts.socket_type);
     if (!q->sock) {
       fprintf(stderr, "[zmq] Error: creating transmitter socket\n");
       goto clean_exit;
+    }
+    q->socket_type   = opts.socket_type;
+    q->sample_format = opts.sample_format;
+    q->frequency_mhz = opts.frequency_mhz;
+
+    if (opts.socket_type == ZMQ_SUB) {
+      zmq_setsockopt(q->sock, ZMQ_SUBSCRIBE, "", 0);
     }
 
     rf_zmq_info(q->id, "Connecting receiver: %s\n", sock_args);
@@ -152,18 +164,24 @@ int rf_zmq_rx_open(rf_zmq_rx_t* q, char* id, void* zmq_ctx, char* sock_args)
       goto clean_exit;
     }
 
+    q->temp_buffer_convert = srslte_vec_malloc(ZMQ_MAX_BUFFER_SIZE);
+    if (!q->temp_buffer_convert) {
+      fprintf(stderr, "Error: allocating rx buffer\n");
+      goto clean_exit;
+    }
+
     if (pthread_mutex_init(&q->mutex, NULL)) {
       fprintf(stderr, "Error: creating mutex\n");
       goto clean_exit;
     }
 
+    q->running = true;
     if (pthread_create(&q->thread, NULL, rf_zmq_async_rx_thread, q)) {
       fprintf(stderr, "Error: creating thread\n");
       goto clean_exit;
     }
 
-    q->running = true;
-    ret        = SRSLTE_SUCCESS;
+    ret = SRSLTE_SUCCESS;
   }
 
 clean_exit:
@@ -172,7 +190,32 @@ clean_exit:
 
 int rf_zmq_rx_baseband(rf_zmq_rx_t* q, cf_t* buffer, uint32_t nsamples)
 {
-  return srslte_ringbuffer_read_timed(&q->ringbuffer, buffer, NSAMPLES2NBYTES(nsamples), ZMQ_TIMEOUT_MS);
+  void*    dst_buffer = buffer;
+  uint32_t sample_sz  = sizeof(cf_t);
+  if (q->sample_format != ZMQ_TYPE_FC32) {
+    dst_buffer = q->temp_buffer_convert;
+    sample_sz  = 2 * sizeof(short);
+  }
+
+  int n = srslte_ringbuffer_read_timed(&q->ringbuffer, dst_buffer, sample_sz * nsamples, ZMQ_TIMEOUT_MS);
+  if (n < 0) {
+    return n;
+  }
+
+  if (q->sample_format == ZMQ_TYPE_SC16) {
+    srslte_vec_convert_if(dst_buffer, INT16_MAX, (float*)buffer, 2 * nsamples);
+  }
+
+  return n;
+}
+
+bool rf_zmq_rx_match_freq(rf_zmq_rx_t* q, uint32_t freq_hz)
+{
+  bool ret = false;
+  if (q) {
+    ret = (q->frequency_mhz == 0 || q->frequency_mhz == freq_hz);
+  }
+  return ret;
 }
 
 void rf_zmq_rx_close(rf_zmq_rx_t* q)
@@ -189,6 +232,10 @@ void rf_zmq_rx_close(rf_zmq_rx_t* q)
 
   if (q->temp_buffer) {
     free(q->temp_buffer);
+  }
+
+  if (q->temp_buffer_convert) {
+    free(q->temp_buffer_convert);
   }
 
   if (q->sock) {

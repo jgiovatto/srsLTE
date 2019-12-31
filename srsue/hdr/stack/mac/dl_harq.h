@@ -22,12 +22,11 @@
 #ifndef SRSUE_DL_HARQ_H
 #define SRSUE_DL_HARQ_H
 
-
-#include "srslte/common/log.h"
-#include "srslte/common/timers.h"
 #include "demux.h"
 #include "dl_sps.h"
+#include "srslte/common/log.h"
 #include "srslte/common/mac_pcap.h"
+#include "srslte/common/timers.h"
 
 #include "srslte/interfaces/ue_interfaces.h"
 
@@ -40,10 +39,10 @@ class dl_harq_entity
 public:
   dl_harq_entity();
 
-  bool init(srslte::log*                  log_h,
-            mac_interface_rrc::ue_rnti_t* rntis,
-            srslte::timers::timer*        timer_aligment_timer,
-            demux*                        demux_unit);
+  bool init(srslte::log*                         log_h,
+            mac_interface_rrc::ue_rnti_t*        rntis,
+            srslte::timer_handler::unique_timer* timer_aligment_timer,
+            demux*                               demux_unit);
   void reset();
   void start_pcap(srslte::mac_pcap* pcap_);
 
@@ -72,7 +71,8 @@ private:
   private:
     const static int RESET_DUPLICATE_TIMEOUT = 6;
 
-    class dl_tb_process {
+    class dl_tb_process
+    {
     public:
       dl_tb_process(void);
       ~dl_tb_process();
@@ -90,23 +90,23 @@ private:
 
       pthread_mutex_t mutex;
 
-      bool is_initiated;
-      dl_harq_entity *harq_entity;
-      srslte::log *log_h;
+      bool            is_initiated;
+      dl_harq_entity* harq_entity;
+      srslte::log*    log_h;
 
       bool is_first_tb;
       bool is_new_transmission;
 
       bool     is_bcch;
-      uint32_t pid;     /* HARQ Proccess ID   */
-      uint32_t tid;     /* Transport block ID */
-      uint8_t *payload_buffer_ptr;
-      bool ack;
+      uint32_t pid; /* HARQ Proccess ID   */
+      uint32_t tid; /* Transport block ID */
+      uint8_t* payload_buffer_ptr;
+      bool     ack;
 
       uint32_t n_retx;
 
       mac_interface_phy_lte::mac_grant_dl_t cur_grant;
-      srslte_softbuffer_rx_t softbuffer;
+      srslte_softbuffer_rx_t                softbuffer;
     };
 
     /* Transport blocks */
@@ -117,20 +117,20 @@ private:
 
   uint32_t get_harq_sps_pid(uint32_t tti);
 
-  dl_sps           dl_sps_assig;
+  dl_sps dl_sps_assig;
 
-  std::vector<dl_harq_process> proc;
-  dl_harq_process               bcch_proc;
-  srslte::timers::timer   *timer_aligment_timer;
-  demux           *demux_unit; 
-  srslte::log     *log_h;
-  srslte::mac_pcap*             pcap;
-  mac_interface_rrc::ue_rnti_t* rntis;
-  uint16_t         last_temporal_crnti;
-  int              si_window_start;
+  std::vector<dl_harq_process>         proc;
+  dl_harq_process                      bcch_proc;
+  srslte::timer_handler::unique_timer* timer_aligment_timer = nullptr;
+  demux*                               demux_unit;
+  srslte::log*                         log_h;
+  srslte::mac_pcap*                    pcap;
+  mac_interface_rrc::ue_rnti_t*        rntis;
+  uint16_t                             last_temporal_crnti;
+  int                                  si_window_start;
 
-  float            average_retx;
-  uint64_t         nof_pkts; 
+  float    average_retx;
+  uint64_t nof_pkts;
 };
 
 typedef std::unique_ptr<dl_harq_entity> dl_harq_entity_ptr;

@@ -121,7 +121,7 @@ public:
   }
 
   // phy_interface_mac_lte
-  void         configure_prach_params(){};
+  void configure_prach_params(){};
 
   void prach_send(uint32_t preamble_idx, int allowed_subframe, float target_power_dbm)
   {
@@ -153,11 +153,11 @@ public:
   void set_mch_period_stop(uint32_t stop){};
 
   // phy_interface_mac_common
-  void     set_crnti(uint16_t rnti) { last_crnti = rnti; }
-  void     set_timeadv_rar(uint32_t ta_cmd) { rar_time_adv = ta_cmd; }
-  void     set_timeadv(uint32_t ta_cmd){};
-  void     set_activation_deactivation_scell(uint32_t cmd) { scell_cmd = cmd; };
-  void     set_rar_grant(uint8_t grant_payload[SRSLTE_RAR_GRANT_LEN], uint16_t rnti)
+  void set_crnti(uint16_t rnti) { last_crnti = rnti; }
+  void set_timeadv_rar(uint32_t ta_cmd) { rar_time_adv = ta_cmd; }
+  void set_timeadv(uint32_t ta_cmd){};
+  void set_activation_deactivation_scell(uint32_t cmd) { scell_cmd = cmd; };
+  void set_rar_grant(uint8_t grant_payload[SRSLTE_RAR_GRANT_LEN], uint16_t rnti)
   {
     memcpy(rar_payload, grant_payload, SRSLTE_RAR_GRANT_LEN);
     rar_temp_rnti = rnti;
@@ -319,8 +319,8 @@ public:
     ho_finish            = true;
     ho_finish_successful = ra_successful;
   }
-  void release_pucch_srs() { printf("%s\n", __FUNCTION__); }
-  void run_tti(uint32_t tti) { printf("%s\n", __FUNCTION__); }
+  void     release_pucch_srs() { printf("%s\n", __FUNCTION__); }
+  void     run_tti(uint32_t tti) { printf("%s\n", __FUNCTION__); }
   void     ra_problem() { rach_problem++; }
   bool     ho_finish            = false;
   bool     ho_finish_successful = false;
@@ -369,9 +369,9 @@ int mac_unpack_test()
                           0xc3, 0xb3, 0x5c, 0xa3, 0x23, 0xad, 0x00, 0x03, 0x20, 0x1b, 0x00, 0x00, 0x00,
                           0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x13, 0x89, 0x00, 0x00};
 
-  srslte::log_filter rlc_log("RLC");
-  srslte::log_filter mac_log("MAC");
-  srslte::timers     timers(64);
+  srslte::log_filter    rlc_log("RLC");
+  srslte::log_filter    mac_log("MAC");
+  srslte::timer_handler timers(64);
 
   mac_log.set_level(srslte::LOG_LEVEL_DEBUG);
   mac_log.set_hex_limit(100000);
@@ -435,7 +435,7 @@ int mac_ul_sch_pdu_test1()
   rlc_log.set_level(srslte::LOG_LEVEL_DEBUG);
   rlc_log.set_hex_limit(100000);
 
-  srslte::timers timers(64);
+  srslte::timer_handler timers(64);
 
   // dummy layers
   phy_dummy   phy;
@@ -505,7 +505,7 @@ int mac_ul_logical_channel_prioritization_test1()
   rlc_log.set_level(srslte::LOG_LEVEL_DEBUG);
   rlc_log.set_hex_limit(100000);
 
-  srslte::timers timers(64);
+  srslte::timer_handler timers(64);
 
   // dummy layers
   phy_dummy   phy;
@@ -620,7 +620,7 @@ int mac_ul_logical_channel_prioritization_test2()
   rlc_log.set_level(srslte::LOG_LEVEL_DEBUG);
   rlc_log.set_hex_limit(100000);
 
-  srslte::timers timers(64);
+  srslte::timer_handler timers(64);
 
   // dummy layers
   phy_dummy   phy;
@@ -722,7 +722,7 @@ int mac_ul_logical_channel_prioritization_test3()
   rlc_log.set_level(srslte::LOG_LEVEL_DEBUG);
   rlc_log.set_hex_limit(100000);
 
-  srslte::timers timers(64);
+  srslte::timer_handler timers(64);
 
   // dummy layers
   phy_dummy   phy;
@@ -812,7 +812,7 @@ int mac_ul_sch_pdu_with_short_bsr_test()
   rlc_log.set_level(srslte::LOG_LEVEL_DEBUG);
   rlc_log.set_hex_limit(100000);
 
-  srslte::timers timers(64);
+  srslte::timer_handler timers(64);
 
   // dummy layers
   phy_dummy   phy;
@@ -900,7 +900,7 @@ int mac_ul_sch_pdu_with_padding_bsr_test()
   rlc_log.set_level(srslte::LOG_LEVEL_DEBUG);
   rlc_log.set_hex_limit(100000);
 
-  srslte::timers timers(64);
+  srslte::timer_handler timers(64);
 
   // dummy layers
   phy_dummy   phy;
@@ -997,7 +997,7 @@ int mac_ul_sch_pdu_one_byte_test()
   rlc_log.set_level(srslte::LOG_LEVEL_DEBUG);
   rlc_log.set_hex_limit(100000);
 
-  srslte::timers timers(64);
+  srslte::timer_handler timers(64);
 
   // dummy layers
   phy_dummy   phy;
@@ -1059,7 +1059,7 @@ int mac_ul_sch_pdu_two_byte_test()
   rlc_log.set_level(srslte::LOG_LEVEL_DEBUG);
   rlc_log.set_hex_limit(100000);
 
-  srslte::timers timers(64);
+  srslte::timer_handler timers(64);
 
   // dummy layers
   phy_dummy   phy;
@@ -1121,7 +1121,7 @@ int mac_ul_sch_pdu_three_byte_test()
   rlc_log.set_level(srslte::LOG_LEVEL_DEBUG);
   rlc_log.set_hex_limit(100000);
 
-  srslte::timers timers(64);
+  srslte::timer_handler timers(64);
 
   // dummy layers
   phy_dummy   phy;
@@ -1188,7 +1188,7 @@ struct ra_test {
 
 struct ra_test test;
 
-int run_mac_ra_test(struct ra_test test, mac* mac, phy_dummy* phy, uint32_t* tti_state, srslte::timers* timers)
+int run_mac_ra_test(struct ra_test test, mac* mac, phy_dummy* phy, uint32_t* tti_state, srslte::timer_handler* timers)
 {
   uint32_t tti = *tti_state;
 
@@ -1365,7 +1365,7 @@ int mac_random_access_test()
   rlc_log.set_level(srslte::LOG_LEVEL_DEBUG);
   rlc_log.set_hex_limit(100000);
 
-  srslte::timers timers(64);
+  srslte::timer_handler timers(64);
 
   // dummy layers
   phy_dummy phy;
@@ -1375,7 +1375,7 @@ int mac_random_access_test()
   stack_dummy stack;
 
   // Configure default RACH parameters
-  asn1::rrc::rach_cfg_common_s rach_cfg         = {};
+  asn1::rrc::rach_cfg_common_s rach_cfg = {};
   rach_cfg.preamb_info.nof_ra_preambs   = asn1::rrc::rach_cfg_common_s::preamb_info_s_::nof_ra_preambs_opts::n12;
   rach_cfg.ra_supervision_info.preamb_trans_max = asn1::rrc::preamb_trans_max_opts::n8;
   rach_cfg.ra_supervision_info.ra_resp_win_size =
@@ -1417,7 +1417,7 @@ int mac_random_access_test()
 
   // Structure that defines the test to be executed
   struct ra_test my_test           = {};
-  uint32_t       test_id = 1;
+  uint32_t       test_id           = 1;
   my_test.temp_rnti                = 100;
   my_test.assume_prach_transmitted = -1;
 

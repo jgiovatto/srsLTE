@@ -19,21 +19,20 @@
  *
  */
 
+#include <assert.h>
+#include <math.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <unistd.h>
-#include <math.h>
 #include <sys/time.h>
 #include <unistd.h>
-#include <assert.h>
-#include <signal.h>
-#include <pthread.h>
-#include <semaphore.h>
 
-#include "srslte/common/gen_mch_tables.h"
 #include "srslte/common/crash_handler.h"
+#include "srslte/common/gen_mch_tables.h"
 #include "srslte/phy/io/filesink.h"
 #include "srslte/srslte.h"
 
@@ -77,40 +76,40 @@ char* output_file_name;
  *  Program arguments processing
  ***********************************************************************/
 typedef struct {
-  int nof_subframes;
-  int cpu_affinity;
-  bool disable_plots;
-  bool disable_plots_except_constellation;
+  int      nof_subframes;
+  int      cpu_affinity;
+  bool     disable_plots;
+  bool     disable_plots_except_constellation;
   bool     disable_cfo;
   uint32_t time_offset;
-  int force_N_id_2;
+  int      force_N_id_2;
   uint16_t rnti;
-  char *input_file_name;
+  char*    input_file_name;
   int      file_offset_time;
-  float file_offset_freq;
+  float    file_offset_freq;
   uint32_t file_nof_prb;
   uint32_t file_nof_ports;
   uint32_t file_cell_id;
-  bool enable_cfo_ref;
-  bool average_subframe;
-  char *rf_dev;
+  bool     enable_cfo_ref;
+  bool     average_subframe;
+  char*    rf_dev;
   char*    rf_args;
   uint32_t rf_nof_rx_ant;
   double   rf_freq;
-  float rf_gain;
+  float    rf_gain;
   int      net_port;
   char*    net_address;
   int      net_port_signal;
-  char *net_address_signal;
-  int decimate;
-  int32_t mbsfn_area_id;
+  char*    net_address_signal;
+  int      decimate;
+  int32_t  mbsfn_area_id;
   uint8_t  non_mbsfn_region;
   uint8_t  mbsfn_sf_mask;
   int      tdd_special_sf;
   int      sf_config;
-  int verbose;
+  int      verbose;
   bool     enable_256qam;
-}prog_args_t;
+} prog_args_t;
 
 void args_default(prog_args_t* args)
 {
@@ -145,14 +144,15 @@ void args_default(prog_args_t* args)
   args->net_address        = "127.0.0.1";
   args->net_port_signal    = -1;
   args->net_address_signal = "127.0.0.1";
-  args->decimate = 0;
+  args->decimate           = 0;
   args->cpu_affinity       = -1;
-  args->mbsfn_area_id = -1;
+  args->mbsfn_area_id      = -1;
   args->non_mbsfn_region   = 2;
-  args->mbsfn_sf_mask = 32;
+  args->mbsfn_sf_mask      = 32;
 }
 
-void usage(prog_args_t *args, char *prog) {
+void usage(prog_args_t* args, char* prog)
+{
   printf("Usage: %s [adgpPoOcildFRDnruMNvTG] -f rx_frequency (in Hz) | -i input_file\n", prog);
 #ifndef DISABLE_RF
   printf("\t-I RF dev [Default %s]\n", args->rf_dev);
@@ -198,118 +198,119 @@ void usage(prog_args_t *args, char *prog) {
   printf("\t-v [set srslte_verbose to debug, default none]\n");
 }
 
-void parse_args(prog_args_t *args, int argc, char **argv) {
+void parse_args(prog_args_t* args, int argc, char** argv)
+{
   int opt;
   args_default(args);
 
   while ((opt = getopt(argc, argv, "adAogliIpPcOCtdDFRqnvrfuUsSZyWMNBTG")) != -1) {
     switch (opt) {
-    case 'i':
-      args->input_file_name = argv[optind];
-      break;
-    case 'p':
-      args->file_nof_prb = atoi(argv[optind]);
-      break;
-    case 'P':
-      args->file_nof_ports = atoi(argv[optind]);
-      break;
-    case 'o':
-      args->file_offset_freq = atof(argv[optind]);
-      break;
-    case 'O':
-      args->file_offset_time = atoi(argv[optind]);
-      break;
-    case 'c':
-      args->file_cell_id = atoi(argv[optind]);
-      break;
-    case 'I':
-      args->rf_dev = argv[optind];
-      break;
-    case 'a':
-      args->rf_args = argv[optind];
-      break;
-    case 'A':
-      args->rf_nof_rx_ant = atoi(argv[optind]);
-      break;
-    case 'g':
-      args->rf_gain = atof(argv[optind]);
-      break;
-    case 'C':
-      args->disable_cfo = true;
-      break;
-    case 'F':
-      args->enable_cfo_ref = true;
-      break;
-    case 'R':
-      args->average_subframe = true;
-      break;
-    case 't':
-      args->time_offset = atoi(argv[optind]);
-      break;
-    case 'f':
-      args->rf_freq = strtod(argv[optind], NULL);
-      break;
-    case 'T':
-      args->tdd_special_sf = atoi(argv[optind]);
-      break;
-    case 'G':
-      args->sf_config = atoi(argv[optind]);
-      break;
-    case 'n':
-      args->nof_subframes = atoi(argv[optind]);
-      break;
-    case 'r':
-      args->rnti = strtol(argv[optind], NULL, 16);
-      break;
-    case 'l':
-      args->force_N_id_2 = atoi(argv[optind]);
-      break;
-    case 'u':
-      args->net_port = atoi(argv[optind]);
-      break;
-    case 'U':
-      args->net_address = argv[optind];
-      break;
-    case 's':
-      args->net_port_signal = atoi(argv[optind]);
-      break;
-    case 'S':
-      args->net_address_signal = argv[optind];
-      break;
-    case 'd':
-      args->disable_plots = true;
-      break;
-    case 'D':
-      args->disable_plots_except_constellation = true;
-      break;
-    case 'v':
-      srslte_verbose++;
-      args->verbose = srslte_verbose;
-      break;
-    case 'Z':
-      args->decimate = atoi(argv[optind]);
-      break;
-    case 'y':
-      args->cpu_affinity = atoi(argv[optind]);
-      break;
-    case 'W':
-      output_file_name = argv[optind];
-      break;
-    case 'M':
-      args->mbsfn_area_id = atoi(argv[optind]);
-      break;
-    case 'N':
-      args->non_mbsfn_region = atoi(argv[optind]);
-      break;
-    case 'B':
-      args->mbsfn_sf_mask = atoi(argv[optind]);
-      break;
-    case 'q':
-      args->enable_256qam ^= true;
-      break;
-    default:
-      usage(args, argv[0]);
-      exit(-1);
+      case 'i':
+        args->input_file_name = argv[optind];
+        break;
+      case 'p':
+        args->file_nof_prb = (uint32_t)strtol(argv[optind], NULL, 10);
+        break;
+      case 'P':
+        args->file_nof_ports = (uint32_t)strtol(argv[optind], NULL, 10);
+        break;
+      case 'o':
+        args->file_offset_freq = strtof(argv[optind], NULL);
+        break;
+      case 'O':
+        args->file_offset_time = (int)strtol(argv[optind], NULL, 10);
+        break;
+      case 'c':
+        args->file_cell_id = (uint32_t)strtol(argv[optind], NULL, 10);
+        break;
+      case 'I':
+        args->rf_dev = argv[optind];
+        break;
+      case 'a':
+        args->rf_args = argv[optind];
+        break;
+      case 'A':
+        args->rf_nof_rx_ant = (uint32_t)strtol(argv[optind], NULL, 10);
+        break;
+      case 'g':
+        args->rf_gain = strtof(argv[optind], NULL);
+        break;
+      case 'C':
+        args->disable_cfo = true;
+        break;
+      case 'F':
+        args->enable_cfo_ref = true;
+        break;
+      case 'R':
+        args->average_subframe = true;
+        break;
+      case 't':
+        args->time_offset = (uint32_t)strtol(argv[optind], NULL, 10);
+        break;
+      case 'f':
+        args->rf_freq = strtod(argv[optind], NULL);
+        break;
+      case 'T':
+        args->tdd_special_sf = (int)strtol(argv[optind], NULL, 10);
+        break;
+      case 'G':
+        args->sf_config = (int)strtol(argv[optind], NULL, 10);
+        break;
+      case 'n':
+        args->nof_subframes = (int)strtol(argv[optind], NULL, 10);
+        break;
+      case 'r':
+        args->rnti = strtol(argv[optind], NULL, 16);
+        break;
+      case 'l':
+        args->force_N_id_2 = (int)strtol(argv[optind], NULL, 10);
+        break;
+      case 'u':
+        args->net_port = (int)strtol(argv[optind], NULL, 10);
+        break;
+      case 'U':
+        args->net_address = argv[optind];
+        break;
+      case 's':
+        args->net_port_signal = (int)strtol(argv[optind], NULL, 10);
+        break;
+      case 'S':
+        args->net_address_signal = argv[optind];
+        break;
+      case 'd':
+        args->disable_plots = true;
+        break;
+      case 'D':
+        args->disable_plots_except_constellation = true;
+        break;
+      case 'v':
+        srslte_verbose++;
+        args->verbose = srslte_verbose;
+        break;
+      case 'Z':
+        args->decimate = (int)strtol(argv[optind], NULL, 10);
+        break;
+      case 'y':
+        args->cpu_affinity = (int)strtol(argv[optind], NULL, 10);
+        break;
+      case 'W':
+        output_file_name = argv[optind];
+        break;
+      case 'M':
+        args->mbsfn_area_id = (int32_t)strtol(argv[optind], NULL, 10);
+        break;
+      case 'N':
+        args->non_mbsfn_region = (uint8_t)strtol(argv[optind], NULL, 10);
+        break;
+      case 'B':
+        args->mbsfn_sf_mask = (uint8_t)strtol(argv[optind], NULL, 10);
+        break;
+      case 'q':
+        args->enable_256qam ^= true;
+        break;
+      default:
+        usage(args, argv[0]);
+        exit(-1);
     }
   }
   if (args->rf_freq < 0 && args->input_file_name == NULL) {
@@ -320,7 +321,7 @@ void parse_args(prog_args_t *args, int argc, char **argv) {
 
 /**********************************************************************/
 
-uint8_t *data[SRSLTE_MAX_CODEWORDS];
+uint8_t* data[SRSLTE_MAX_CODEWORDS];
 
 bool go_exit = false;
 
@@ -334,23 +335,23 @@ void sig_int_handler(int signo)
   }
 }
 
-cf_t *sf_buffer[SRSLTE_MAX_PORTS] = {NULL};
-
+cf_t* sf_buffer[SRSLTE_MAX_PORTS] = {NULL};
 
 #ifndef DISABLE_RF
 
-int srslte_rf_recv_wrapper(void* h, cf_t* data[SRSLTE_MAX_PORTS], uint32_t nsamples, srslte_timestamp_t* t)
+int srslte_rf_recv_wrapper(void* h, cf_t* data_[SRSLTE_MAX_PORTS], uint32_t nsamples, srslte_timestamp_t* t)
 {
   DEBUG(" ----  Receive %d samples  ---- \n", nsamples);
   void* ptr[SRSLTE_MAX_PORTS];
   for (int i = 0; i < SRSLTE_MAX_PORTS; i++) {
-    ptr[i] = data[i];
+    ptr[i] = data_[i];
   }
   return srslte_rf_recv_with_time_multi(h, ptr, nsamples, true, NULL, NULL);
 }
 
-double srslte_rf_set_rx_gain_th_wrapper_(void *h, double f) {
-  return srslte_rf_set_rx_gain_th((srslte_rf_t*)h, f);
+static SRSLTE_AGC_CALLBACK(srslte_rf_set_rx_gain_th_wrapper_)
+{
+  srslte_rf_set_rx_gain_th((srslte_rf_t*)h, gain_db);
 }
 
 #endif
@@ -378,10 +379,13 @@ srslte_netsink_t net_sink, net_sink_signal;
 #define PRINT_LINE(_fmt, ...)                                                                                          \
   printf("\033[K" _fmt "\n", ##__VA_ARGS__);                                                                           \
   this_nof_lines++
-#define PRINT_LINE_RESET_CURSOR() printf("\033[%dA", this_nof_lines); prev_nof_lines = this_nof_lines
+#define PRINT_LINE_RESET_CURSOR()                                                                                      \
+  printf("\033[%dA", this_nof_lines);                                                                                  \
+  prev_nof_lines = this_nof_lines
 #define PRINT_LINE_ADVANCE_CURSOR() printf("\033[%dB", prev_nof_lines + 1)
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv)
+{
   int ret;
 
 #ifndef DISABLE_RF
@@ -499,7 +503,7 @@ int main(int argc, char **argv) {
     int srate = srslte_sampling_freq_hz(cell.nof_prb);
     if (srate != -1) {
       printf("Setting sampling rate %.2f MHz\n", (float)srate / 1000000);
-      float srate_rf = srslte_rf_set_rx_srate(&rf, (double) srate);
+      float srate_rf = srslte_rf_set_rx_srate(&rf, (double)srate);
       if (srate_rf != srate) {
         ERROR("Could not set sampling rate\n");
         exit(-1);
@@ -518,7 +522,7 @@ int main(int argc, char **argv) {
     /* preset cell configuration */
     cell.id              = prog_args.file_cell_id;
     cell.cp              = SRSLTE_CP_NORM;
-    cell.phich_length = SRSLTE_PHICH_NORM;
+    cell.phich_length    = SRSLTE_PHICH_NORM;
     cell.phich_resources = SRSLTE_PHICH_R_1;
     cell.nof_ports       = prog_args.file_nof_ports;
     cell.nof_prb         = prog_args.file_nof_prb;
@@ -599,16 +603,16 @@ int main(int argc, char **argv) {
   }
 
   srslte_chest_dl_cfg_t chest_pdsch_cfg = {};
-  chest_pdsch_cfg.cfo_estimate_enable  = prog_args.enable_cfo_ref;
-  chest_pdsch_cfg.cfo_estimate_sf_mask = 1023;
-  chest_pdsch_cfg.interpolate_subframe = !prog_args.average_subframe;
+  chest_pdsch_cfg.cfo_estimate_enable   = prog_args.enable_cfo_ref;
+  chest_pdsch_cfg.cfo_estimate_sf_mask  = 1023;
+  chest_pdsch_cfg.interpolate_subframe  = !prog_args.average_subframe;
 
   // Special configuration for MBSFN channel estimation
   srslte_chest_dl_cfg_t chest_mbsfn_cfg = {};
-  chest_mbsfn_cfg.filter_type          = SRSLTE_CHEST_FILTER_TRIANGLE;
-  chest_mbsfn_cfg.filter_coef[0]       = 0.1;
-  chest_mbsfn_cfg.interpolate_subframe = true;
-  chest_mbsfn_cfg.noise_alg            = SRSLTE_NOISE_ALG_PSS;
+  chest_mbsfn_cfg.filter_type           = SRSLTE_CHEST_FILTER_TRIANGLE;
+  chest_mbsfn_cfg.filter_coef[0]        = 0.1;
+  chest_mbsfn_cfg.interpolate_subframe  = true;
+  chest_mbsfn_cfg.noise_alg             = SRSLTE_NOISE_ALG_PSS;
 
   // Allocate softbuffer buffers
   srslte_softbuffer_rx_t rx_softbuffers[SRSLTE_MAX_CODEWORDS];
@@ -643,7 +647,7 @@ int main(int argc, char **argv) {
 
 #ifndef DISABLE_RF
   if (prog_args.rf_gain < 0 && !prog_args.input_file_name) {
-    srslte_rf_info_t *rf_info = srslte_rf_get_info(&rf);
+    srslte_rf_info_t* rf_info = srslte_rf_get_info(&rf);
     srslte_ue_sync_start_agc(&ue_sync,
                              srslte_rf_set_rx_gain_th_wrapper_,
                              rf_info->min_rx_gain,
@@ -685,12 +689,12 @@ int main(int argc, char **argv) {
     FD_SET(0, &set);
 
     struct timeval to;
-    to.tv_sec = 0;
+    to.tv_sec  = 0;
     to.tv_usec = 0;
 
     /* Set default verbose level */
     srslte_verbose = prog_args.verbose;
-    int n = select(1, &set, NULL, NULL, &to);
+    int n          = select(1, &set, NULL, NULL, &to);
     if (n == 1) {
       /* If a new line is detected set verbose level to Debug */
       if (fgets(input, sizeof(input), stdin)) {
@@ -698,7 +702,7 @@ int main(int argc, char **argv) {
         pkt_errors     = 0;
         pkt_total      = 0;
         nof_detected   = 0;
-        nof_trials = 0;
+        nof_trials     = 0;
       }
     }
 
@@ -778,9 +782,9 @@ int main(int argc, char **argv) {
 
             n = 0;
             for (uint32_t tm = 0; tm < 4 && !n; tm++) {
-              dl_sf.tti        = tti;
-              dl_sf.sf_type    = sf_type;
-              ue_dl_cfg.cfg.tm = (srslte_tm_t)tm;
+              dl_sf.tti                             = tti;
+              dl_sf.sf_type                         = sf_type;
+              ue_dl_cfg.cfg.tm                      = (srslte_tm_t)tm;
               ue_dl_cfg.cfg.pdsch.use_tbs_index_alt = prog_args.enable_256qam;
 
               if ((ue_dl_cfg.cfg.tm == SRSLTE_TM1 && cell.nof_ports == 1) ||
@@ -823,7 +827,7 @@ int main(int argc, char **argv) {
                 if (sf_idx == 1) {
                   srslte_netsink_write(&net_sink, data[0], 1 + (n - 1) / 8);
                 } else {
-                  // FIXME: UDP Data transmission does not work
+                  // TODO: UDP Data transmission does not work
                   for (uint32_t tb = 0; tb < SRSLTE_MAX_CODEWORDS; tb++) {
                     if (pdsch_cfg.grant.tb[tb].enabled) {
                       srslte_netsink_write(&net_sink, data[tb], 1 + (pdsch_cfg.grant.tb[tb].tbs - 1) / 8);
@@ -879,7 +883,7 @@ int main(int argc, char **argv) {
           if (sf_idx == 5) {
             float gain = prog_args.rf_gain;
             if (gain < 0) {
-              gain = 10 * log10(srslte_agc_get_gain(&ue_sync.agc));
+              gain = srslte_convert_power_to_dB(srslte_agc_get_gain(&ue_sync.agc));
             }
 
             /* Print transmission scheme */
@@ -918,7 +922,6 @@ int main(int argc, char **argv) {
             PRINT_LINE("Press enter maximum printing debug log of 1 subframe.");
             PRINT_LINE("");
             PRINT_LINE_RESET_CURSOR();
-
           }
           break;
       }
@@ -997,14 +1000,15 @@ int main(int argc, char **argv) {
  ***********************************************************************/
 #ifdef ENABLE_GUI
 
-plot_real_t p_sync, pce;
+plot_real_t    p_sync, pce;
 plot_scatter_t pscatequal, pscatequal_pdcch, pscatequal_pmch;
 
 float tmp_plot[110 * 15 * 2048];
 float tmp_plot2[110 * 15 * 2048];
 float tmp_plot3[110 * 15 * 2048];
 
-void *plot_thread_run(void *arg) {
+void* plot_thread_run(void* arg)
+{
   int      i;
   uint32_t nof_re = SRSLTE_SF_LEN_RE(ue_dl.cell.nof_prb, ue_dl.cell.cp);
 
@@ -1051,7 +1055,7 @@ void *plot_thread_run(void *arg) {
     uint32_t nof_symbols = pdsch_cfg.grant.nof_re;
     if (!prog_args.disable_plots_except_constellation) {
       for (i = 0; i < nof_re; i++) {
-        tmp_plot[i] = 20 * log10f(cabsf(ue_dl.sf_symbols[0][i]));
+        tmp_plot[i] = srslte_convert_amplitude_to_dB(cabsf(ue_dl.sf_symbols[0][i]));
         if (isinf(tmp_plot[i])) {
           tmp_plot[i] = -80;
         }
@@ -1060,7 +1064,7 @@ void *plot_thread_run(void *arg) {
       bzero(tmp_plot2, sizeof(float) * sz);
       int g = (sz - 12 * ue_dl.cell.nof_prb) / 2;
       for (i = 0; i < 12 * ue_dl.cell.nof_prb; i++) {
-        tmp_plot2[g + i] = 20 * log10(cabs(ue_dl.chest_res.ce[0][0][i]));
+        tmp_plot2[g + i] = srslte_convert_amplitude_to_dB(cabsf(ue_dl.chest_res.ce[0][0][i]));
         if (isinf(tmp_plot2[g + i])) {
           tmp_plot2[g + i] = -80;
         }
@@ -1114,7 +1118,7 @@ void init_plots()
     exit(-1);
   }
 
-  pthread_attr_t attr;
+  pthread_attr_t     attr;
   struct sched_param param;
   param.sched_priority = 0;
   pthread_attr_init(&attr);

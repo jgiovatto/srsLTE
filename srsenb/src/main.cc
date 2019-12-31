@@ -19,23 +19,23 @@
  *
  */
 
-#include <unistd.h>
+#include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <signal.h>
-#include <pthread.h>
+#include <unistd.h>
 
 #include "srslte/common/config_file.h"
 #include "srslte/common/crash_handler.h"
 
-#include <iostream>
-#include <string>
 #include <boost/program_options.hpp>
 #include <boost/program_options/parsers.hpp>
+#include <iostream>
+#include <string>
 
 #include "srsenb/hdr/enb.h"
-#include "srsenb/hdr/metrics_stdout.h"
 #include "srsenb/hdr/metrics_csv.h"
+#include "srsenb/hdr/metrics_stdout.h"
 
 using namespace std;
 using namespace srsenb;
@@ -46,7 +46,8 @@ namespace bpo = boost::program_options;
  ***********************************************************************/
 string config_file;
 
-void parse_args(all_args_t *args, int argc, char* argv[]) {
+void parse_args(all_args_t* args, int argc, char* argv[])
+{
 
   string enb_id;
   string cell_id;
@@ -130,9 +131,45 @@ void parse_args(all_args_t *args, int argc, char* argv[]) {
     ("scheduler.pdsch_max_mcs", bpo::value<int>(&args->stack.mac.sched.pdsch_max_mcs)->default_value(-1), "Optional PDSCH MCS limit")
     ("scheduler.pusch_mcs", bpo::value<int>(&args->stack.mac.sched.pusch_mcs)->default_value(-1), "Optional fixed PUSCH MCS (ignores reported CQIs if specified)")
     ("scheduler.pusch_max_mcs", bpo::value<int>(&args->stack.mac.sched.pusch_max_mcs)->default_value(-1), "Optional PUSCH MCS limit")
+    ("scheduler.max_aggr_level", bpo::value<int>(&args->stack.mac.sched.max_aggr_level)->default_value(-1), "Optional maximum aggregation level index (l=log2(L)) ")
     ("scheduler.nof_ctrl_symbols", bpo::value<int>(&args->stack.mac.sched.nof_ctrl_symbols)->default_value(3), "Number of control symbols")
 
-    /* Expert section */
+
+    /* Downlink Channel emulator section */
+    ("channel.dl.enable", bpo::value<bool>(&args->phy.dl_channel_args.enable)->default_value(false), "Enable/Disable internal Downlink channel emulator")
+    ("channel.dl.fading.enable", bpo::value<bool>(&args->phy.dl_channel_args.fading_enable)->default_value(false), "Enable/Disable Fading model")
+    ("channel.dl.fading.model", bpo::value<std::string>(&args->phy.dl_channel_args.fading_model)->default_value("none"), "Fading model + maximum doppler (E.g. none, epa5, eva70, etu300, etc)")
+    ("channel.dl.delay.enable", bpo::value<bool>(&args->phy.dl_channel_args.delay_enable)->default_value(false), "Enable/Disable Delay simulator")
+    ("channel.dl.delay.period_s", bpo::value<float>(&args->phy.dl_channel_args.delay_period_s)->default_value(3600), "Delay period in seconds (integer)")
+    ("channel.dl.delay.init_time_s", bpo::value<float>(&args->phy.dl_channel_args.delay_init_time_s)->default_value(0), "Initial time in seconds")
+    ("channel.dl.delay.maximum_us", bpo::value<float>(&args->phy.dl_channel_args.delay_max_us)->default_value(100.0f), "Maximum delay in microseconds")
+    ("channel.dl.delay.minimum_us", bpo::value<float>(&args->phy.dl_channel_args.delay_min_us)->default_value(10.0f), "Minimum delay in microseconds")
+    ("channel.dl.rlf.enable", bpo::value<bool>(&args->phy.dl_channel_args.rlf_enable)->default_value(false), "Enable/Disable Radio-Link Failure simulator")
+    ("channel.dl.rlf.t_on_ms", bpo::value<uint32_t >(&args->phy.dl_channel_args.rlf_t_on_ms)->default_value(10000), "Time for On state of the channel (ms)")
+    ("channel.dl.rlf.t_off_ms", bpo::value<uint32_t >(&args->phy.dl_channel_args.rlf_t_off_ms)->default_value(2000), "Time for Off state of the channel (ms)")
+    ("channel.dl.hst.enable", bpo::value<bool>(&args->phy.dl_channel_args.hst_enable)->default_value(false), "Enable/Disable HST simulator")
+    ("channel.dl.hst.period_s", bpo::value<float>(&args->phy.dl_channel_args.hst_period_s)->default_value(7.2f), "HST simulation period in seconds")
+    ("channel.dl.hst.fd_hz", bpo::value<float>(&args->phy.dl_channel_args.hst_fd_hz)->default_value(+750.0f), "Doppler frequency in Hz")
+    ("channel.dl.hst.init_time_s", bpo::value<float>(&args->phy.dl_channel_args.hst_init_time_s)->default_value(0), "Initial time in seconds")
+
+    /* Uplink Channel emulator section */
+    ("channel.ul.enable", bpo::value<bool>(&args->phy.ul_channel_args.enable)->default_value(false), "Enable/Disable internal Uplink channel emulator")
+    ("channel.ul.fading.enable", bpo::value<bool>(&args->phy.ul_channel_args.fading_enable)->default_value(false), "Enable/Disable Fading model")
+    ("channel.ul.fading.model", bpo::value<std::string>(&args->phy.ul_channel_args.fading_model)->default_value("none"), "Fading model + maximum doppler (E.g. none, epa5, eva70, etu300, etc)")
+    ("channel.ul.delay.enable", bpo::value<bool>(&args->phy.ul_channel_args.delay_enable)->default_value(false), "Enable/Disable Delay simulator")
+    ("channel.ul.delay.period_s", bpo::value<float>(&args->phy.ul_channel_args.delay_period_s)->default_value(3600), "Delay period in seconds (integer)")
+    ("channel.ul.delay.init_time_s", bpo::value<float>(&args->phy.ul_channel_args.delay_init_time_s)->default_value(0), "Initial time in seconds")
+    ("channel.ul.delay.maximum_us", bpo::value<float>(&args->phy.ul_channel_args.delay_max_us)->default_value(100.0f), "Maximum delay in microseconds")
+    ("channel.ul.delay.minimum_us", bpo::value<float>(&args->phy.ul_channel_args.delay_min_us)->default_value(10.0f), "Minimum delay in microseconds")
+    ("channel.ul.rlf.enable", bpo::value<bool>(&args->phy.ul_channel_args.rlf_enable)->default_value(false), "Enable/Disable Radio-Link Failure simulator")
+    ("channel.ul.rlf.t_on_ms", bpo::value<uint32_t >(&args->phy.ul_channel_args.rlf_t_on_ms)->default_value(10000), "Time for On state of the channel (ms)")
+    ("channel.ul.rlf.t_off_ms", bpo::value<uint32_t >(&args->phy.ul_channel_args.rlf_t_off_ms)->default_value(2000), "Time for Off state of the channel (ms)")
+    ("channel.ul.hst.enable", bpo::value<bool>(&args->phy.ul_channel_args.hst_enable)->default_value(false), "Enable/Disable HST simulator")
+    ("channel.ul.hst.period_s", bpo::value<float>(&args->phy.ul_channel_args.hst_period_s)->default_value(7.2f), "HST simulation period in seconds")
+    ("channel.ul.hst.fd_hz", bpo::value<float>(&args->phy.ul_channel_args.hst_fd_hz)->default_value(-750.0f), "Doppler frequency in Hz")
+    ("channel.ul.hst.init_time_s", bpo::value<float>(&args->phy.ul_channel_args.hst_init_time_s)->default_value(0), "Initial time in seconds")
+
+      /* Expert section */
     ("expert.metrics_period_secs", bpo::value<float>(&args->general.metrics_period_secs)->default_value(1.0), "Periodicity for metrics in seconds")
     ("expert.metrics_csv_enable",  bpo::value<bool>(&args->general.metrics_csv_enable)->default_value(false), "Write metrics to CSV file")
     ("expert.metrics_csv_filename", bpo::value<string>(&args->general.metrics_csv_filename)->default_value("/tmp/enb_metrics.csv"), "Metrics CSV filename")
@@ -149,6 +186,7 @@ void parse_args(all_args_t *args, int argc, char* argv[]) {
     ("expert.print_buffer_state", bpo::value<bool>(&args->general.print_buffer_state)->default_value(false), "Prints on the console the buffer state every 10 seconds")
     ("expert.eea_pref_list", bpo::value<string>(&args->general.eea_pref_list)->default_value("EEA0, EEA2, EEA1"), "Ordered preference list for the selection of encryption algorithm (EEA) (default: EEA0, EEA2, EEA1).")
     ("expert.eia_pref_list", bpo::value<string>(&args->general.eia_pref_list)->default_value("EIA2, EIA1, EIA0"), "Ordered preference list for the selection of integrity algorithm (EIA) (default: EIA2, EIA1, EIA0).")
+    ("expert.nof_carriers",  bpo::value<uint32_t>(&args->phy.nof_carriers)->default_value(1),  "Number of carriers")
 
     // eMBMS section
     ("embms.enable", bpo::value<bool>(&args->stack.embms.enable)->default_value(false), "Enables MBMS in the eNB")
@@ -175,23 +213,21 @@ void parse_args(all_args_t *args, int argc, char* argv[]) {
   try {
     bpo::store(bpo::command_line_parser(argc, argv).options(cmdline_options).positional(p).run(), vm);
     bpo::notify(vm);
-  } catch(bpo::error &e) {
-    cerr<< e.what() << endl;
+  } catch (bpo::error& e) {
+    cerr << e.what() << endl;
     exit(1);
   }
   // help option was given - print usage and exit
   if (vm.count("help")) {
-      cout << "Usage: " << argv[0] << " [OPTIONS] config_file" << endl << endl;
-      cout << common << endl << general << endl;
-      exit(0);
+    cout << "Usage: " << argv[0] << " [OPTIONS] config_file" << endl << endl;
+    cout << common << endl << general << endl;
+    exit(0);
   }
 
   // print version number and exit
   if (vm.count("version")) {
-    cout << "Version " <<
-         srslte_get_version_major() << "." <<
-         srslte_get_version_minor() << "." <<
-         srslte_get_version_patch() << endl;
+    cout << "Version " << srslte_get_version_major() << "." << srslte_get_version_minor() << "."
+         << srslte_get_version_patch() << endl;
     exit(0);
   }
 
@@ -205,7 +241,7 @@ void parse_args(all_args_t *args, int argc, char* argv[]) {
 
   cout << "Reading configuration file " << config_file << "..." << endl;
   ifstream conf(config_file.c_str(), ios::in);
-  if(conf.fail()) {
+  if (conf.fail()) {
     cout << "Failed to read configuration file " << config_file << " - exiting" << endl;
     exit(1);
   }
@@ -279,53 +315,53 @@ void parse_args(all_args_t *args, int argc, char* argv[]) {
     if (!vm.count("log.rf_level")) {
       args->rf.log_level = args->log.all_level;
     }
-    if(!vm.count("log.phy_level")) {
+    if (!vm.count("log.phy_level")) {
       args->phy.log.phy_level = args->log.all_level;
     }
     if (!vm.count("log.phy_lib_level")) {
       args->phy.log.phy_lib_level = args->log.all_level;
     }
-    if(!vm.count("log.mac_level")) {
+    if (!vm.count("log.mac_level")) {
       args->stack.log.mac_level = args->log.all_level;
     }
-    if(!vm.count("log.rlc_level")) {
+    if (!vm.count("log.rlc_level")) {
       args->stack.log.rlc_level = args->log.all_level;
     }
-    if(!vm.count("log.pdcp_level")) {
+    if (!vm.count("log.pdcp_level")) {
       args->stack.log.pdcp_level = args->log.all_level;
     }
-    if(!vm.count("log.rrc_level")) {
+    if (!vm.count("log.rrc_level")) {
       args->stack.log.rrc_level = args->log.all_level;
     }
-    if(!vm.count("log.gtpu_level")) {
+    if (!vm.count("log.gtpu_level")) {
       args->stack.log.gtpu_level = args->log.all_level;
     }
-    if(!vm.count("log.s1ap_level")) {
+    if (!vm.count("log.s1ap_level")) {
       args->stack.log.s1ap_level = args->log.all_level;
     }
   }
 
   // Apply all_hex_limit to any unset layers
   if (vm.count("log.all_hex_limit")) {
-    if(!vm.count("log.phy_hex_limit")) {
+    if (!vm.count("log.phy_hex_limit")) {
       args->log.phy_hex_limit = args->log.all_hex_limit;
     }
-    if(!vm.count("log.mac_hex_limit")) {
+    if (!vm.count("log.mac_hex_limit")) {
       args->stack.log.mac_hex_limit = args->log.all_hex_limit;
     }
-    if(!vm.count("log.rlc_hex_limit")) {
+    if (!vm.count("log.rlc_hex_limit")) {
       args->stack.log.rlc_hex_limit = args->log.all_hex_limit;
     }
-    if(!vm.count("log.pdcp_hex_limit")) {
+    if (!vm.count("log.pdcp_hex_limit")) {
       args->stack.log.pdcp_hex_limit = args->log.all_hex_limit;
     }
-    if(!vm.count("log.rrc_hex_limit")) {
+    if (!vm.count("log.rrc_hex_limit")) {
       args->stack.log.rrc_hex_limit = args->log.all_hex_limit;
     }
-    if(!vm.count("log.gtpu_hex_limit")) {
+    if (!vm.count("log.gtpu_hex_limit")) {
       args->stack.log.gtpu_hex_limit = args->log.all_hex_limit;
     }
-    if(!vm.count("log.s1ap_hex_limit")) {
+    if (!vm.count("log.s1ap_hex_limit")) {
       args->stack.log.s1ap_hex_limit = args->log.all_hex_limit;
     }
   }
@@ -347,7 +383,7 @@ void parse_args(all_args_t *args, int argc, char* argv[]) {
   }
 }
 
-static int  sigcnt = 0;
+static int  sigcnt     = 0;
 static bool running    = true;
 static bool do_metrics = false;
 
@@ -361,39 +397,41 @@ void sig_int_handler(int signo)
   }
 }
 
-void *input_loop(void *m)
+void* input_loop(void* m)
 {
-  metrics_stdout *metrics = (metrics_stdout*) m;
-  char key;
-  while(running) {
+  metrics_stdout* metrics = (metrics_stdout*)m;
+  char            key;
+  while (running) {
     cin >> key;
     if (cin.eof() || cin.bad()) {
       cout << "Closing stdin thread." << endl;
       break;
     } else {
-      if('t' == key) {
+      if ('t' == key) {
         do_metrics = !do_metrics;
-        if(do_metrics) {
+        if (do_metrics) {
           cout << "Enter t to stop trace." << endl;
         } else {
           cout << "Enter t to restart trace." << endl;
         }
         metrics->toggle_print(do_metrics);
+      } else if ('q' == key) {
+        sig_int_handler(0);
       }
     }
   }
-  return NULL;
+  return nullptr;
 }
 
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
   signal(SIGINT, sig_int_handler);
   signal(SIGTERM, sig_int_handler);
   all_args_t                         args = {};
   srslte::metrics_hub<enb_metrics_t> metricshub;
-  metrics_stdout    metrics_screen;
+  metrics_stdout                     metrics_screen;
 
-  enb              *enb = enb::get_instance();
+  enb* enb = enb::get_instance();
 
   srslte_debug_handle_crash(argc, argv);
 
@@ -425,12 +463,12 @@ int main(int argc, char *argv[])
       enb->start_plot();
     }
   }
-  int cnt=0;
+  int cnt = 0;
   while (running) {
     if (args.general.print_buffer_state) {
       cnt++;
-      if (cnt==1000) {
-        cnt=0;
+      if (cnt == 1000) {
+        cnt = 0;
         enb->print_pool();
       }
     }

@@ -37,10 +37,10 @@ using srslte::byte_buffer_t;
 
 namespace srsue {
 
-class nas : public nas_interface_rrc, public nas_interface_ue
+class nas : public nas_interface_rrc, public nas_interface_ue, public srslte::timer_callback
 {
 public:
-  nas(srslte::log* log_);
+  nas(srslte::log* log_, srslte::timer_handler* timers_);
   void init(usim_interface_nas* usim_, rrc_interface_nas* rrc_, gw_interface_nas* gw_, const nas_args_t& args_);
   void stop();
   void run_tti(uint32_t tti) final;
@@ -50,7 +50,7 @@ public:
 
   // RRC interface
   void     left_rrc_connected();
-  void     paging(srslte::s_tmsi_t* ue_identity);
+  bool     paging(srslte::s_tmsi_t* ue_identity);
   void     set_barring(barring_t barring);
   void     write_pdu(uint32_t lcid, srslte::unique_byte_buffer_t pdu);
   uint32_t get_k_enb_count();
@@ -60,17 +60,18 @@ public:
   bool     get_ipv6_addr(uint8_t* ipv6_addr);
 
   // UE interface
-  void start_attach_request(srslte::proc_state_t* result) final;
+  void start_attach_request(srslte::proc_state_t* result, srslte::establishment_cause_t cause_) final;
   bool detach_request(const bool switch_off) final;
 
-  void plmn_search_completed(rrc_interface_nas::found_plmn_t found_plmns[rrc_interface_nas::MAX_FOUND_PLMNS],
-                             int                             nof_plmns) final;
-  bool start_connection_request(srslte::establishment_cause_t establish_cause,
-                                srslte::unique_byte_buffer_t  ded_info_nas);
+  void plmn_search_completed(const rrc_interface_nas::found_plmn_t found_plmns[rrc_interface_nas::MAX_FOUND_PLMNS],
+                             int                                   nof_plmns) final;
   bool connection_request_completed(bool outcome) final;
 
+  // timer callback
+  void timer_expired(uint32_t timeout_id);
+
   // PCAP
-  void start_pcap(srslte::nas_pcap *pcap_);
+  void start_pcap(srslte::nas_pcap* pcap_);
 
 private:
   srslte::byte_buffer_pool* pool    = nullptr;
@@ -85,21 +86,19 @@ private:
 
   nas_interface_rrc::barring_t current_barring = BARRING_NONE;
 
-  bool                 plmn_is_selected = false;
-  srslte::plmn_id_t    current_plmn;
-  srslte::plmn_id_t    home_plmn;
+  bool              plmn_is_selected = false;
+  srslte::plmn_id_t current_plmn;
+  srslte::plmn_id_t home_plmn;
 
   std::vector<srslte::plmn_id_t> known_plmns;
 
-  LIBLTE_MME_EMM_INFORMATION_MSG_STRUCT emm_info;
-
   // Security context
-  struct nas_sec_ctxt{
-    uint8_t  ksi;
-    uint8_t  k_asme[32];
-    uint32_t tx_count;
-    uint32_t rx_count;
-    uint32_t k_enb_count;
+  struct nas_sec_ctxt {
+    uint8_t                              ksi;
+    uint8_t                              k_asme[32];
+    uint32_t                             tx_count;
+    uint32_t                             rx_count;
+    uint32_t                             k_enb_count;
     srslte::CIPHERING_ALGORITHM_ID_ENUM  cipher_algo;
     srslte::INTEGRITY_ALGORITHM_ID_ENUM  integ_algo;
     LIBLTE_MME_EPS_MOBILE_ID_GUTI_STRUCT guti;
@@ -129,6 +128,14 @@ private:
 
   uint8_t transaction_id = 0;
 
+  // timers
+  srslte::timer_handler*              timers = nullptr;
+  srslte::timer_handler::unique_timer t3410; // started when attach request is sent, on expiry, start t3411
+  srslte::timer_handler::unique_timer t3411; // started when attach failed
+
+  const uint32_t t3410_duration_ms = 15 * 1000; // 15s according to TS 24.301 Sec 10.2
+  const uint32_t t3411_duration_ms = 10 * 1000; // 10s according to TS 24.301 Sec 10.2
+
   // Security
   bool    eia_caps[8]   = {};
   bool    eea_caps[8]   = {};
@@ -140,18 +147,14 @@ private:
 
   bool running = false;
 
-  void integrity_generate(uint8_t *key_128,
-                          uint32_t count,
-                          uint8_t direction,
-                          uint8_t *msg,
-                          uint32_t msg_len,
-                          uint8_t *mac);
+  void
+       integrity_generate(uint8_t* key_128, uint32_t count, uint8_t direction, uint8_t* msg, uint32_t msg_len, uint8_t* mac);
   bool integrity_check(srslte::byte_buffer_t* pdu);
   void cipher_encrypt(srslte::byte_buffer_t* pdu);
   void cipher_decrypt(srslte::byte_buffer_t* pdu);
   void set_k_enb_count(uint32_t count);
 
-  bool check_cap_replay(LIBLTE_MME_UE_SECURITY_CAPABILITIES_STRUCT *caps);
+  bool check_cap_replay(LIBLTE_MME_UE_SECURITY_CAPABILITIES_STRUCT* caps);
 
   void select_plmn();
 
@@ -183,7 +186,7 @@ private:
   void send_esm_information_response(const uint8 proc_transaction_id);
   void send_authentication_response(const uint8_t* res, const size_t res_len, const uint8_t sec_hdr_type);
   void send_authentication_failure(const uint8_t cause, const uint8_t* auth_fail_param);
-  void gen_pdn_connectivity_request(LIBLTE_BYTE_MSG_STRUCT *msg);
+  void gen_pdn_connectivity_request(LIBLTE_BYTE_MSG_STRUCT* msg);
   void send_security_mode_reject(uint8_t cause);
   void send_detach_request(bool switch_off);
   void send_detach_accept();
@@ -197,37 +200,37 @@ private:
   void enter_emm_deregistered();
 
   // security context persistence file
-  bool read_ctxt_file(nas_sec_ctxt *ctxt);
-  bool write_ctxt_file(nas_sec_ctxt ctxt);
+  bool read_ctxt_file(nas_sec_ctxt* ctxt);
+  bool write_ctxt_file(nas_sec_ctxt ctxt_);
 
   // ctxt file helpers
-  std::string hex_to_string(uint8_t *hex, int size);
-  bool        string_to_hex(std::string hex_str, uint8_t *hex, uint32_t len);
-  std::string emm_info_str(LIBLTE_MME_EMM_INFORMATION_MSG_STRUCT *info);
+  std::string hex_to_string(uint8_t* hex, int size);
+  bool        string_to_hex(std::string hex_str, uint8_t* hex, uint32_t len);
+  std::string emm_info_str(LIBLTE_MME_EMM_INFORMATION_MSG_STRUCT* info);
 
   template <class T>
-  bool readvar(std::istream &file, const char *key, T *var)
+  bool readvar(std::istream& file, const char* key, T* var)
   {
     std::string line;
-    size_t len = strlen(key);
+    size_t      len = strlen(key);
     std::getline(file, line);
-    if(line.substr(0,len).compare(key)) {
+    if (line.substr(0, len).compare(key)) {
       return false;
     }
-    *var = (T)atoi(line.substr(len).c_str());
+    *var = (T)strtol(line.substr(len).c_str(), NULL, 10);
     return true;
   }
 
-  bool readvar(std::istream &file, const char *key, uint8_t *var, int varlen)
+  bool readvar(std::istream& file, const char* key, uint8_t* var, int varlen)
   {
     std::string line;
-    size_t len = strlen(key);
+    size_t      len = strlen(key);
     std::getline(file, line);
-    if(line.substr(0,len).compare(key)) {
+    if (line.substr(0, len).compare(key)) {
       return false;
     }
     std::string tmp = line.substr(len);
-    if(!string_to_hex(tmp, var, varlen)) {
+    if (!string_to_hex(tmp, var, varlen)) {
       return false;
     }
     return true;
@@ -241,21 +244,25 @@ private:
       std::string substr;
       getline(ss, substr, ',');
       if (not substr.empty()) {
-        list.push_back(atoi(substr.c_str()));
+        list.push_back(strtol(substr.c_str(), nullptr, 10));
       }
     }
     return list;
   }
 
-  class rrc_connect_proc : public srslte::proc_impl_t
+  class rrc_connect_proc
   {
   public:
+    using rrc_connect_complete_ev = srslte::proc_state_t;
     struct connection_request_completed_t {
       bool outcome;
     };
 
-    srslte::proc_outcome_t init(nas* nas_ptr_, srslte::establishment_cause_t cause_, srslte::unique_byte_buffer_t pdu);
-    srslte::proc_outcome_t step() final;
+    explicit rrc_connect_proc(nas* nas_ptr_) : nas_ptr(nas_ptr_) {}
+    srslte::proc_outcome_t init(srslte::establishment_cause_t cause_, srslte::unique_byte_buffer_t pdu);
+    srslte::proc_outcome_t step();
+    void                   then(const srslte::proc_state_t& result);
+    srslte::proc_outcome_t react(connection_request_completed_t event);
     static const char*     name() { return "RRC Connect"; }
 
   private:
@@ -263,13 +270,13 @@ private:
     enum class state_t { conn_req, wait_attach } state;
     uint32_t wait_timeout;
   };
-  class plmn_search_proc : public srslte::proc_impl_t
+  class plmn_search_proc
   {
   public:
     struct plmn_search_complete_t {
       rrc_interface_nas::found_plmn_t found_plmns[rrc_interface_nas::MAX_FOUND_PLMNS];
       int                             nof_plmns;
-      plmn_search_complete_t(rrc_interface_nas::found_plmn_t* plmns_, int nof_plmns_) : nof_plmns(nof_plmns_)
+      plmn_search_complete_t(const rrc_interface_nas::found_plmn_t* plmns_, int nof_plmns_) : nof_plmns(nof_plmns_)
       {
         if (nof_plmns > 0) {
           std::copy(&plmns_[0], &plmns_[nof_plmns], found_plmns);
@@ -277,22 +284,23 @@ private:
       }
     };
 
-    srslte::proc_outcome_t init(nas* nas_ptr_);
-    srslte::proc_outcome_t step() final;
-    srslte::proc_outcome_t trigger_event(const plmn_search_complete_t& t);
+    explicit plmn_search_proc(nas* nas_ptr_) : nas_ptr(nas_ptr_) {}
+    srslte::proc_outcome_t init();
+    srslte::proc_outcome_t step();
+    void                   then(const srslte::proc_state_t& result);
+    srslte::proc_outcome_t react(const plmn_search_complete_t& t);
+    srslte::proc_outcome_t react(const rrc_connect_proc::rrc_connect_complete_ev& t);
     static const char*     name() { return "PLMN Search"; }
 
   private:
     nas* nas_ptr;
     enum class state_t { plmn_search, rrc_connect } state;
   };
-  srslte::callback_list_t                     callbacks;
-  srslte::proc_t<plmn_search_proc>            plmn_searcher;
-  srslte::proc_t<rrc_connect_proc>            rrc_connector;
-  srslte::proc_t<srslte::query_proc_t<bool> > conn_req_proc;
+  srslte::proc_manager_list_t      callbacks;
+  srslte::proc_t<plmn_search_proc> plmn_searcher;
+  srslte::proc_t<rrc_connect_proc> rrc_connector;
 };
 
 } // namespace srsue
-
 
 #endif // SRSUE_NAS_H

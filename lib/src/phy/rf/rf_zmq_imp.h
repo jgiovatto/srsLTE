@@ -20,7 +20,7 @@
  */
 
 #include <stdbool.h>
-#include <stdint.h>
+#include <inttypes.h>
 
 #include "srslte/config.h"
 #include "srslte/phy/rf/rf.h"
@@ -33,7 +33,7 @@ SRSLTE_API int rf_zmq_open(char* args, void** handler);
 
 SRSLTE_API int rf_zmq_open_multi(char* args, void** handler, uint32_t nof_channels);
 
-SRSLTE_API char* rf_zmq_devname(void* h);
+SRSLTE_API const char* rf_zmq_devname(void* h);
 
 SRSLTE_API int rf_zmq_close(void* h);
 
@@ -65,19 +65,11 @@ SRSLTE_API void rf_zmq_register_error_handler(void* h, srslte_rf_error_handler_t
 
 SRSLTE_API double rf_zmq_set_rx_freq(void* h, uint32_t ch, double freq);
 
-SRSLTE_API int rf_zmq_recv_with_time(void* h,
-                                     void* data,
-                                     uint32_t nsamples,
-                                     bool blocking,
-                                     time_t* secs,
-                                     double* frac_secs);
+SRSLTE_API int
+rf_zmq_recv_with_time(void* h, void* data, uint32_t nsamples, bool blocking, time_t* secs, double* frac_secs);
 
-SRSLTE_API int rf_zmq_recv_with_time_multi(void* h,
-                                           void** data,
-                                           uint32_t nsamples,
-                                           bool blocking,
-                                           time_t* secs,
-                                           double* frac_secs);
+SRSLTE_API int
+rf_zmq_recv_with_time_multi(void* h, void** data, uint32_t nsamples, bool blocking, time_t* secs, double* frac_secs);
 
 SRSLTE_API double rf_zmq_set_tx_srate(void* h, double freq);
 

@@ -41,8 +41,11 @@ namespace srsue {
 class sf_worker : public srslte::thread_pool::worker
 {
 public:
-  sf_worker(
-      uint32_t max_prb, phy_common* phy, srslte::log* log, srslte::log* log_phy_lib_h, chest_feedback_itf* chest_loop);
+  sf_worker(uint32_t            max_prb,
+            phy_common*         phy,
+            srslte::log*        log,
+            srslte::log*        log_phy_lib_h,
+            chest_feedback_itf* chest_loop);
   virtual ~sf_worker();
   void reset();
 
@@ -50,7 +53,7 @@ public:
 
   /* Functions used by main PHY thread */
   cf_t* get_buffer(uint32_t cc_idx, uint32_t antenna_idx);
-  void  set_tti(uint32_t tti, uint32_t tx_worker_cnt);
+  void  set_tti(uint32_t tti);
   void  set_tx_time(uint32_t radio_idx, srslte_timestamp_t tx_time, int next_offset);
   void  set_prach(cf_t* prach_ptr, float prach_power);
   void  set_cfo(const uint32_t& cc_idx, float cfo);
@@ -60,15 +63,16 @@ public:
   void set_crnti(uint16_t rnti);
   void enable_pregen_signals(bool enabled);
 
-  /* Methods for plotting */
+  ///< Methods for plotting called from GUI thread
   int      read_ce_abs(float* ce_abs, uint32_t tx_antenna, uint32_t rx_antenna);
   uint32_t get_cell_nof_ports()
   {
-    if (cell_initiated) {
-      return cell.nof_ports;
-    } else {
-      return 1;
+    // wait until cell is initialized
+    std::unique_lock<std::mutex> lock(mutex);
+    while (!cell_initiated) {
+      cell_init_cond.wait(lock);
     }
+    return cell.nof_ports;
   }
   uint32_t get_rx_nof_antennas() { return phy->args->nof_rx_ant; }
   int      read_pdsch_d(cf_t* pdsch_d);
@@ -98,13 +102,13 @@ private:
   srslte_cell_t       cell       = {};
   srslte_tdd_config_t tdd_config = {};
 
+  std::condition_variable cell_init_cond;
   bool cell_initiated = false;
 
   cf_t* prach_ptr   = nullptr;
   float prach_power = 0;
 
   uint32_t           tti                            = 0;
-  uint32_t           tx_sem_id                      = 0;
   srslte_timestamp_t tx_time[SRSLTE_MAX_RADIOS]     = {};
   int                next_offset[SRSLTE_MAX_RADIOS] = {};
 

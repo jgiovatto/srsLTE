@@ -41,17 +41,17 @@ static char radios_args[SRSLTE_MAX_RADIOS][64] = {"auto", "auto", "auto"};
 
 log_filter  log_h;
 std::string file_pattern = "radio%d.dat";
-double freq = 2630e6;
+double      freq         = 2630e6;
 uint32_t    nof_radios   = 1;
 uint32_t    nof_ports    = 1;
-double srate = 1.92e6; /* Hz */
+double      srate        = 1.92e6; /* Hz */
 double      duration     = 0.01;   /* in seconds, 10 ms by default */
 cf_t*       buffers[SRSLTE_MAX_RADIOS][SRSLTE_MAX_PORTS];
-bool tx_enable = false;
-bool        measure_delay       = false;
-bool        capture             = false;
-bool        agc_enable          = true;
-float       rf_gain             = -1.0;
+bool        tx_enable     = false;
+bool        measure_delay = false;
+bool        capture       = false;
+bool        agc_enable    = true;
+float       rf_gain       = -1.0;
 
 #ifdef ENABLE_GUI
 #include "srsgui/srsgui.h"
@@ -61,7 +61,7 @@ static sem_t       plot_sem;
 static uint32_t    plot_sf_idx                        = 0;
 static plot_real_t fft_plot[SRSLTE_MAX_RADIOS]        = {};
 static cf_t*       fft_plot_buffer[SRSLTE_MAX_RADIOS] = {};
-static float*      fft_plot_temp                      = NULL;
+static float*      fft_plot_temp                      = nullptr;
 static uint32_t    fft_plot_buffer_size;
 srslte_dft_plan_t  dft_spectrum = {};
 #endif /* ENABLE_GUI */
@@ -89,15 +89,16 @@ void usage(char* prog)
   printf("\t-h show this message\n");
 }
 
-void parse_args(int argc, char **argv) {
+void parse_args(int argc, char** argv)
+{
   int opt;
   while ((opt = getopt(argc, argv, "foabcderpsStvhmFxwg")) != -1) {
     switch (opt) {
       case 'f':
-        freq = atof(argv[optind]);
+        freq = strtof(argv[optind], NULL);
         break;
       case 'g':
-        rf_gain    = atof(argv[optind]);
+        rf_gain    = strtof(argv[optind], NULL);
         agc_enable = false;
         break;
       case 'o':
@@ -116,16 +117,16 @@ void parse_args(int argc, char **argv) {
         radios_args[2][63] = '\0';
         break;
       case 'r':
-        nof_radios = (uint32_t)atoi(argv[optind]);
+        nof_radios = (uint32_t)strtol(argv[optind], NULL, 10);
         break;
       case 'p':
-        nof_ports = (uint32_t)atoi(argv[optind]);
+        nof_ports = (uint32_t)strtol(argv[optind], NULL, 10);
         break;
       case 's':
-        srate = atof(argv[optind]);
+        srate = strtof(argv[optind], NULL);
         break;
       case 't':
-        duration = atof(argv[optind]);
+        duration = strtof(argv[optind], NULL);
         break;
       case 'm':
         measure_delay ^= true;
@@ -150,10 +151,10 @@ void parse_args(int argc, char **argv) {
   }
 }
 
-static double set_gain_callback(void* h, double gain)
+static SRSLTE_AGC_CALLBACK(set_gain_callback)
 {
-  radio* r = (radio*)h;
-  return r->set_rx_gain_th(gain);
+  auto r = (radio*)h;
+  r->set_rx_gain_th(gain_db);
 }
 
 #ifdef ENABLE_GUI
@@ -181,7 +182,7 @@ static void* plot_thread_run(void* arg)
         srslte_vec_abs_square_cf(fft_plot_buffer[r], fft_plot_temp, fft_plot_buffer_size);
 
         for (uint32_t j = 0; j < fft_plot_buffer_size; j++) {
-          fft_plot_temp[j] = 10.0f * log10f(fft_plot_temp[j]);
+          fft_plot_temp[j] = srslte_convert_power_to_dB(fft_plot_temp[j]);
         }
 
         plot_real_setNewData(&fft_plot[r], fft_plot_temp, fft_plot_buffer_size);
@@ -189,7 +190,7 @@ static void* plot_thread_run(void* arg)
     }
   }
 
-  return NULL;
+  return nullptr;
 }
 
 static int init_plots(uint32_t frame_size)
@@ -259,7 +260,7 @@ int main(int argc, char** argv)
   /* Parse args */
   parse_args(argc, argv);
 
-  uint32_t nof_samples = (uint32_t) (duration * srate);
+  uint32_t nof_samples = (uint32_t)(duration * srate);
   uint32_t frame_size  = (uint32_t)(srate / 1000.0); /* 1 ms at srate */
   uint32_t nof_frames  = (uint32_t)ceil(nof_samples / frame_size);
 

@@ -21,34 +21,51 @@
 
 #include "srsue/hdr/metrics_stdout.h"
 
-#include <unistd.h>
-#include <sstream>
-#include <stdlib.h>
-#include <math.h>
 #include <float.h>
 #include <iomanip>
 #include <iostream>
+#include <math.h>
+#include <sstream>
+#include <stdlib.h>
+#include <unistd.h>
 
 #include <stdio.h>
 
 using namespace std;
 
-namespace srsue{
+namespace srsue {
 
-char const * const prefixes[2][9] =
-{
-  {   "",   "m",   "u",   "n",    "p",    "f",    "a",    "z",    "y", },
-  {   "",   "k",   "M",   "G",    "T",    "P",    "E",    "Z",    "Y", },
+char const* const prefixes[2][9] = {
+    {
+        "",
+        "m",
+        "u",
+        "n",
+        "p",
+        "f",
+        "a",
+        "z",
+        "y",
+    },
+    {
+        "",
+        "k",
+        "M",
+        "G",
+        "T",
+        "P",
+        "E",
+        "Z",
+        "Y",
+    },
 };
 
-metrics_stdout::metrics_stdout()
-    :do_print(false)
-    ,n_reports(10)
-    ,ue(NULL)
+metrics_stdout::metrics_stdout() : do_print(false), n_reports(10), ue(nullptr)
 {
+  // Do nothing
 }
 
-void metrics_stdout::set_ue_handle(ue_metrics_interface *ue_)
+void metrics_stdout::set_ue_handle(ue_metrics_interface* ue_)
 {
   ue = ue_;
 }
@@ -58,25 +75,35 @@ void metrics_stdout::toggle_print(bool b)
   do_print = b;
 }
 
-void metrics_stdout::set_metrics(ue_metrics_t &metrics, const uint32_t period_usec)
+void metrics_stdout::set_metrics(ue_metrics_t& metrics, const uint32_t period_usec)
 {
-  if(!do_print || ue == NULL)
+  if (ue == nullptr) {
     return;
+  }
+
+  // always print RF error
+  if (metrics.rf.rf_error) {
+    printf("RF status: O=%d, U=%d, L=%d\n", metrics.rf.rf_o, metrics.rf.rf_u, metrics.rf.rf_l);
+  }
+
+  if (!do_print) {
+    return;
+  }
 
   if (metrics.stack.rrc.state != RRC_STATE_CONNECTED) {
     cout << "--- disconnected ---" << endl;
     return;
   }
 
-  if(++n_reports > 10)
-  {
+  if (++n_reports > 10) {
     n_reports = 0;
     cout << endl;
-    cout << "----Signal--------------DL-------------------------------------UL----------------------" << endl;
-    cout << "cc  rsrp    pl    cfo   mcs   snr turbo  brate   bler   ta_us  mcs   buff  brate   bler" << endl;
+    cout << "--------Signal--------------DL-------------------------------------UL----------------------" << endl;
+    cout << "cc pci  rsrp    pl    cfo   mcs   snr turbo  brate   bler   ta_us  mcs   buff  brate   bler" << endl;
   }
   for (uint32_t r = 0; r < metrics.phy.nof_active_cc; r++) {
-    cout << " " << r;
+    cout << std::setw(2) << r;
+    cout << std::setw(4) << metrics.phy.info[r].pci << std::setw(0);
     cout << float_to_string(metrics.phy.dl[r].rsrp, 2);
     cout << float_to_string(metrics.phy.dl[r].pathloss, 2);
     cout << float_to_eng_string(metrics.phy.sync[r].cfo, 2);
@@ -119,20 +146,20 @@ std::string metrics_stdout::float_to_string(float f, int digits)
 
 std::string metrics_stdout::float_to_eng_string(float f, int digits)
 {
-  const int degree = (f == 0.0) ? 0 : lrint( floor( log10( fabs( f ) ) / 3) );
+  const int degree = (f == 0.0) ? 0 : lrint(floor(log10f(fabs(f)) / 3));
 
   std::string factor;
 
   if (abs(degree) < 9) {
-    if(degree < 0)
-      factor = prefixes[0][ abs( degree ) ];
+    if (degree < 0)
+      factor = prefixes[0][abs(degree)];
     else
-      factor = prefixes[1][ abs( degree ) ];
+      factor = prefixes[1][abs(degree)];
   } else {
     return "failed";
   }
 
-  const double scaled = f * pow( 1000.0, -degree );
+  const double scaled = f * pow(1000.0, -degree);
   if (degree != 0) {
     return float_to_string(scaled, digits) + factor;
   } else {

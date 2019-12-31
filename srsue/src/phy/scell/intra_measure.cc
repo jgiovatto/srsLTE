@@ -36,9 +36,7 @@
 namespace srsue {
 namespace scell {
 
-intra_measure::intra_measure() : scell(), thread("SYNC_INTRA_MEASURE")
-{
-}
+intra_measure::intra_measure() : scell(), thread("SYNC_INTRA_MEASURE") {}
 
 intra_measure::~intra_measure()
 {
@@ -81,7 +79,7 @@ void intra_measure::stop()
   srslte_refsignal_dl_sync_free(&refsignal_dl_sync);
 }
 
-void intra_measure::set_primay_cell(uint32_t earfcn, srslte_cell_t cell)
+void intra_measure::set_primary_cell(uint32_t earfcn, srslte_cell_t cell)
 {
   this->current_earfcn = earfcn;
   current_sflen        = (uint32_t)SRSLTE_SF_LEN_PRB(cell.nof_prb);

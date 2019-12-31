@@ -33,7 +33,7 @@
 #include "srslte/config.h"
 #include "srslte/phy/rf/rf.h"
 
-SRSLTE_API   char*  rf_shmem_devname (void *h);
+SRSLTE_API   const char*  rf_shmem_devname (void *h);
 
 SRSLTE_API   int    rf_shmem_start_rx_stream(void *h, bool now);
 

@@ -226,7 +226,7 @@ wait_sensor_locked(rf_uhd_handler_t* handler, char* sensor_name, bool is_mboard,
   return error;
 }
 
-char* rf_uhd_devname(void* h)
+const char* rf_uhd_devname(void* h)
 {
   rf_uhd_handler_t* handler = (rf_uhd_handler_t*)h;
   return handler->devname;
@@ -845,8 +845,12 @@ int rf_uhd_recv_with_time(void* h, void* data, uint32_t nsamples, bool blocking,
   return rf_uhd_recv_with_time_multi(h, &data, nsamples, blocking, secs, frac_secs);
 }
 
-int rf_uhd_recv_with_time_multi(
-    void* h, void* data[SRSLTE_MAX_PORTS], uint32_t nsamples, bool blocking, time_t* secs, double* frac_secs)
+int rf_uhd_recv_with_time_multi(void*    h,
+                                void*    data[SRSLTE_MAX_PORTS],
+                                uint32_t nsamples,
+                                bool     blocking,
+                                time_t*  secs,
+                                double*  frac_secs)
 {
   rf_uhd_handler_t*       handler           = (rf_uhd_handler_t*)h;
   uhd_rx_metadata_handle* md                = &handler->rx_md_first;
@@ -938,7 +942,7 @@ int rf_uhd_send_timed_multi(void*  h,
   pthread_mutex_lock(&handler->tx_mutex);
   int ret = -1;
 
-  /* Resets the USRP time FIXME: this might cause problems for burst transmissions */
+  /* Resets the USRP time TODO: this might cause problems for burst transmissions */
   if (!has_time_spec && is_start_of_burst && handler->nof_tx_channels > 1) {
     uhd_usrp_set_time_now(handler->usrp, 0, 0, 0);
     uhd_tx_metadata_set_time_spec(&handler->tx_md, 0, 0.1);

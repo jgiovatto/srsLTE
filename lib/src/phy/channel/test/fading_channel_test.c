@@ -67,13 +67,13 @@ static void parse_args(int argc, char** argv)
         model = argv[optind];
         break;
       case 't':
-        duration_ms = (uint32_t)atof(argv[optind]);
+        duration_ms = (uint32_t)strtof(argv[optind], NULL);
         break;
       case 's':
-        srate = (uint32_t)atof(argv[optind]);
+        srate = (uint32_t)strtof(argv[optind], NULL);
         break;
       case 'r':
-        random_seed = (uint32_t)atoi(argv[optind]);
+        random_seed = (uint32_t)strtol(argv[optind], NULL, 10);
         break;
 #ifdef ENABLE_GUI
       case 'g':
@@ -96,7 +96,6 @@ int main(int argc, char** argv)
   uint64_t       time_usec     = 0;
 
   parse_args(argc, argv);
-  srslte_dft_load();
 
   srslte_dft_plan_t ifft;
   srslte_dft_plan_c(&ifft, srate / 1000, SRSLTE_DFT_BACKWARD);
@@ -181,7 +180,9 @@ int main(int argc, char** argv)
     goto clean_exit;
   }
 
-  printf("-- Starting Fading channel simulator. srate=%.2fMHz; model=%s; duration=%dms\n", (double)srate / 1e6, model,
+  printf("-- Starting Fading channel simulator. srate=%.2fMHz; model=%s; duration=%dms\n",
+         (double)srate / 1e6,
+         model,
          duration_ms);
 
   for (int i = 0; i < duration_ms; i++) {
@@ -196,12 +197,12 @@ int main(int argc, char** argv)
       srslte_dft_run_c_zerocopy(&fft, output_buffer, fft_buffer);
       srslte_vec_prod_conj_ccc(fft_buffer, fft_buffer, fft_buffer, srate / 1000);
       for (int i = 0; i < srate / 1000; i++) {
-        fft_mag[i] = 10.0f * log10f(__real__ fft_buffer[i]);
+        fft_mag[i] = srslte_convert_power_to_dB(__real__ fft_buffer[i]);
       }
       plot_real_setNewData(&plot_fft, fft_mag, srate / 1000);
 
       for (int i = 0; i < channel_fading.N; i++) {
-        fft_mag[i] = 20.0f * log10f(cabsf(channel_fading.h_freq[i]));
+        fft_mag[i] = srslte_convert_amplitude_to_dB(cabsf(channel_fading.h_freq[i]));
       }
       plot_real_setNewData(&plot_h, fft_mag, channel_fading.N);
 
@@ -249,6 +250,5 @@ clean_exit:
     free(output_buffer);
   }
   srslte_channel_fading_free(&channel_fading);
-  srslte_dft_exit();
   exit(ret);
 }

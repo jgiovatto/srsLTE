@@ -25,24 +25,24 @@
 #include <mutex>
 #include <stdint.h>
 
-#include "srslte/common/log.h"
-#include "srslte/common/timers.h"
-#include "mux.h"
 #include "demux.h"
-#include "srslte/common/pdu.h"
+#include "mux.h"
+#include "srslte/common/log.h"
 #include "srslte/common/mac_pcap.h"
+#include "srslte/common/pdu.h"
+#include "srslte/common/timers.h"
 
 /* Random access procedure as specified in Section 5.1 of 36.321 */
-
 
 namespace srsue {
 
 class ra_proc : public srslte::timer_callback
 {
 public:
-  ra_proc() : rar_pdu_msg(20) {
+  ra_proc() : rar_pdu_msg(20)
+  {
     bzero(&softbuffer_rar, sizeof(srslte_softbuffer_rx_t));
-    pcap = NULL;
+    pcap                      = NULL;
     backoff_interval_start    = 0;
     backoff_interval          = 0;
     received_target_power_dbm = 0;
@@ -59,24 +59,21 @@ public:
     started_by_pdcch          = false;
     rar_grant_nbytes          = 0;
 
-    noncontention_enabled     = false;
-    next_preamble_idx         = 0;
-    next_prach_mask           = 0;
-
-    time_alignment_timer        = NULL;
-    contention_resolution_timer = NULL;
+    noncontention_enabled = false;
+    next_preamble_idx     = 0;
+    next_prach_mask       = 0;
   };
 
   ~ra_proc();
 
-  void init(phy_interface_mac_lte*        phy_h,
-            rrc_interface_mac*            rrc_,
-            srslte::log*                  log_h,
-            mac_interface_rrc::ue_rnti_t* rntis,
-            srslte::timers::timer*        time_alignment_timer_,
-            srslte::timers::timer*        contention_resolution_timer_,
-            mux*                          mux_unit,
-            stack_interface_mac*          stack_);
+  void init(phy_interface_mac_lte*               phy_h,
+            rrc_interface_mac*                   rrc_,
+            srslte::log*                         log_h,
+            mac_interface_rrc::ue_rnti_t*        rntis,
+            srslte::timer_handler::unique_timer* time_alignment_timer_,
+            srslte::timer_handler::unique_timer  contention_resolution_timer_,
+            mux*                                 mux_unit,
+            stack_interface_mac*                 stack_);
 
   void reset();
 
@@ -165,26 +162,26 @@ private:
   void read_params();
 
   phy_interface_mac_lte* phy_h;
-  srslte::log*       log_h;
+  srslte::log*           log_h;
   mux*                   mux_unit;
   srslte::mac_pcap*      pcap;
   rrc_interface_mac*     rrc;
   stack_interface_mac*   stack;
 
-  srslte::timers::timer* time_alignment_timer;
-  srslte::timers::timer* contention_resolution_timer;
+  srslte::timer_handler::unique_timer* time_alignment_timer = nullptr;
+  srslte::timer_handler::unique_timer  contention_resolution_timer;
 
-  mac_interface_rrc::ue_rnti_t *rntis;
+  mac_interface_rrc::ue_rnti_t* rntis;
 
-  uint64_t    transmitted_contention_id;
-  uint16_t    transmitted_crnti;
+  uint64_t transmitted_contention_id;
+  uint16_t transmitted_crnti;
 
   std::mutex mutex;
 
-  bool ra_is_ho;
-  bool started_by_pdcch;
+  bool     ra_is_ho;
+  bool     started_by_pdcch;
   uint32_t rar_grant_nbytes;
-  bool rar_received;
+  bool     rar_received;
 };
 
 } // namespace srsue

@@ -20,6 +20,7 @@
  */
 
 #include "srslte/srslte.h"
+
 #include "srsue/hdr/phy/cc_worker.h"
 
 #define Error(fmt, ...)                                                                                                \
@@ -304,7 +305,7 @@ bool cc_worker::work_dl_mbsfn(srslte_mbsfn_cfg_t mbsfn_cfg)
 
   // Set MBSFN channel estimation
   chest_mbsfn_cfg.mbsfn_area_id = mbsfn_cfg.mbsfn_area_id;
-  ue_dl_cfg.chest_cfg = chest_mbsfn_cfg;
+  ue_dl_cfg.chest_cfg           = chest_mbsfn_cfg;
 
   /* Do FFT and extract PDCCH LLR, or quit if no actions are required in this subframe */
   if (srslte_ue_dl_decode_fft_estimate(&ue_dl, &sf_cfg_dl, &ue_dl_cfg) < 0) {
@@ -371,7 +372,7 @@ int cc_worker::decode_pdcch_dl()
     for (int i = 0; i < (ue_dl_cfg.cfg.dci.cif_present ? 2 : 1) && !nof_grants; i++) {
       Debug("PDCCH looking for rnti=0x%x\n", dl_rnti);
       ue_dl_cfg.cfg.dci.cif_enabled = i > 0;
-      nof_grants = srslte_ue_dl_find_dl_dci(&ue_dl, &sf_cfg_dl, &ue_dl_cfg, dl_rnti, dci);
+      nof_grants                    = srslte_ue_dl_find_dl_dci(&ue_dl, &sf_cfg_dl, &ue_dl_cfg, dl_rnti, dci);
       if (nof_grants < 0) {
         Error("Looking for DL grants\n");
         return -1;
@@ -404,7 +405,7 @@ int cc_worker::decode_pdsch(srslte_pdsch_ack_resource_t            ack_resource,
   srslte_pdsch_res_t pdsch_dec[SRSLTE_MAX_CODEWORDS] = {};
 
   // See if at least 1 codeword needs to be decoded. If not need to be decode, resend ACK
-  bool decode_enable = false;
+  bool decode_enable                   = false;
   bool tb_enable[SRSLTE_MAX_CODEWORDS] = {};
   for (uint32_t tb = 0; tb < SRSLTE_MAX_CODEWORDS; tb++) {
     tb_enable[tb] = ue_dl_cfg.cfg.pdsch.grant.tb[tb].enabled;
@@ -432,7 +433,8 @@ int cc_worker::decode_pdsch(srslte_pdsch_ack_resource_t            ack_resource,
   }
 
   // Generate ACKs for MAC and PUCCH
-  uint8_t pending_acks[SRSLTE_MAX_CODEWORDS] = {};
+  uint32_t nof_tb                             = 0;
+  uint8_t  pending_acks[SRSLTE_MAX_CODEWORDS] = {};
   for (uint32_t tb = 0; tb < SRSLTE_MAX_CODEWORDS; tb++) {
     // For MAC, set to true if it's a duplicate
     mac_acks[tb] = action->tb[tb].enabled ? pdsch_dec[tb].crc : true;
@@ -440,9 +442,13 @@ int cc_worker::decode_pdsch(srslte_pdsch_ack_resource_t            ack_resource,
     // For PUCCH feedback, need to send even if duplicate, but only those CW that were enabled before disabling in th
     // grant
     pending_acks[tb] = tb_enable[tb] ? mac_acks[tb] : 2;
+
+    if (tb_enable[tb]) {
+      nof_tb++;
+    }
   }
 
-  if (action->generate_ack && ue_dl_cfg.cfg.pdsch.grant.nof_tb > 0) {
+  if (action->generate_ack && nof_tb > 0) {
     phy->set_dl_pending_ack(&sf_cfg_dl, cc_idx, pending_acks, ack_resource);
   }
 
@@ -487,7 +493,6 @@ int cc_worker::decode_pmch(mac_interface_phy_lte::tb_action_dl_t* action, srslte
          pmch_dec.crc ? "OK" : "KO",
          ue_dl.chest_res.snr_db,
          pmch_dec.avg_iterations_block);
-
 
     if (pmch_dec.crc) {
       return 1;
@@ -613,10 +618,10 @@ bool cc_worker::work_ul(srslte_uci_data_t* uci_data)
 
   bool signal_ready;
 
-  srslte_dci_ul_t                   dci_ul       = {};
+  srslte_dci_ul_t                       dci_ul       = {};
   mac_interface_phy_lte::mac_grant_ul_t ul_mac_grant = {};
   mac_interface_phy_lte::tb_action_ul_t ul_action    = {};
-  uint32_t                          pid          = 0;
+  uint32_t                              pid          = 0;
 
   bool ul_grant_available = phy->get_ul_pending_grant(&sf_cfg_ul, cc_idx, &pid, &dci_ul);
   ul_mac_grant.phich_available =
@@ -731,7 +736,7 @@ int cc_worker::decode_pdcch_ul()
     /* Blind search first without cross scheduling then with it if enabled */
     for (int i = 0; i < (ue_dl_cfg.cfg.dci.cif_present ? 2 : 1) && !nof_grants; i++) {
       ue_dl_cfg.cfg.dci.cif_enabled = i > 0;
-      nof_grants = srslte_ue_dl_find_ul_dci(&ue_dl, &sf_cfg_dl, &ue_dl_cfg, ul_rnti, dci);
+      nof_grants                    = srslte_ue_dl_find_ul_dci(&ue_dl, &sf_cfg_dl, &ue_dl_cfg, ul_rnti, dci);
       if (nof_grants < 0) {
         Error("Looking for UL grants\n");
         return -1;
@@ -904,16 +909,10 @@ void cc_worker::set_config(srslte::phy_cfg_t& phy_cfg)
 
 int cc_worker::read_ce_abs(float* ce_abs, uint32_t tx_antenna, uint32_t rx_antenna)
 {
-  uint32_t i  = 0;
-  int      sz = srslte_symbol_sz(cell.nof_prb);
+  int sz = srslte_symbol_sz(cell.nof_prb);
   bzero(ce_abs, sizeof(float) * sz);
   int g = (sz - 12 * cell.nof_prb) / 2;
-  for (i = 0; i < 12 * cell.nof_prb; i++) {
-    ce_abs[g + i] = 20 * log10f(std::abs(std::complex<float>(ue_dl.chest_res.ce[tx_antenna][rx_antenna][i])));
-    if (std::isinf(ce_abs[g + i])) {
-      ce_abs[g + i] = -80;
-    }
-  }
+  srslte_vec_abs_dB_cf(ue_dl.chest_res.ce[tx_antenna][rx_antenna], -80, &ce_abs[g], SRSLTE_NRE * cell.nof_prb);
   return sz;
 }
 

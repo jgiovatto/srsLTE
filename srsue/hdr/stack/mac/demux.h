@@ -22,14 +22,13 @@
 #ifndef SRSUE_DEMUX_H
 #define SRSUE_DEMUX_H
 
-#include "srslte/interfaces/ue_interfaces.h"
-#include "srslte/common/pdu_queue.h"
 #include "srslte/common/log.h"
-#include "srslte/common/timers.h"
 #include "srslte/common/pdu.h"
+#include "srslte/common/pdu_queue.h"
+#include "srslte/common/timers.h"
+#include "srslte/interfaces/ue_interfaces.h"
 
-/* Logical Channel Demultiplexing and MAC CE dissassemble */   
-
+/* Logical Channel Demultiplexing and MAC CE dissassemble */
 
 namespace srsue {
 
@@ -44,10 +43,10 @@ class demux : public srslte::pdu_queue::process_callback
 {
 public:
   demux(srslte::log* log_);
-  void init(phy_interface_mac_common* phy_h_,
-            rlc_interface_mac*        rlc,
-            mac_interface_demux*      mac,
-            srslte::timers::timer*    time_alignment_timer);
+  void init(phy_interface_mac_common*            phy_h_,
+            rlc_interface_mac*                   rlc,
+            mac_interface_demux*                 mac,
+            srslte::timer_handler::unique_timer* time_alignment_timer);
 
   bool     process_pdus();
   uint8_t* request_buffer(uint32_t len);
@@ -59,15 +58,15 @@ public:
   void push_pdu_mch(uint8_t* buff, uint32_t nof_bytes);
   void push_pdu_temp_crnti(uint8_t* buff, uint32_t nof_bytes);
 
-  bool     get_uecrid_successful();
+  bool get_uecrid_successful();
 
-  void     process_pdu(uint8_t* pdu, uint32_t nof_bytes, srslte::pdu_queue::channel_t channel);
-  void     mch_start_rx(uint32_t lcid);
+  void process_pdu(uint8_t* pdu, uint32_t nof_bytes, srslte::pdu_queue::channel_t channel);
+  void mch_start_rx(uint32_t lcid);
 
 private:
   const static int MAX_PDU_LEN      = 150 * 1024 / 8; // ~ 150 Mbps
   const static int MAX_BCCH_PDU_LEN = 1024;
-  uint8_t bcch_buffer[MAX_BCCH_PDU_LEN]; // BCCH PID has a dedicated buffer
+  uint8_t          bcch_buffer[MAX_BCCH_PDU_LEN]; // BCCH PID has a dedicated buffer
 
   srslte::sch_pdu mac_msg;
   srslte::mch_pdu mch_mac_msg;
@@ -77,23 +76,20 @@ private:
   void            process_sch_pdu(srslte::sch_pdu* pdu);
   void            process_mch_pdu(srslte::mch_pdu* pdu);
 
-  bool process_ce(srslte::sch_subh *subheader);
+  bool process_ce(srslte::sch_subh* subheader);
 
   bool is_uecrid_successful;
 
-  phy_interface_mac_common* phy_h                = nullptr;
-  srslte::log*              log_h                = nullptr;
-  srslte::timers::timer*    time_alignment_timer = nullptr;
-  rlc_interface_mac*        rlc                  = nullptr;
-  mac_interface_demux*      mac                  = nullptr;
+  phy_interface_mac_common*            phy_h                = nullptr;
+  srslte::log*                         log_h                = nullptr;
+  srslte::timer_handler::unique_timer* time_alignment_timer = nullptr;
+  rlc_interface_mac*                   rlc                  = nullptr;
+  mac_interface_demux*                 mac                  = nullptr;
 
   // Buffer of PDUs
-  srslte::pdu_queue pdus; 
+  srslte::pdu_queue pdus;
 };
 
 } // namespace srsue
 
 #endif // SRSUE_DEMUX_H
-
-
-

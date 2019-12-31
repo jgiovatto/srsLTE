@@ -44,15 +44,15 @@ dl_harq_entity::dl_harq_entity() : proc(SRSLTE_MAX_HARQ_PROC)
   nof_pkts             = 0;
 }
 
-bool dl_harq_entity::init(srslte::log*                  log_h,
-                          mac_interface_rrc::ue_rnti_t* rntis,
-                          srslte::timers::timer*        timer_aligment_timer,
-                          demux*                        demux_unit)
+bool dl_harq_entity::init(srslte::log*                         log_h,
+                          mac_interface_rrc::ue_rnti_t*        rntis,
+                          srslte::timer_handler::unique_timer* timer_aligment_timer_,
+                          demux*                               demux_unit)
 {
-  this->timer_aligment_timer = timer_aligment_timer;
-  this->demux_unit           = demux_unit;
-  this->log_h                = log_h;
-  this->rntis                = rntis;
+  timer_aligment_timer = timer_aligment_timer_;
+  this->demux_unit     = demux_unit;
+  this->log_h          = log_h;
+  this->rntis          = rntis;
 
   for (uint32_t i = 0; i < SRSLTE_MAX_HARQ_PROC; i++) {
     if (!proc[i].init(i, this)) {
@@ -319,7 +319,7 @@ void dl_harq_entity::dl_harq_process::dl_tb_process::new_grant_dl(mac_interface_
     action->tb[tid].rv            = cur_grant.tb[tid].rv;
     action->tb[tid].softbuffer.rx = &softbuffer;
   } else {
-    Warning("DL PID %d: Received duplicate TB%d. Discarting and retransmitting ACK (n_retx=%d, reset=%s)\n",
+    Warning("DL PID %d: Received duplicate TB%d. Discarding and retransmitting ACK (n_retx=%d, reset=%s)\n",
             pid,
             tid,
             n_retx,

@@ -19,22 +19,30 @@
  *
  */
 
-#include <string>
+#include <pthread.h>
 #include <sstream>
 #include <string.h>
+#include <string>
 #include <strings.h>
-#include <pthread.h>
-#include <unistd.h>
 #include <sys/mman.h>
+#include <unistd.h>
 
-#include "srslte/common/threads.h"
-#include "srslte/common/log.h"
 #include "srsenb/hdr/phy/phy.h"
+#include "srslte/common/log.h"
+#include "srslte/common/threads.h"
 
-#define Error(fmt, ...)   if (SRSLTE_DEBUG_ENABLED) log_h->error(fmt, ##__VA_ARGS__)
-#define Warning(fmt, ...) if (SRSLTE_DEBUG_ENABLED) log_h->warning(fmt, ##__VA_ARGS__)
-#define Info(fmt, ...)    if (SRSLTE_DEBUG_ENABLED) log_h->info(fmt, ##__VA_ARGS__)
-#define Debug(fmt, ...)   if (SRSLTE_DEBUG_ENABLED) log_h->debug(fmt, ##__VA_ARGS__)
+#define Error(fmt, ...)                                                                                                \
+  if (SRSLTE_DEBUG_ENABLED)                                                                                            \
+  log_h->error(fmt, ##__VA_ARGS__)
+#define Warning(fmt, ...)                                                                                              \
+  if (SRSLTE_DEBUG_ENABLED)                                                                                            \
+  log_h->warning(fmt, ##__VA_ARGS__)
+#define Info(fmt, ...)                                                                                                 \
+  if (SRSLTE_DEBUG_ENABLED)                                                                                            \
+  log_h->info(fmt, ##__VA_ARGS__)
+#define Debug(fmt, ...)                                                                                                \
+  if (SRSLTE_DEBUG_ENABLED)                                                                                            \
+  log_h->debug(fmt, ##__VA_ARGS__)
 
 using namespace std;
 using namespace asn1::rrc;
@@ -58,15 +66,11 @@ phy::~phy()
 void phy::parse_config(const phy_cfg_t& cfg)
 {
   // PRACH configuration
-  ZERO_OBJECT(prach_cfg);
   prach_cfg.config_idx     = cfg.prach_cnfg.prach_cfg_info.prach_cfg_idx;
   prach_cfg.hs_flag        = cfg.prach_cnfg.prach_cfg_info.high_speed_flag;
   prach_cfg.root_seq_idx   = cfg.prach_cnfg.root_seq_idx;
   prach_cfg.zero_corr_zone = cfg.prach_cnfg.prach_cfg_info.zero_correlation_zone_cfg;
   prach_cfg.freq_offset    = cfg.prach_cnfg.prach_cfg_info.prach_freq_offset;
-
-  // Uplink Physical common configuration
-  ZERO_OBJECT(workers_common.ul_cfg_com);
 
   // DMRS
   workers_common.ul_cfg_com.dmrs.cyclic_shift        = cfg.pusch_cnfg.ul_ref_sigs_pusch.cyclic_shift;
@@ -80,7 +84,7 @@ void phy::parse_config(const phy_cfg_t& cfg)
               asn1::rrc::pusch_cfg_common_s::pusch_cfg_basic_s_::hop_mode_e_::intra_and_inter_sub_frame
           ? srslte_pusch_hopping_cfg_t::SRSLTE_PUSCH_HOP_MODE_INTRA_SF
           : srslte_pusch_hopping_cfg_t::SRSLTE_PUSCH_HOP_MODE_INTER_SF;
-  ;
+
   workers_common.ul_cfg_com.hopping.n_sb             = cfg.pusch_cnfg.pusch_cfg_basic.n_sb;
   workers_common.ul_cfg_com.hopping.hopping_offset   = cfg.pusch_cnfg.pusch_cfg_basic.pusch_hop_offset;
   workers_common.ul_cfg_com.pusch.max_nof_iterations = workers_common.params.pusch_max_its;
@@ -89,13 +93,12 @@ void phy::parse_config(const phy_cfg_t& cfg)
 
   // PUCCH
   workers_common.ul_cfg_com.pucch.delta_pucch_shift = cfg.pucch_cnfg.delta_pucch_shift.to_number();
-  workers_common.ul_cfg_com.pucch.N_cs              = cfg.pucch_cnfg.n_cs_an;
-  workers_common.ul_cfg_com.pucch.n_rb_2            = cfg.pucch_cnfg.n_rb_cqi;
+  workers_common.ul_cfg_com.pucch.N_cs              = cfg.pucch_cnfg.ncs_an;
+  workers_common.ul_cfg_com.pucch.n_rb_2            = cfg.pucch_cnfg.nrb_cqi;
   workers_common.ul_cfg_com.pucch.N_pucch_1         = cfg.pucch_cnfg.n1_pucch_an;
   workers_common.ul_cfg_com.pucch.threshold_format1 = 0.8;
 
   // PDSCH configuration
-  ZERO_OBJECT(workers_common.dl_cfg_com);
   workers_common.dl_cfg_com.tm                 = SRSLTE_TM1;
   workers_common.dl_cfg_com.pdsch.rs_power     = cfg.pdsch_cnfg.ref_sig_pwr;
   workers_common.dl_cfg_com.pdsch.p_b          = cfg.pdsch_cnfg.p_b;
@@ -107,7 +110,7 @@ int phy::init(const phy_args_t&            args,
               srslte::radio_interface_phy* radio_,
               stack_interface_phy_lte*     stack_)
 {
-  mlockall(MCL_CURRENT | MCL_FUTURE);
+  mlockall((uint32_t)MCL_CURRENT | (uint32_t)MCL_FUTURE);
 
   // Create array of pointers to phy_logs
   for (int i = 0; i < args.nof_phy_threads; i++) {
@@ -141,14 +144,17 @@ int phy::init(const phy_args_t&            args,
   workers_common.init(cfg.cell, radio, stack_);
 
   parse_config(cfg);
-  
+
   // Add workers to workers pool and start threads
-  for (uint32_t i=0;i<nof_workers;i++) {
+  for (uint32_t i = 0; i < nof_workers; i++) {
     workers[i].init(&workers_common, log_vec.at(i).get());
-    workers_pool.init_worker(i, &workers[i], WORKERS_THREAD_PRIO);    
+    workers_pool.init_worker(i, &workers[i], WORKERS_THREAD_PRIO);
   }
 
-  prach.init(cfg.cell, prach_cfg, stack_, log_vec.at(0).get(), PRACH_WORKER_THREAD_PRIO);
+  // For each carrier, initialise PRACH worker
+  for (uint32_t cc = 0; cc < args.nof_carriers; cc++) {
+    prach.init(cc, cfg.cell, prach_cfg, stack_, log_vec.at(0).get(), PRACH_WORKER_THREAD_PRIO);
+  }
   prach.set_max_prach_offset_us(args.max_prach_offset_us);
 
   // Warning this must be initialized after all workers have been added to the pool
@@ -174,12 +180,14 @@ void phy::stop()
   }
 }
 
-uint32_t phy::tti_to_SFN(uint32_t tti) {
-  return tti/10; 
+uint32_t phy::tti_to_SFN(uint32_t tti)
+{
+  return tti / 10;
 }
 
-uint32_t phy::tti_to_subf(uint32_t tti) {
-  return tti%10; 
+uint32_t phy::tti_to_subf(uint32_t tti)
+{
+  return tti % 10;
 }
 
 /***** MAC->PHY interface **********/
@@ -189,9 +197,9 @@ int phy::add_rnti(uint16_t rnti, bool is_temporal)
     workers_common.ue_db_add_rnti(rnti);
   }
 
-  for (uint32_t i=0;i<nof_workers;i++) {
+  for (uint32_t i = 0; i < nof_workers; i++) {
     if (workers[i].add_rnti(rnti, is_temporal)) {
-      return SRSLTE_ERROR; 
+      return SRSLTE_ERROR;
     }
   }
   return SRSLTE_SUCCESS;
@@ -202,7 +210,7 @@ void phy::rem_rnti(uint16_t rnti)
   if (SRSLTE_RNTI_ISUSER(rnti)) {
     workers_common.ue_db_rem_rnti(rnti);
   }
-  for (uint32_t i=0;i<nof_workers;i++) {
+  for (uint32_t i = 0; i < nof_workers; i++) {
     workers[i].rem_rnti(rnti);
   }
 }
@@ -216,39 +224,37 @@ void phy::get_metrics(phy_metrics_t metrics[ENB_METRICS_MAX_USERS])
 {
   phy_metrics_t metrics_tmp[ENB_METRICS_MAX_USERS];
 
-  uint32_t nof_users = workers[0].get_nof_rnti(); 
-  bzero(metrics, sizeof(phy_metrics_t)*ENB_METRICS_MAX_USERS);
-  int n_tot = 0; 
-  for (uint32_t i=0;i<nof_workers;i++) {
+  uint32_t nof_users = workers[0].get_nof_rnti();
+  bzero(metrics, sizeof(phy_metrics_t) * ENB_METRICS_MAX_USERS);
+  for (uint32_t i = 0; i < nof_workers; i++) {
     workers[i].get_metrics(metrics_tmp);
-    for (uint32_t j=0;j<nof_users;j++) {
-      metrics[j].dl.n_samples   += metrics_tmp[j].dl.n_samples; 
-      metrics[j].dl.mcs         += metrics_tmp[j].dl.n_samples*metrics_tmp[j].dl.mcs;
-      
-      metrics[j].ul.n_samples   += metrics_tmp[j].ul.n_samples; 
-      metrics[j].ul.mcs         += metrics_tmp[j].ul.n_samples*metrics_tmp[j].ul.mcs;
-      metrics[j].ul.n           += metrics_tmp[j].ul.n_samples*metrics_tmp[j].ul.n;
-      metrics[j].ul.rssi        += metrics_tmp[j].ul.n_samples*metrics_tmp[j].ul.rssi;
-      metrics[j].ul.sinr        += metrics_tmp[j].ul.n_samples*metrics_tmp[j].ul.sinr;
-      metrics[j].ul.turbo_iters += metrics_tmp[j].ul.n_samples*metrics_tmp[j].ul.turbo_iters;
+    for (uint32_t j = 0; j < nof_users; j++) {
+      metrics[j].dl.n_samples += metrics_tmp[j].dl.n_samples;
+      metrics[j].dl.mcs += metrics_tmp[j].dl.n_samples * metrics_tmp[j].dl.mcs;
+
+      metrics[j].ul.n_samples += metrics_tmp[j].ul.n_samples;
+      metrics[j].ul.mcs += metrics_tmp[j].ul.n_samples * metrics_tmp[j].ul.mcs;
+      metrics[j].ul.n += metrics_tmp[j].ul.n_samples * metrics_tmp[j].ul.n;
+      metrics[j].ul.rssi += metrics_tmp[j].ul.n_samples * metrics_tmp[j].ul.rssi;
+      metrics[j].ul.sinr += metrics_tmp[j].ul.n_samples * metrics_tmp[j].ul.sinr;
+      metrics[j].ul.turbo_iters += metrics_tmp[j].ul.n_samples * metrics_tmp[j].ul.turbo_iters;
     }
   }
-  for (uint32_t j=0;j<nof_users;j++) {
-    metrics[j].dl.mcs         /= metrics[j].dl.n_samples;
-    metrics[j].ul.mcs         /= metrics[j].ul.n_samples;
-    metrics[j].ul.n           /= metrics[j].ul.n_samples;
-    metrics[j].ul.rssi        /= metrics[j].ul.n_samples;
-    metrics[j].ul.sinr        /= metrics[j].ul.n_samples;
+  for (uint32_t j = 0; j < nof_users; j++) {
+    metrics[j].dl.mcs /= metrics[j].dl.n_samples;
+    metrics[j].ul.mcs /= metrics[j].ul.n_samples;
+    metrics[j].ul.n /= metrics[j].ul.n_samples;
+    metrics[j].ul.rssi /= metrics[j].ul.n_samples;
+    metrics[j].ul.sinr /= metrics[j].ul.n_samples;
     metrics[j].ul.turbo_iters /= metrics[j].ul.n_samples;
   }
 }
-
 
 /***** RRC->PHY interface **********/
 
 void phy::set_config_dedicated(uint16_t rnti, phys_cfg_ded_s* dedicated)
 {
-  for (uint32_t i=0;i<nof_workers;i++) {
+  for (uint32_t i = 0; i < nof_workers; i++) {
     workers[i].set_config_dedicated(rnti, dedicated);
   }
 }

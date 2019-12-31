@@ -92,7 +92,8 @@ public:
 class rrc_dummy : public rrc_interface_nas
 {
 public:
-  rrc_dummy() : last_sdu_len(0) {
+  rrc_dummy() : last_sdu_len(0)
+  {
     plmns.plmn_id.from_number(mcc, mnc);
     plmns.tac = 0xffff;
   }
@@ -100,12 +101,12 @@ public:
   void write_sdu(unique_byte_buffer_t sdu)
   {
     last_sdu_len = sdu->N_bytes;
-    //printf("NAS generated SDU (len=%d):\n", sdu->N_bytes);
-    //srslte_vec_fprint_byte(stdout, sdu->msg, sdu->N_bytes);
+    // printf("NAS generated SDU (len=%d):\n", sdu->N_bytes);
+    // srslte_vec_fprint_byte(stdout, sdu->msg, sdu->N_bytes);
   }
   std::string get_rb_name(uint32_t lcid) { return std::string("lcid"); }
-  uint32_t get_last_sdu_len() { return last_sdu_len; }
-  void reset() { last_sdu_len = 0; }
+  uint32_t    get_last_sdu_len() { return last_sdu_len; }
+  void        reset() { last_sdu_len = 0; }
 
   bool plmn_search()
   {
@@ -119,21 +120,23 @@ public:
     printf("NAS generated SDU (len=%d):\n", sdu->N_bytes);
     last_sdu_len = sdu->N_bytes;
     srslte_vec_fprint_byte(stdout, sdu->msg, sdu->N_bytes);
+    is_connected_flag = true;
     nas_ptr->connection_request_completed(true);
     return true;
   }
-  bool is_connected() {return false;}
+  bool is_connected() { return is_connected_flag; }
 
   uint16_t get_mcc() { return mcc; }
   uint16_t get_mnc() { return mnc; }
-  void enable_capabilities() {}
+  void     enable_capabilities() {}
   uint32_t get_lcid_for_eps_bearer(const uint32_t& eps_bearer_id) { return 0; }
   void     paging_completed(bool outcome) {}
 
 private:
   nas*         nas_ptr;
-  uint32_t last_sdu_len;
+  uint32_t     last_sdu_len;
   found_plmn_t plmns;
+  bool         is_connected_flag = false;
 };
 
 class stack_dummy : public stack_interface_gw, public thread
@@ -143,12 +146,12 @@ public:
   void init() { start(-1); }
   bool switch_on() final
   {
-    proc_state_t proc_result = proc_state_t::on_going;
-    nas->start_attach_request(&proc_result);
-    while (proc_result == proc_state_t::on_going) {
+    proc_state_t proc_result;
+    nas->start_attach_request(&proc_result, srslte::establishment_cause_t::mo_data);
+    while (not proc_result.is_complete()) {
       usleep(1000);
     }
-    return proc_result == proc_state_t::success;
+    return proc_result.is_success();
   }
   void write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu, bool blocking)
   {
@@ -185,15 +188,15 @@ class gw_dummy : public gw_interface_nas, public gw_interface_pdcp
   {
     return SRSLTE_SUCCESS;
   }
-  void    write_pdu(uint32_t lcid, unique_byte_buffer_t pdu) {}
-  void    write_pdu_mch(uint32_t lcid, srslte::unique_byte_buffer_t sdu) {}
+  void write_pdu(uint32_t lcid, unique_byte_buffer_t pdu) {}
+  void write_pdu_mch(uint32_t lcid, srslte::unique_byte_buffer_t sdu) {}
 };
 
-}
+} // namespace srslte
 
 int security_command_test()
 {
-  int ret = SRSLTE_ERROR;
+  int                ret = SRSLTE_ERROR;
   srslte::log_filter nas_log("NAS");
   srslte::log_filter rrc_log("RRC");
   srslte::log_filter mac_log("MAC");
@@ -204,25 +207,27 @@ int security_command_test()
   nas_log.set_hex_limit(100000);
   rrc_log.set_hex_limit(100000);
 
+  srslte::timer_handler timers(10);
+
   rrc_dummy rrc_dummy;
-  gw_dummy gw;
+  gw_dummy  gw;
 
   usim_args_t args;
-  args.algo = "xor";
-  args.imei = "353490069873319";
-  args.imsi = "001010123456789";
-  args.k = "00112233445566778899aabbccddeeff";
-  args.op = "63BFA50EE6523365FF14C1F45F88737D";
+  args.algo     = "xor";
+  args.imei     = "353490069873319";
+  args.imsi     = "001010123456789";
+  args.k        = "00112233445566778899aabbccddeeff";
+  args.op       = "63BFA50EE6523365FF14C1F45F88737D";
   args.using_op = true;
 
   // init USIM
   srsue::usim usim(&usim_log);
-  bool    net_valid;
-  uint8_t res[16];
+  bool        net_valid = false;
+  uint8_t     res[16];
   usim.init(&args);
 
   {
-    srsue::nas nas(&nas_log);
+    srsue::nas nas(&nas_log, &timers);
     nas_args_t cfg;
     cfg.eia = "1,2,3";
     cfg.eea = "0,1,2,3";
@@ -230,7 +235,7 @@ int security_command_test()
     rrc_dummy.init(&nas);
 
     // push auth request PDU to NAS to generate security context
-    byte_buffer_pool*  pool = byte_buffer_pool::get_instance();
+    byte_buffer_pool*    pool = byte_buffer_pool::get_instance();
     unique_byte_buffer_t tmp  = srslte::allocate_unique_buffer(*pool, true);
     memcpy(tmp->msg, auth_request_pdu, sizeof(auth_request_pdu));
     tmp->N_bytes = sizeof(auth_request_pdu);
@@ -258,7 +263,7 @@ int security_command_test()
 
 int mme_attach_request_test()
 {
-  int ret = SRSLTE_ERROR;
+  int                ret = SRSLTE_ERROR;
   srslte::log_filter nas_log("NAS");
   srslte::log_filter rrc_log("RRC");
   srslte::log_filter mac_log("MAC");
@@ -274,7 +279,9 @@ int mme_attach_request_test()
   usim_log.set_hex_limit(100000);
   gw_log.set_hex_limit(100000);
 
-  rrc_dummy rrc_dummy;
+  srslte::timer_handler timers(10);
+
+  rrc_dummy  rrc_dummy;
   pdcp_dummy pdcp_dummy;
 
   srsue::usim usim(&usim_log);
@@ -283,16 +290,16 @@ int mme_attach_request_test()
   args.algo = "xor";
   args.imei = "353490069873319";
   args.imsi = "001010123456789";
-  args.k = "00112233445566778899aabbccddeeff";
-  args.op = "63BFA50EE6523365FF14C1F45F88737D";
+  args.k    = "00112233445566778899aabbccddeeff";
+  args.op   = "63BFA50EE6523365FF14C1F45F88737D";
   usim.init(&args);
 
   {
     nas_args_t nas_cfg;
     nas_cfg.force_imsi_attach = true;
     nas_cfg.apn_name          = "test123";
-    srsue::nas  nas(&nas_log);
-    srsue::gw  gw;
+    srsue::nas  nas(&nas_log, &timers);
+    srsue::gw   gw;
     stack_dummy stack(&pdcp_dummy, &nas);
 
     nas.init(&usim, &rrc_dummy, &gw, nas_cfg);
@@ -317,7 +324,7 @@ int mme_attach_request_test()
     rrc_dummy.reset();
 
     // finally push attach accept
-    byte_buffer_pool*  pool = byte_buffer_pool::get_instance();
+    byte_buffer_pool*    pool = byte_buffer_pool::get_instance();
     unique_byte_buffer_t tmp  = srslte::allocate_unique_buffer(*pool, true);
     memcpy(tmp->msg, attach_accept_pdu, sizeof(attach_accept_pdu));
     tmp->N_bytes = sizeof(attach_accept_pdu);
@@ -341,7 +348,7 @@ int mme_attach_request_test()
 
 int esm_info_request_test()
 {
-  int ret = SRSLTE_ERROR;
+  int                ret = SRSLTE_ERROR;
   srslte::log_filter nas_log("NAS");
   srslte::log_filter rrc_log("RRC");
   srslte::log_filter mac_log("MAC");
@@ -352,27 +359,29 @@ int esm_info_request_test()
   nas_log.set_hex_limit(100000);
   rrc_log.set_hex_limit(100000);
 
+  srslte::timer_handler timers(10);
+
   rrc_dummy rrc_dummy;
-  gw_dummy gw;
+  gw_dummy  gw;
 
   usim_args_t args;
   args.algo = "xor";
   args.imei = "353490069873319";
   args.imsi = "001010123456789";
-  args.k = "00112233445566778899aabbccddeeff";
-  args.op = "63BFA50EE6523365FF14C1F45F88737D";
+  args.k    = "00112233445566778899aabbccddeeff";
+  args.op   = "63BFA50EE6523365FF14C1F45F88737D";
 
   // init USIM
   srsue::usim usim(&usim_log);
-  bool    net_valid;
-  uint8_t res[16];
+  bool        net_valid;
+  uint8_t     res[16];
   usim.init(&args);
 
-  srslte::byte_buffer_pool *pool;
+  srslte::byte_buffer_pool* pool;
   pool = byte_buffer_pool::get_instance();
 
   {
-    srsue::nas nas(&nas_log);
+    srsue::nas nas(&nas_log, &timers);
     nas_args_t cfg;
     cfg.apn_name          = "srslte";
     cfg.apn_user          = "srsuser";
@@ -409,6 +418,8 @@ int dedicated_eps_bearer_test()
   nas_log.set_hex_limit(100000);
   rrc_log.set_hex_limit(100000);
 
+  srslte::timer_handler timers(10);
+
   rrc_dummy rrc_dummy;
   gw_dummy  gw;
 
@@ -425,7 +436,7 @@ int dedicated_eps_bearer_test()
 
   srslte::byte_buffer_pool* pool = byte_buffer_pool::get_instance();
 
-  srsue::nas nas(&nas_log);
+  srsue::nas nas(&nas_log, &timers);
   nas_args_t cfg        = {};
   cfg.force_imsi_attach = true; // make sure we get a fresh security context
   nas.init(&usim, &rrc_dummy, &gw, cfg);
@@ -480,7 +491,7 @@ int dedicated_eps_bearer_test()
   return SRSLTE_SUCCESS;
 }
 
-int main(int argc, char **argv)
+int main(int argc, char** argv)
 {
   if (security_command_test()) {
     printf("Security command test failed.\n");

@@ -638,7 +638,7 @@ static void rf_shmem_wait_next_tti(void *h, struct timeval * tv_ref)
 
 // ************ begin RF API ************
 
-char* rf_shmem_devname(void *h)
+const char* rf_shmem_devname(void *h)
  {
    RF_SHMEM_GET_STATE(h);
 

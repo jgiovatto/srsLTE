@@ -90,7 +90,7 @@ static inline float get_doppler_dispersion(double t, double a, double w, double 
 static inline void
 generate_tap(float delay_ns, float power_db, float srate, float phase, cf_t* buf, uint32_t N, uint32_t path_delay)
 {
-  float amplitude = powf(10.0f, power_db / 20.0f);
+  float amplitude = srslte_convert_dB_to_power(power_db);
   float O         = (delay_ns * 1e-9f * srate + path_delay) / (float)N;
   cf_t  a0        = amplitude * cexpf(-_Complex_I * phase) / N;
 
@@ -108,7 +108,12 @@ static inline void generate_taps(srslte_channel_fading_t* q, double time)
     float phase = get_doppler_dispersion(time, q->coeff_a[i], q->coeff_w[i], q->coeff_p[i]);
 
     // Generate tab
-    generate_tap(excess_tap_delay_ns[q->model][i], relative_power_db[q->model][i], q->srate, phase, q->temp, q->N,
+    generate_tap(excess_tap_delay_ns[q->model][i],
+                 relative_power_db[q->model][i],
+                 q->srate,
+                 phase,
+                 q->temp,
+                 q->N,
                  q->path_delay);
 
     // Add to frequency response
@@ -246,8 +251,11 @@ void srslte_channel_fading_free(srslte_channel_fading_t* q)
   }
 }
 
-double srslte_channel_fading_execute(
-    srslte_channel_fading_t* q, const cf_t* in, cf_t* out, uint32_t nsamples, double init_time)
+double srslte_channel_fading_execute(srslte_channel_fading_t* q,
+                                     const cf_t*              in,
+                                     cf_t*                    out,
+                                     uint32_t                 nsamples,
+                                     double                   init_time)
 {
   uint32_t counter = 0;
 

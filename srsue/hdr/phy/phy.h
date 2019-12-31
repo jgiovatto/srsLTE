@@ -43,16 +43,14 @@ typedef _Complex float cf_t;
 class phy : public ue_lte_phy_base, public thread
 {
 public:
-  phy(srslte::logger* logger_) : logger(logger_), workers_pool(MAX_WORKERS), common(MAX_WORKERS), thread("PHY"){};
-  ~phy() { stop(); }
+  explicit phy(srslte::logger* logger_) : logger(logger_), workers_pool(MAX_WORKERS), common(), thread("PHY"){};
+  ~phy() final { stop(); }
 
   // Init defined in base class
   int init(const phy_args_t& args_) final;
 
   // Init for LTE PHYs
-  int init(const phy_args_t&            args_,
-           stack_interface_phy_lte*     stack_,
-           srslte::radio_interface_phy* radio_) final;
+  int init(const phy_args_t& args_, stack_interface_phy_lte* stack_, srslte::radio_interface_phy* radio_) final;
 
   void stop() final;
 
@@ -60,7 +58,7 @@ public:
   bool is_initiated();
 
   void get_metrics(phy_metrics_t* m) final;
-  void srslte_phy_logger(phy_logger_level_t log_level, char *str);
+  void srslte_phy_logger(phy_logger_level_t log_level, char* str);
 
   void enable_pregen_signals(bool enable) final;
 
@@ -136,7 +134,9 @@ public:
 private:
   void run_thread() final;
 
-  bool     initiated   = false;
+  std::mutex              config_mutex;
+  std::condition_variable config_cond;
+  bool                    is_configured = false;
   uint32_t nof_workers = 0;
 
   const static int SF_RECV_THREAD_PRIO = 1;
@@ -150,12 +150,12 @@ private:
   srslte::log*                    log_phy_lib_h = nullptr;
   srsue::stack_interface_phy_lte* stack         = nullptr;
 
-  srslte::thread_pool      workers_pool;
+  srslte::thread_pool                      workers_pool;
   std::vector<std::unique_ptr<sf_worker> > workers;
-  phy_common               common;
-  sync                     sfsync;
-  scell::async_recv_vector scell_sync;
-  prach                   prach_buffer;
+  phy_common                               common;
+  sync                                     sfsync;
+  scell::async_recv_vector                 scell_sync;
+  prach                                    prach_buffer;
 
   srslte_prach_cfg_t  prach_cfg  = {};
   srslte_tdd_config_t tdd_config = {};
@@ -166,7 +166,7 @@ private:
   /* Current time advance */
   uint32_t n_ta = 0;
 
-  void set_default_args(phy_args_t *args);
+  void set_default_args(phy_args_t* args);
   bool check_args(const phy_args_t& args);
 };
 

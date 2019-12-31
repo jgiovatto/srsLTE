@@ -194,12 +194,11 @@ public:
     }
 
     // Undo srslte_enb_dl_gen_signal scaling
-    float scale = sqrt(cell_base.nof_prb) / 0.05f / enb_dl.ifft->symbol_sz;
+    float scale = sqrtf(cell_base.nof_prb) / 0.05f / enb_dl.ifft->symbol_sz;
 
     // Apply Neighbour cell attenuation
     if (enb_dl.cell.id != cell_id_start) {
-      float scale_dB = -ncell_attenuation_dB;
-      scale *= powf(10.0f, scale_dB / 20.0f);
+      scale *= srslte_convert_dB_to_amplitude(-ncell_attenuation_dB);
     }
 
     // Scale signal
@@ -371,7 +370,6 @@ int main(int argc, char** argv)
     return SRSLTE_ERROR;
   }
 
-  srslte_dft_load();
 
   // Common for simulation and over-the-air
   auto                        baseband_buffer = (cf_t*)srslte_vec_malloc(sizeof(cf_t) * SRSLTE_SF_LEN_MAX);
@@ -379,7 +377,7 @@ int main(int argc, char** argv)
   srsue::scell::intra_measure intra_measure;
   srslte::log_filter          logger("intra_measure");
   dummy_rrc                   rrc;
-  srsue::phy_common           common(1);
+  srsue::phy_common           common;
 
   // Simulation only
   std::vector<std::unique_ptr<test_enb> > test_enb_v;
@@ -450,7 +448,7 @@ int main(int argc, char** argv)
   logger.set_level(intra_meas_log_level);
 
   intra_measure.init(&common, &rrc, &logger);
-  intra_measure.set_primay_cell(serving_cell_id, cell_base);
+  intra_measure.set_primary_cell(serving_cell_id, cell_base);
 
   if (earfcn_dl >= 0) {
     // Create radio log
@@ -640,8 +638,6 @@ int main(int argc, char** argv)
       free(sb);
     }
   }
-
-  atexit(srslte_dft_exit);
 
   if (ret) {
     printf("Error\n");
