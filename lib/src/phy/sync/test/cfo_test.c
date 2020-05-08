@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -72,12 +72,12 @@ int main(int argc, char** argv)
 
   parse_args(argc, argv);
 
-  input = malloc(sizeof(cf_t) * num_samples);
+  input = srslte_vec_cf_malloc(num_samples);
   if (!input) {
     perror("malloc");
     exit(-1);
   }
-  output = malloc(sizeof(cf_t) * num_samples);
+  output = srslte_vec_cf_malloc(num_samples);
   if (!output) {
     perror("malloc");
     exit(-1);

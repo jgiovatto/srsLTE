@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -35,7 +35,7 @@
 #include "phy/phy.h"
 #include "srsenb/hdr/stack/rrc/rrc.h"
 
-#include "srslte/radio/radio_base.h"
+#include "srslte/radio/radio.h"
 
 #include "srsenb/hdr/phy/enb_phy_base.h"
 #include "srsenb/hdr/stack/enb_stack_base.h"
@@ -59,10 +59,10 @@ namespace srsenb {
 *******************************************************************************/
 
 struct enb_args_t {
-  uint32_t dl_earfcn;
-  uint32_t ul_earfcn;
+  uint32_t enb_id;
+  uint32_t dl_earfcn; // By default the EARFCN from rr.conf's cell list are used but this value can be used for single
+                      // cell eNB
   uint32_t n_prb;
-  uint32_t pci;
   uint32_t nof_ports;
   uint32_t transmission_mode;
   float    p_a;
@@ -115,11 +115,11 @@ struct all_args_t {
 class enb : public enb_metrics_interface
 {
 public:
-  static enb* get_instance(void);
+  enb();
 
-  static void cleanup(void);
+  virtual ~enb();
 
-  int init(const all_args_t& args_);
+  int init(const all_args_t& args_, srslte::logger* logger_);
 
   void stop();
 
@@ -135,19 +135,13 @@ public:
   bool get_metrics(enb_metrics_t* m);
 
 private:
-  static enb* instance;
-
   const static int ENB_POOL_SIZE = 1024 * 10;
-
-  enb();
-
-  virtual ~enb();
 
   int parse_args(const all_args_t& args_);
 
   // eNB components
   std::unique_ptr<enb_stack_base>     stack = nullptr;
-  std::unique_ptr<srslte::radio_base> radio = nullptr;
+  std::unique_ptr<srslte::radio>      radio = nullptr;
   std::unique_ptr<enb_phy_base>       phy   = nullptr;
 
   srslte::logger_stdout logger_stdout;

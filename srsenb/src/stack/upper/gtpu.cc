@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -24,35 +24,36 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/ip.h>
+#include <stdio.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 using namespace srslte;
 namespace srsenb {
 
-gtpu::gtpu() : m1u(this) {}
+gtpu::gtpu() : m1u(this), gtpu_log("GTPU") {}
 
-bool gtpu::init(std::string                  gtp_bind_addr_,
-                std::string                  mme_addr_,
-                std::string                  m1u_multiaddr_,
-                std::string                  m1u_if_addr_,
-                srsenb::pdcp_interface_gtpu* pdcp_,
-                stack_interface_gtpu_lte*    stack_,
-                srslte::log*                 gtpu_log_,
-                bool                         enable_mbsfn_)
+int gtpu::init(std::string                  gtp_bind_addr_,
+               std::string                  mme_addr_,
+               std::string                  m1u_multiaddr_,
+               std::string                  m1u_if_addr_,
+               srsenb::pdcp_interface_gtpu* pdcp_,
+               stack_interface_gtpu_lte*    stack_,
+               bool                         enable_mbsfn_)
 {
   pdcp          = pdcp_;
-  gtpu_log      = gtpu_log_;
   gtp_bind_addr = gtp_bind_addr_;
   mme_addr      = mme_addr_;
   pool          = byte_buffer_pool::get_instance();
   stack         = stack_;
 
+  char errbuf[128] = {};
+
   // Set up socket
   fd = socket(AF_INET, SOCK_DGRAM, 0);
   if (fd < 0) {
     gtpu_log->error("Failed to create socket\n");
-    return false;
+    return SRSLTE_ERROR;
   }
   int enable = 1;
 #if defined(SO_REUSEADDR)
@@ -71,9 +72,10 @@ bool gtpu::init(std::string                  gtp_bind_addr_,
   bindaddr.sin_port        = htons(GTPU_PORT);
 
   if (bind(fd, (struct sockaddr*)&bindaddr, sizeof(struct sockaddr_in))) {
-    gtpu_log->error("Failed to bind on address %s, port %d\n", gtp_bind_addr.c_str(), GTPU_PORT);
-    gtpu_log->console("Failed to bind on address %s, port %d\n", gtp_bind_addr.c_str(), GTPU_PORT);
-    return false;
+    snprintf(errbuf, sizeof(errbuf), "%s", strerror(errno));
+    gtpu_log->error("Failed to bind on address %s, port %d: %s\n", gtp_bind_addr.c_str(), GTPU_PORT, errbuf);
+    gtpu_log->console("Failed to bind on address %s, port %d: %s\n", gtp_bind_addr.c_str(), GTPU_PORT, errbuf);
+    return SRSLTE_ERROR;
   }
 
   stack->add_gtpu_s1u_socket_handler(fd);
@@ -82,10 +84,10 @@ bool gtpu::init(std::string                  gtp_bind_addr_,
   enable_mbsfn = enable_mbsfn_;
   if (enable_mbsfn) {
     if (not m1u.init(m1u_multiaddr_, m1u_if_addr_)) {
-      return false;
+      return SRSLTE_ERROR;
     }
   }
-  return true;
+  return SRSLTE_SUCCESS;
 }
 
 void gtpu::stop()

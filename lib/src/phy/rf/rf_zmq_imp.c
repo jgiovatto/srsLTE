@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -42,21 +42,18 @@ typedef struct {
   uint32_t base_srate;
   uint32_t decim_factor; // decimation factor between base_srate used on transport on radio's rate
   double   rx_gain;
-  uint32_t tx_freq_mhz[SRSLTE_MAX_PORTS];
-  uint32_t rx_freq_mhz[SRSLTE_MAX_PORTS];
-  bool     tx_used;
+  uint32_t tx_freq_mhz[SRSLTE_MAX_CHANNELS];
+  uint32_t rx_freq_mhz[SRSLTE_MAX_CHANNELS];
+  bool     tx_off;
+  char     id[RF_PARAM_LEN];
 
   // Server
   void*       context;
-  rf_zmq_tx_t transmitter[SRSLTE_MAX_PORTS];
-  rf_zmq_rx_t receiver[SRSLTE_MAX_PORTS];
-
-  char rx_port[PARAM_LEN];
-  char tx_port[PARAM_LEN];
-  char id[PARAM_LEN_SHORT];
+  rf_zmq_tx_t transmitter[SRSLTE_MAX_CHANNELS];
+  rf_zmq_rx_t receiver[SRSLTE_MAX_CHANNELS];
 
   // Various sample buffers
-  cf_t* buffer_decimation[SRSLTE_MAX_PORTS];
+  cf_t* buffer_decimation[SRSLTE_MAX_CHANNELS];
   cf_t* buffer_tx;
 
   // Rx timestamp
@@ -64,6 +61,7 @@ typedef struct {
 
   pthread_mutex_t tx_config_mutex;
   pthread_mutex_t rx_config_mutex;
+  pthread_mutex_t decim_mutex;
 } rf_zmq_handler_t;
 
 void update_rates(rf_zmq_handler_t* handler, double srate);
@@ -153,7 +151,7 @@ void rf_zmq_suppress_stdout(void* h)
   // do nothing
 }
 
-void rf_zmq_register_error_handler(void* h, srslte_rf_error_handler_t new_handler)
+void rf_zmq_register_error_handler(void* h, srslte_rf_error_handler_t new_handler, void* arg)
 {
   // do nothing
 }
@@ -193,24 +191,10 @@ int rf_zmq_open(char* args, void** h)
   return rf_zmq_open_multi(args, h, 1);
 }
 
-static inline int parse_double(const char* args, const char* config_arg, double* value)
-{
-  int ret = SRSLTE_ERROR;
-  if (args && config_arg && value) {
-    char* config_ptr = strstr(args, config_arg);
-
-    if (config_ptr) {
-      *value = strtod(config_ptr + strlen(config_arg), NULL);
-      ret    = SRSLTE_SUCCESS;
-    }
-  }
-  return ret;
-}
-
 int rf_zmq_open_multi(char* args, void** h, uint32_t nof_channels)
 {
   int ret = SRSLTE_ERROR;
-  if (h) {
+  if (h && nof_channels < SRSLTE_MAX_CHANNELS) {
     *h = NULL;
 
     rf_zmq_handler_t* handler = (rf_zmq_handler_t*)malloc(sizeof(rf_zmq_handler_t));
@@ -242,108 +226,64 @@ int rf_zmq_open_multi(char* args, void** h, uint32_t nof_channels)
     if (pthread_mutex_init(&handler->rx_config_mutex, NULL)) {
       perror("Mutex init");
     }
+    if (pthread_mutex_init(&handler->decim_mutex, NULL)) {
+      perror("Mutex init");
+    }
 
     // parse args
     if (args && strlen(args)) {
       // base_srate
-      {
-        const char config_arg[]          = "base_srate=";
-        char       config_str[PARAM_LEN] = {0};
-        char*      config_ptr            = strstr(args, config_arg);
-        if (config_ptr) {
-          copy_subdev_string(config_str, config_ptr + strlen(config_arg));
-          printf("Using base rate=%s\n", config_str);
-          handler->base_srate = (uint32_t)strtod(config_str, NULL);
-          remove_substring(args, config_arg);
-          remove_substring(args, config_str);
-        }
-      }
+      parse_uint32(args, "base_srate", -1, &handler->base_srate);
 
       // id
-      {
-        const char config_arg[]                = "id=";
-        char       config_str[PARAM_LEN_SHORT] = {0};
-        char*      config_ptr                  = strstr(args, config_arg);
-        if (config_ptr) {
-          copy_subdev_string(config_str, config_ptr + strlen(config_arg));
-          printf("Using ID=%s\n", config_str);
-          strncpy(handler->id, config_str, PARAM_LEN_SHORT);
-          handler->id[PARAM_LEN_SHORT - 1] = 0;
-          remove_substring(args, config_arg);
-          remove_substring(args, config_str);
-        }
-      }
+      parse_string(args, "id", -1, handler->id);
+
       // rx_type
-      {
-        const char config_arg[]                = "rx_type=";
-        char       config_str[PARAM_LEN_SHORT] = {0};
-        char*      config_ptr                  = strstr(args, config_arg);
-        if (config_ptr) {
-          copy_subdev_string(config_str, config_ptr + strlen(config_arg));
-          if (!strcmp(config_str, "sub")) {
-            rx_opts.socket_type = ZMQ_SUB;
-            printf("Using ZMQ_SUB for rx socket\n");
-          } else {
-            printf("Unsupported socket type %s. Using ZMQ_REQ for rx socket\n", config_str);
-          }
-          remove_substring(args, config_arg);
-          remove_substring(args, config_str);
-        }
-      }
-      // rx_format
-      {
-        const char config_arg[]                = "rx_format=";
-        char       config_str[PARAM_LEN_SHORT] = {0};
-        char*      config_ptr                  = strstr(args, config_arg);
-        if (config_ptr) {
-          copy_subdev_string(config_str, config_ptr + strlen(config_arg));
-          rx_opts.sample_format = ZMQ_TYPE_FC32;
-          if (!strcmp(config_str, "sc16")) {
-            rx_opts.sample_format = ZMQ_TYPE_SC16;
-            printf("Using sc16 format for rx socket\n");
-          } else {
-            printf("Unsupported sample format %s. Using fc32 for rx socket\n", config_str);
-          }
-          remove_substring(args, config_arg);
-          remove_substring(args, config_str);
-        }
-      }
-      // tx_type
-      {
-        const char config_arg[]                = "tx_type=";
-        char       config_str[PARAM_LEN_SHORT] = {0};
-        char*      config_ptr                  = strstr(args, config_arg);
-        if (config_ptr) {
-          copy_subdev_string(config_str, config_ptr + strlen(config_arg));
-          if (!strcmp(config_str, "pub")) {
-            tx_opts.socket_type = ZMQ_PUB;
-            printf("Using ZMQ_PUB for tx socket\n");
-          } else {
-            printf("Unsupported socket type %s. Using ZMQ_REP for tx socket\n", config_str);
-          }
-          remove_substring(args, config_arg);
-          remove_substring(args, config_str);
-        }
-      }
-      // tx_format
-      {
-        const char config_arg[]                = "tx_format=";
-        char       config_str[PARAM_LEN_SHORT] = {0};
-        char*      config_ptr                  = strstr(args, config_arg);
-        if (config_ptr) {
-          copy_subdev_string(config_str, config_ptr + strlen(config_arg));
-          tx_opts.sample_format = ZMQ_TYPE_FC32;
-          if (!strcmp(config_str, "sc16")) {
-            tx_opts.sample_format = ZMQ_TYPE_SC16;
-            printf("Using sc16 format for tx socket\n");
-          } else {
-            printf("Unsupported sample format %s. Using fc32 for tx socket\n", config_str);
-          }
-          remove_substring(args, config_arg);
-          remove_substring(args, config_str);
+      char tmp[RF_PARAM_LEN] = {0};
+      parse_string(args, "rx_type", -1, tmp);
+      if (strlen(tmp) > 0) {
+        if (!strcmp(tmp, "sub")) {
+          rx_opts.socket_type = ZMQ_SUB;
+        } else {
+          printf("Unsupported socket type %s\n", tmp);
+          goto clean_exit;
         }
       }
 
+      // rx_format
+      parse_string(args, "rx_format", -1, tmp);
+      rx_opts.sample_format = ZMQ_TYPE_FC32;
+      if (strlen(tmp) > 0) {
+        if (!strcmp(tmp, "sc16")) {
+          rx_opts.sample_format = ZMQ_TYPE_SC16;
+        } else {
+          printf("Unsupported sample format %s\n", tmp);
+          goto clean_exit;
+        }
+      }
+
+      // tx_type
+      parse_string(args, "tx_type", -1, tmp);
+      if (strlen(tmp) > 0) {
+        if (!strcmp(tmp, "pub")) {
+          tx_opts.socket_type = ZMQ_PUB;
+        } else {
+          printf("Unsupported socket type %s\n", tmp);
+          goto clean_exit;
+        }
+      }
+
+      // tx_format
+      parse_string(args, "tx_format", -1, tmp);
+      tx_opts.sample_format = ZMQ_TYPE_FC32;
+      if (strlen(tmp) > 0) {
+        if (!strcmp(tmp, "sc16")) {
+          tx_opts.sample_format = ZMQ_TYPE_SC16;
+        } else {
+          printf("Unsupported sample format %s\n", tmp);
+          goto clean_exit;
+        }
+      }
     } else {
       fprintf(stderr, "[zmq] Error: RF device args are required for ZMQ no-RF module\n");
       goto clean_exit;
@@ -359,89 +299,46 @@ int rf_zmq_open_multi(char* args, void** h, uint32_t nof_channels)
     }
 
     for (int i = 0; i < handler->nof_channels; i++) {
-      // rxport
-      {
-        char config_arg[PARAM_LEN] = "rx_port=";
-        char config_str[PARAM_LEN] = {0};
+      char rx_port[RF_PARAM_LEN] = {};
+      char tx_port[RF_PARAM_LEN] = {};
 
-        if (i > 0) {
-          snprintf(config_arg, PARAM_LEN, "rx_port%d=", i + 1);
-        }
-
-        char* config_ptr = strstr(args, config_arg);
-
-        if (config_ptr) {
-          copy_subdev_string(config_str, config_ptr + strlen(config_arg));
-          printf("Channel %d. Using rx_port=%s\n", i, config_str);
-          strncpy(handler->rx_port, config_str, PARAM_LEN);
-          handler->rx_port[PARAM_LEN - 1] = 0;
-          remove_substring(args, config_arg);
-          remove_substring(args, config_str);
-        }
-      }
+      // rx_port
+      parse_string(args, "rx_port", i, rx_port);
 
       // rx_freq
-      {
-        char config_arg[PARAM_LEN] = "rx_freq=";
-        if (i > 0) {
-          snprintf(config_arg, PARAM_LEN, "rx_freq%d=", i + 1);
-        }
+      double rx_freq = 0.0f;
+      parse_double(args, "rx_freq", i, &rx_freq);
+      rx_opts.frequency_mhz = (uint32_t)(rx_freq / 1e6);
 
-        double freq = 0.0;
-        if (!parse_double(args, config_arg, &freq)) {
-          rx_opts.frequency_mhz = (uint32_t)(freq / 1e6);
-          printf("Channel %d. Using rx_freq=%dMHz\n", i, rx_opts.frequency_mhz);
-        }
-      }
-
-      // txport
-      {
-        char config_arg[PARAM_LEN] = "tx_port=";
-        char config_str[PARAM_LEN] = {0};
-
-        if (i > 0) {
-          snprintf(config_arg, PARAM_LEN, "tx_port%d=", i + 1);
-        }
-
-        char* config_ptr = strstr(args, config_arg);
-
-        if (config_ptr) {
-          copy_subdev_string(config_str, config_ptr + strlen(config_arg));
-          printf("Channel %d. Using tx_port=%s\n", i, config_str);
-          strncpy(handler->tx_port, config_str, PARAM_LEN);
-          handler->tx_port[PARAM_LEN - 1] = 0;
-          remove_substring(args, config_arg);
-          remove_substring(args, config_str);
-        }
-      }
+      // tx_port
+      parse_string(args, "tx_port", i, tx_port);
 
       // tx_freq
-      {
-        char config_arg[PARAM_LEN] = "tx_freq=";
-        if (i > 0) {
-          snprintf(config_arg, PARAM_LEN, "tx_freq%d=", i + 1);
-        }
+      double tx_freq = 0.0f;
+      parse_double(args, "tx_freq", i, &tx_freq);
+      tx_opts.frequency_mhz = (uint32_t)(tx_freq / 1e6);
 
-        double freq = 0.0;
-        if (!parse_double(args, config_arg, &freq)) {
-          tx_opts.frequency_mhz = (uint32_t)(freq / 1e6);
-          printf("Channel %d. Using tx_freq=%dMHz\n", i, tx_opts.frequency_mhz);
-        }
+      // fail_on_disconnect
+      char tmp[RF_PARAM_LEN] = {};
+      parse_string(args, "fail_on_disconnect", i, tmp);
+      if (strncmp(tmp, "true", RF_PARAM_LEN) == 0 || strncmp(tmp, "yes", RF_PARAM_LEN) == 0) {
+        rx_opts.fail_on_disconnect = true;
       }
 
       // initialize transmitter
-      if (strlen(handler->tx_port) != 0) {
-        if (rf_zmq_tx_open(&handler->transmitter[i], tx_opts, handler->context, handler->tx_port) != SRSLTE_SUCCESS) {
+      if (strlen(tx_port) != 0) {
+        if (rf_zmq_tx_open(&handler->transmitter[i], tx_opts, handler->context, tx_port) != SRSLTE_SUCCESS) {
           fprintf(stderr, "[zmq] Error: opening transmitter\n");
           goto clean_exit;
         }
       } else {
         fprintf(stdout, "[zmq] %s Tx port not specified. Disabling transmitter.\n", handler->id);
+        handler->tx_off = true;
       }
 
       // initialize receiver
-      if (strlen(handler->rx_port) != 0) {
-        if (rf_zmq_rx_open(&handler->receiver[i], rx_opts, handler->context, handler->rx_port) != SRSLTE_SUCCESS) {
+      if (strlen(rx_port) != 0) {
+        if (rf_zmq_rx_open(&handler->receiver[i], rx_opts, handler->context, rx_port) != SRSLTE_SUCCESS) {
           fprintf(stderr, "[zmq] Error: opening receiver\n");
           goto clean_exit;
         }
@@ -482,8 +379,6 @@ int rf_zmq_open_multi(char* args, void** h, uint32_t nof_channels)
 
 int rf_zmq_close(void* h)
 {
-  rf_zmq_stop_rx_stream(h);
-
   rf_zmq_handler_t* handler = (rf_zmq_handler_t*)h;
 
   rf_zmq_info(handler->id, "Closing ...\n");
@@ -509,6 +404,7 @@ int rf_zmq_close(void* h)
 
   pthread_mutex_destroy(&handler->tx_config_mutex);
   pthread_mutex_destroy(&handler->rx_config_mutex);
+  pthread_mutex_destroy(&handler->decim_mutex);
 
   // Free all
   free(handler);
@@ -518,6 +414,7 @@ int rf_zmq_close(void* h)
 
 void update_rates(rf_zmq_handler_t* handler, double srate)
 {
+  pthread_mutex_lock(&handler->decim_mutex);
   if (handler) {
     // Decimation must be full integer
     if (((uint64_t)handler->base_srate % (uint64_t)srate) == 0) {
@@ -534,6 +431,7 @@ void update_rates(rf_zmq_handler_t* handler, double srate)
            handler->base_srate / 1e6,
            handler->decim_factor);
   }
+  pthread_mutex_unlock(&handler->decim_mutex);
 }
 
 double rf_zmq_set_rx_srate(void* h, double srate)
@@ -642,6 +540,47 @@ void rf_zmq_get_time(void* h, time_t* secs, double* frac_secs)
   }
 }
 
+#if ZMQ_MONITOR
+static int rf_zmq_rx_get_monitor_event(void* monitor, int* value, char** address)
+{
+  // First frame in message contains event number and value
+  zmq_msg_t msg;
+  zmq_msg_init(&msg);
+  if (zmq_msg_recv(&msg, monitor, 0) == -1) {
+    printf("zmq_msg_recv failed!\n");
+    return -1; // Interruped, presumably
+  }
+
+  if (zmq_msg_more(&msg)) {
+    printf("more to read\n");
+  }
+
+  uint8_t* data  = (uint8_t*)zmq_msg_data(&msg);
+  uint16_t event = *(uint16_t*)(data);
+  if (value) {
+    *value = *(uint32_t*)(data + 2);
+  }
+
+  // Second frame in message contains event address
+  zmq_msg_init(&msg);
+  if (zmq_msg_recv(&msg, monitor, 0) == -1) {
+    return -1; // Interruped, presumably
+  }
+  if (zmq_msg_more(&msg)) {
+    printf("error in msg_more \n");
+  }
+
+  if (address) {
+    uint8_t* data = (uint8_t*)zmq_msg_data(&msg);
+    size_t   size = zmq_msg_size(&msg);
+    *address      = (char*)malloc(size + 1);
+    memcpy(*address, data, size);
+    *address[size] = 0;
+  }
+  return event;
+}
+#endif // ZMQ_MONITOR
+
 int rf_zmq_recv_with_time(void* h, void* data, uint32_t nsamples, bool blocking, time_t* secs, double* frac_secs)
 {
   return rf_zmq_recv_with_time_multi(h, &data, nsamples, blocking, secs, frac_secs);
@@ -659,14 +598,9 @@ int rf_zmq_recv_with_time_multi(void*    h,
   if (h) {
     rf_zmq_handler_t* handler = (rf_zmq_handler_t*)h;
 
-    uint32_t nbytes            = NSAMPLES2NBYTES(nsamples * handler->decim_factor);
-    uint32_t nsamples_baserate = nsamples * handler->decim_factor;
-
-    rf_zmq_info(handler->id, "Rx %d samples (%d B)\n", nsamples, nbytes);
-
     // Map ports to data buffers according to the selected frequencies
     pthread_mutex_lock(&handler->rx_config_mutex);
-    cf_t* buffers[SRSLTE_MAX_PORTS] = {}; // Buffer pointers, NULL if unmatched
+    cf_t* buffers[SRSLTE_MAX_CHANNELS] = {}; // Buffer pointers, NULL if unmatched
     for (uint32_t i = 0; i < handler->nof_channels; i++) {
       bool mapped = false;
 
@@ -686,6 +620,16 @@ int rf_zmq_recv_with_time_multi(void*    h,
       }
     }
     pthread_mutex_unlock(&handler->rx_config_mutex);
+
+    // Protect the access to decim_factor since is a shared variable
+    pthread_mutex_lock(&handler->decim_mutex);
+    uint32_t decim_factor = handler->decim_factor;
+    pthread_mutex_unlock(&handler->decim_mutex);
+
+    uint32_t nbytes            = NSAMPLES2NBYTES(nsamples * decim_factor);
+    uint32_t nsamples_baserate = nsamples * decim_factor;
+
+    rf_zmq_info(handler->id, "Rx %d samples (%d B)\n", nsamples, nbytes);
 
     // set timestamp for this reception
     if (secs != NULL && frac_secs != NULL) {
@@ -729,25 +673,45 @@ int rf_zmq_recv_with_time_multi(void*    h,
     }
 
     // copy from rx buffer as many samples as requested into provided buffer
-    bool    completed               = false;
-    int32_t count[SRSLTE_MAX_PORTS] = {};
+    bool    completed                  = false;
+    int32_t count[SRSLTE_MAX_CHANNELS] = {};
     while (!completed) {
       uint32_t completed_count = 0;
 
       // Iterate channels
       for (uint32_t i = 0; i < handler->nof_channels; i++) {
-        cf_t* ptr = (handler->decim_factor != 1 || buffers[i] == NULL) ? handler->buffer_decimation[i] : buffers[i];
+        cf_t* ptr = (decim_factor != 1 || buffers[i] == NULL) ? handler->buffer_decimation[i] : buffers[i];
 
         // Completed condition
         if (count[i] < nsamples_baserate && handler->receiver[i].running) {
           // Keep receiving
           int32_t n = rf_zmq_rx_baseband(&handler->receiver[i], &ptr[count[i]], nsamples_baserate);
-          if (n > 0) {
+#if ZMQ_MONITOR
+          // handle socket events
+          int event = rf_zmq_rx_get_monitor_event(handler->receiver[i].socket_monitor, NULL, NULL);
+          if (event != -1) {
+            printf("event=0x%X\n", event);
+            switch (event) {
+              case ZMQ_EVENT_CONNECTED:
+                handler->receiver[i].tx_connected = true;
+                break;
+              case ZMQ_EVENT_CLOSED:
+                handler->receiver[i].tx_connected = false;
+                break;
+              default:
+                break;
+            }
+          }
+#endif // ZMQ_MONITOR
+          if (n > SRSLTE_SUCCESS) {
             // No error
             count[i] += n;
           } else if (n == SRSLTE_ERROR_TIMEOUT) {
-            // Timeout, do nothing, keep going
-          } else if (n > 0) {
+            // Other end disconnected, either keep going, or fail
+            if (handler->receiver[i].fail_on_disconnect) {
+              goto clean_exit;
+            }
+          } else if (n < SRSLTE_SUCCESS) {
             // Other error, exit
             fprintf(stderr, "Error: receiving data.\n");
             goto clean_exit;
@@ -767,7 +731,7 @@ int rf_zmq_recv_with_time_multi(void*    h,
                 NBYTES2NSAMPLES(srslte_ringbuffer_status(&handler->receiver[0].ringbuffer)));
 
     // decimate if needed
-    if (handler->decim_factor != 1) {
+    if (decim_factor != 1) {
       for (uint32_t c = 0; c < handler->nof_channels; c++) {
         // skip if buffer is not available
         if (buffers[c]) {
@@ -777,7 +741,7 @@ int rf_zmq_recv_with_time_multi(void*    h,
           for (uint32_t i = 0, n = 0; i < nsamples; i++) {
             // Averaging decimation
             cf_t avg = 0.0f;
-            for (int j = 0; j < handler->decim_factor; j++, n++) {
+            for (int j = 0; j < decim_factor; j++, n++) {
               avg += ptr[n];
             }
             dst[i] = avg;
@@ -785,7 +749,7 @@ int rf_zmq_recv_with_time_multi(void*    h,
 
           rf_zmq_info(handler->id,
                       "  - re-adjust bytes due to %dx decimation %d --> %d samples)\n",
-                      handler->decim_factor,
+                      decim_factor,
                       nsamples_baserate,
                       nsamples);
         }
@@ -841,19 +805,11 @@ int rf_zmq_send_timed_multi(void*  h,
   int ret = SRSLTE_ERROR;
 
   if (h && data && nsamples > 0) {
-    rf_zmq_handler_t* handler           = (rf_zmq_handler_t*)h;
-    uint32_t          nbytes            = NSAMPLES2NBYTES(nsamples);
-    uint32_t          nsamples_baseband = nsamples * handler->decim_factor;
-    uint32_t          nbytes_baseband   = NSAMPLES2NBYTES(nsamples_baseband);
-
-    if (nbytes_baseband > ZMQ_MAX_BUFFER_SIZE) {
-      fprintf(stderr, "Error: trying to transmit too many samples (%d > %zu).\n", nbytes, ZMQ_MAX_BUFFER_SIZE);
-      goto clean_exit;
-    }
+    rf_zmq_handler_t* handler = (rf_zmq_handler_t*)h;
 
     // Map ports to data buffers according to the selected frequencies
     pthread_mutex_lock(&handler->tx_config_mutex);
-    cf_t* buffers[SRSLTE_MAX_PORTS] = {}; // Buffer pointers, NULL if unmatched
+    cf_t* buffers[SRSLTE_MAX_CHANNELS] = {}; // Buffer pointers, NULL if unmatched
     for (uint32_t i = 0; i < handler->nof_channels; i++) {
       bool mapped = false;
 
@@ -869,10 +825,23 @@ int rf_zmq_send_timed_multi(void*  h,
     }
     pthread_mutex_unlock(&handler->tx_config_mutex);
 
+    // Protect the access to decim_factor since is a shared variable
+    pthread_mutex_lock(&handler->decim_mutex);
+    uint32_t decim_factor = handler->decim_factor;
+    pthread_mutex_unlock(&handler->decim_mutex);
+
+    uint32_t nbytes            = NSAMPLES2NBYTES(nsamples);
+    uint32_t nsamples_baseband = nsamples * decim_factor;
+    uint32_t nbytes_baseband   = NSAMPLES2NBYTES(nsamples_baseband);
+    if (nbytes_baseband > ZMQ_MAX_BUFFER_SIZE) {
+      fprintf(stderr, "Error: trying to transmit too many samples (%d > %zu).\n", nbytes, ZMQ_MAX_BUFFER_SIZE);
+      goto clean_exit;
+    }
+
     rf_zmq_info(handler->id, "Tx %d samples (%d B)\n", nsamples, nbytes);
 
     // return if transmitter is switched off
-    if (strlen(handler->tx_port) == 0) {
+    if (handler->tx_off) {
       return SRSLTE_SUCCESS;
     }
 
@@ -905,13 +874,13 @@ int rf_zmq_send_timed_multi(void*  h,
     for (int i = 0; i < handler->nof_channels; i++) {
       if (buffers[i] != NULL) {
         // Select buffer pointer depending on interpolation
-        cf_t* buf = (handler->decim_factor != 1) ? handler->buffer_tx : buffers[i];
+        cf_t* buf = (decim_factor != 1) ? handler->buffer_tx : buffers[i];
 
         // Interpolate if required
-        if (handler->decim_factor != 1) {
+        if (decim_factor != 1) {
           rf_zmq_info(handler->id,
                       "  - re-adjust bytes due to %dx interpolation %d --> %d samples)\n",
-                      handler->decim_factor,
+                      decim_factor,
                       nsamples,
                       nsamples_baseband);
 
@@ -919,7 +888,7 @@ int rf_zmq_send_timed_multi(void*  h,
           cf_t* src = data[i];
           for (int k = 0; k < nsamples; k++) {
             // perform zero order hold
-            for (int j = 0; j < handler->decim_factor; j++, n++) {
+            for (int j = 0; j < decim_factor; j++, n++) {
               buf[n] = src[k];
             }
           }
@@ -944,7 +913,6 @@ int rf_zmq_send_timed_multi(void*  h,
         }
       }
     }
-    handler->tx_used = true;
   }
 
   ret = SRSLTE_SUCCESS;

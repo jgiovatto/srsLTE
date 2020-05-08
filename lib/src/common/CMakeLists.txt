@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -26,12 +26,12 @@ set(SOURCES arch_select.cc
             gen_mch_tables.c
             liblte_security.cc
             log_filter.cc
+            logmap.cc
             logger_file.cc
             mac_pcap.cc
             nas_pcap.cc
             network_utils.cc
-            pdu.cc
-            pdu_queue.cc
+            pcap.c
             rlc_pcap.cc
             s1ap_pcap.cc
             security.cc
@@ -39,11 +39,12 @@ set(SOURCES arch_select.cc
             thread_pool.cc
             threads.c
             tti_sync_cv.cc
+            time_prof.cc
             version.c
             zuc.cc)
 
 if (ENABLE_5GNR)
-  set(SOURCES ${SOURCES} mac_nr_pcap.cc mac_nr_pdu.cc)
+  set(SOURCES ${SOURCES} mac_nr_pcap.cc)
 endif(ENABLE_5GNR)
 
 # Avoid warnings caused by libmbedtls about deprecated functions
@@ -57,6 +58,5 @@ add_executable(arch_select arch_select.cc)
 
 target_include_directories(srslte_common PUBLIC ${SEC_INCLUDE_DIRS})
 target_link_libraries(srslte_common srslte_phy ${SEC_LIBRARIES})
-install(TARGETS srslte_common DESTINATION ${LIBRARY_DIR})
 
 add_subdirectory(test)

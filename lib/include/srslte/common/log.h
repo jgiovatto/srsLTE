@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -69,6 +69,9 @@ public:
     add_string_en = false;
   }
 
+  log(const log&) = delete;
+  log& operator=(const log&) = delete;
+
   virtual ~log() = default;
 
   // This function shall be called at the start of every tti for printing tti
@@ -108,7 +111,8 @@ public:
     }
   }
 
-  LOG_LEVEL_ENUM get_level() { return level; }
+  LOG_LEVEL_ENUM     get_level() { return level; }
+  const std::string& get_service_name() const { return service_name; }
 
   void set_hex_limit(int limit) { hex_limit = limit; }
   int  get_hex_limit() { return hex_limit; }
@@ -141,14 +145,13 @@ public:
   }
 
 protected:
-  std::string    get_service_name() { return service_name; }
   uint32_t       tti;
   LOG_LEVEL_ENUM level;
   int            hex_limit;
-  std::string    service_name;
 
   bool        add_string_en;
   std::string add_string_val;
+  std::string service_name;
 };
 
 } // namespace srslte

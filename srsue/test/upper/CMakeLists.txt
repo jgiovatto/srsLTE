@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -30,6 +30,10 @@ endif(HAVE_PCSC)
 add_executable(rrc_reconfig_test rrc_reconfig_test.cc)
 target_link_libraries(rrc_reconfig_test srsue_upper srslte_upper srslte_phy rrc_asn1)
 add_test(rrc_reconfig_test rrc_reconfig_test)
+
+add_executable(rrc_meas_test rrc_meas_test.cc)
+target_link_libraries(rrc_meas_test srsue_rrc srsue_upper srslte_upper srslte_phy rrc_asn1)
+add_test(rrc_meas_test rrc_meas_test)
 
 add_executable(nas_test nas_test.cc)
 target_link_libraries(nas_test srsue_upper srslte_upper srslte_phy rrc_asn1)

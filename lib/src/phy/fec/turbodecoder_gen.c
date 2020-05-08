@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -203,7 +203,7 @@ int tdec_gen_init(void** hh, uint32_t max_long_cb)
 
   tdec_gen_t* h = (tdec_gen_t*)*hh;
 
-  h->beta = srslte_vec_malloc(sizeof(int16_t) * (max_long_cb + SRSLTE_TCOD_TOTALTAIL + 1) * NUMSTATES);
+  h->beta = srslte_vec_i16_malloc((max_long_cb + SRSLTE_TCOD_TOTALTAIL + 1) * NUMSTATES);
   if (!h->beta) {
     perror("srslte_vec_malloc");
     return -1;

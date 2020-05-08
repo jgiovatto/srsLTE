@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -32,7 +32,7 @@
 
 namespace srslte {
 
-rlc_am_lte::rlc_am_lte(srslte::log*               log_,
+rlc_am_lte::rlc_am_lte(srslte::log_ref            log_,
                        uint32_t                   lcid_,
                        srsue::pdcp_interface_rlc* pdcp_,
                        srsue::rrc_interface_rlc*  rrc_,
@@ -48,7 +48,7 @@ rlc_am_lte::rlc_am_lte(srslte::log*               log_,
 }
 
 // Applies new configuration. Must be just reestablished or initiated
-bool rlc_am_lte::configure(rlc_config_t cfg_)
+bool rlc_am_lte::configure(const rlc_config_t& cfg_)
 {
   // determine bearer name and configure Rx/Tx objects
   rb_name = rrc->get_rb_name(lcid);
@@ -176,7 +176,7 @@ rlc_am_lte::rlc_am_lte_tx::~rlc_am_lte_tx()
   pthread_mutex_destroy(&mutex);
 }
 
-bool rlc_am_lte::rlc_am_lte_tx::configure(rlc_config_t cfg_)
+bool rlc_am_lte::rlc_am_lte_tx::configure(const rlc_config_t& cfg_)
 {
   // TODO: add config checks
   cfg = cfg_.am;
@@ -277,11 +277,12 @@ uint32_t rlc_am_lte::rlc_am_lte_tx::get_buffer_state()
   uint32_t n_bytes = 0;
   uint32_t n_sdus  = 0;
 
-  log->debug("%s Buffer state - do_status=%d, status_prohibit=%d, timer=%s\n",
+  log->debug("%s Buffer state - do_status=%s, status_prohibit_running=%s (%d/%d)\n",
              RB_NAME,
-             do_status(),
-             status_prohibit_timer.is_running(),
-             status_prohibit_timer.is_valid() ? "yes" : "no");
+             do_status() ? "yes" : "no",
+             status_prohibit_timer.is_running() ? "yes" : "no",
+             status_prohibit_timer.time_elapsed(),
+             status_prohibit_timer.duration());
 
   // Bytes needed for status report
   if (do_status() && not status_prohibit_timer.is_running()) {
@@ -468,6 +469,14 @@ void rlc_am_lte::rlc_am_lte_tx::reset_metrics()
  * Helper functions
  ***************************************************************************/
 
+/**
+ * Called when building a RLC PDU for checking whether the poll bit needs
+ * to be set.
+ *
+ * Note that this is called from a PHY worker thread.
+ *
+ * @return True if a status PDU needs to be requested, false otherwise.
+ */
 bool rlc_am_lte::rlc_am_lte_tx::poll_required()
 {
   if (cfg.poll_pdu > 0 && pdu_without_poll > static_cast<uint32_t>(cfg.poll_pdu)) {
@@ -478,12 +487,9 @@ bool rlc_am_lte::rlc_am_lte_tx::poll_required()
     return true;
   }
 
-  if (poll_retx_timer.is_valid()) {
-    if (poll_retx_timer.is_expired()) {
-      // re-arm timer (will be stopped when status PDU is received)
-      poll_retx_timer.run();
-      return true;
-    }
+  if (poll_retx_timer.is_valid() && poll_retx_timer.is_expired()) {
+    // re-arming of timer is handled by caller
+    return true;
   }
 
   if (tx_window.size() >= RLC_AM_WINDOW_SIZE) {
@@ -578,6 +584,7 @@ int rlc_am_lte::rlc_am_lte_tx::build_retx_pdu(uint8_t* payload, uint32_t nof_byt
     pdu_without_poll  = 0;
     byte_without_poll = 0;
     if (poll_retx_timer.is_valid()) {
+      // re-arm timer (will be stopped when status PDU is received)
       poll_retx_timer.run();
     }
   }
@@ -1181,6 +1188,12 @@ void rlc_am_lte::rlc_am_lte_rx::stop()
   pthread_mutex_unlock(&mutex);
 }
 
+/** Called from stack thread when MAC has received a new RLC PDU
+ *
+ * @param payload Pointer to payload
+ * @param nof_bytes Payload length
+ * @param header Reference to PDU header (unpacked by caller)
+ */
 void rlc_am_lte::rlc_am_lte_rx::handle_data_pdu(uint8_t* payload, uint32_t nof_bytes, rlc_amd_pdu_header_t& header)
 {
   std::map<uint32_t, rlc_amd_rx_pdu_t>::iterator it;
@@ -1556,10 +1569,10 @@ void rlc_am_lte::rlc_am_lte_rx::write_pdu(uint8_t* payload, const uint32_t nof_b
 
   pthread_mutex_lock(&mutex);
   num_rx_bytes += nof_bytes;
+  pthread_mutex_unlock(&mutex);
 
   if (rlc_am_is_control_pdu(payload)) {
     // unlock mutex and pass to Tx subclass
-    pthread_mutex_unlock(&mutex);
     parent->tx.handle_control_pdu(payload, nof_bytes);
   } else {
     rlc_amd_pdu_header_t header      = {};
@@ -1567,7 +1580,6 @@ void rlc_am_lte::rlc_am_lte_rx::write_pdu(uint8_t* payload, const uint32_t nof_b
     rlc_am_read_data_pdu_header(&payload, &payload_len, &header);
     if (payload_len > nof_bytes) {
       log->info("Dropping corrupted PDU (%d B). Remaining length after header %d B.\n", nof_bytes, payload_len);
-      pthread_mutex_unlock(&mutex);
       return;
     }
     if (header.rf) {
@@ -1575,15 +1587,18 @@ void rlc_am_lte::rlc_am_lte_rx::write_pdu(uint8_t* payload, const uint32_t nof_b
     } else {
       handle_data_pdu(payload, payload_len, header);
     }
-    pthread_mutex_unlock(&mutex);
   }
 }
 
+/**
+ * Function called from stack thread when timer has expired
+ *
+ * @param timeout_id
+ */
 void rlc_am_lte::rlc_am_lte_rx::timer_expired(uint32_t timeout_id)
 {
   pthread_mutex_lock(&mutex);
   if (reordering_timer.is_valid() and reordering_timer.id() == timeout_id) {
-    //    reordering_timer.run(); // TODO: It was reset() before
     log->debug("%s reordering timeout expiry - updating vr_ms (was %d)\n", RB_NAME, vr_ms);
 
     // 36.322 v10 Section 5.1.3.2.4
@@ -1685,36 +1700,55 @@ void rlc_am_lte::rlc_am_lte_rx::print_rx_segments()
 // NOTE: Preference would be to capture by value, and then move; but header is stack allocated
 bool rlc_am_lte::rlc_am_lte_rx::add_segment_and_check(rlc_amd_rx_pdu_segments_t* pdu, rlc_amd_rx_pdu_t* segment)
 {
-  // Check for first segment
-  if (0 == segment->header.so) {
-    pdu->segments.clear();
-    pdu->segments.push_back(std::move(*segment));
-    return false;
+  // Find segment insertion point in the list of segments
+  auto it1 = pdu->segments.begin();
+  while (it1 != pdu->segments.end() && (*it1).header.so < segment->header.so) {
+    // Increment iterator
+    it1++;
   }
 
-  // Check segment offset
-  uint32_t n = 0;
-  if (!pdu->segments.empty()) {
-    rlc_amd_rx_pdu_t& back = pdu->segments.back();
-    n                      = back.header.so + back.buf->N_bytes;
-  }
-
-  if (segment->header.so != n) {
-    log->warning("Received PDU with SO=%d, expected %d. Discarding PDU.\n", segment->header.so, n);
-    return false;
+  // Check if the insertion point was found
+  if (it1 != pdu->segments.end()) {
+    // Found insertion point
+    rlc_amd_rx_pdu_t& s = *it1;
+    if (s.header.so == segment->header.so) {
+      // Same Segment offset
+      if (segment->buf->N_bytes > s.buf->N_bytes) {
+        // replace if the new one is bigger
+        s = std::move(*segment);
+      } else {
+        // Ignore otherwise
+      }
+    } else if (s.header.so > segment->header.so) {
+      pdu->segments.insert(it1, std::move(*segment));
+    }
   } else {
+    // Either the new segment is the latest or the only one, push back
     pdu->segments.push_back(std::move(*segment));
   }
 
   // Check for complete
   uint32_t                              so = 0;
   std::list<rlc_amd_rx_pdu_t>::iterator it, tmpit;
-  for (it = pdu->segments.begin(); it != pdu->segments.end(); it++) {
-    if (so != it->header.so) {
+  for (it = pdu->segments.begin(); it != pdu->segments.end(); /* Do not increment */) {
+    // Check that there is no gap between last segment and current; overlap allowed
+    if (so < it->header.so) {
+      // return
       return false;
     }
-    so += it->buf->N_bytes;
+
+    // Check if segment is overlapped
+    if (it->header.so + it->buf->N_bytes <= so) {
+      // completely overlapped with previous segments, erase
+      it = pdu->segments.erase(it); // Returns next iterator
+    } else {
+      // Update segment offset it shall not go backwards
+      so = SRSLTE_MAX(so, it->header.so + it->buf->N_bytes);
+      it++; // Increments iterator
+    }
   }
+
+  // Check for last segment flag available
   if (!pdu->segments.back().header.lsf) {
     return false;
   }
@@ -1799,8 +1833,20 @@ bool rlc_am_lte::rlc_am_lte_rx::add_segment_and_check(rlc_amd_rx_pdu_segments_t*
 #endif
   }
   for (it = pdu->segments.begin(); it != pdu->segments.end(); it++) {
-    memcpy(&full_pdu->msg[full_pdu->N_bytes], it->buf->msg, it->buf->N_bytes);
-    full_pdu->N_bytes += it->buf->N_bytes;
+    // By default, the segment is not copied. It could be it is fully overlapped with previous segments
+    uint32_t overlap = 0;
+    uint32_t n       = 0;
+
+    // Check if the segment has non-overlapped bytes
+    if (it->header.so + it->buf->N_bytes > full_pdu->N_bytes) {
+      // Calculate overlap and number of bytes
+      overlap = full_pdu->N_bytes - it->header.so;
+      n       = it->buf->N_bytes - overlap;
+    }
+
+    // Copy data itself
+    memcpy(&full_pdu->msg[full_pdu->N_bytes], &it->buf->msg[overlap], n);
+    full_pdu->N_bytes += n;
   }
 
   handle_data_pdu(full_pdu->msg, full_pdu->N_bytes, header);
@@ -2035,7 +2081,7 @@ int rlc_am_write_status_pdu(rlc_status_pdu_t* status, uint8_t* payload)
 
 bool rlc_am_is_valid_status_pdu(const rlc_status_pdu_t& status)
 {
-  for (uint16_t i = 0; i < status.N_nack; ++i) {
+  for (uint32_t i = 0; i < status.N_nack; ++i) {
     if (status.nacks[i].nack_sn == status.ack_sn) {
       return false;
     }

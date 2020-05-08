@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -40,6 +40,7 @@ public:
   const static uint32_t preallocated_log_str_size = 1024;
 
   logger() : pool(16 * 1024) {}
+  virtual ~logger() = default;
 
   class log_str
   {

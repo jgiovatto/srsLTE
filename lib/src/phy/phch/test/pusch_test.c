@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -123,7 +123,7 @@ void parse_extensive_param(char* param, char* arg)
       uci_data_tx.cfg.cqi.ri_len = 1;
     }
   } else if (!strcmp(param, "uci_ack")) {
-    uci_data_tx.cfg.ack[0].nof_acks = SRSLTE_MIN(uci_data_tx.cfg.ack[0].nof_acks + 1, SRSLTE_UCI_MAX_ACK_BITS);
+    uci_data_tx.cfg.ack[0].nof_acks = SRSLTE_MIN((uint32_t)strtol(arg, NULL, 10), SRSLTE_UCI_MAX_ACK_BITS);
   } else if (!strcmp(param, "enable_64qam")) {
     enable_64_qam ^= true;
   } else {
@@ -249,19 +249,19 @@ int main(int argc, char** argv)
   srslte_pusch_set_rnti(&pusch_rx, rnti);
 
   uint32_t nof_re = SRSLTE_NRE * cell.nof_prb * 2 * SRSLTE_CP_NSYMB(cell.cp);
-  sf_symbols      = srslte_vec_malloc(sizeof(cf_t) * nof_re);
+  sf_symbols      = srslte_vec_cf_malloc(nof_re);
   if (!sf_symbols) {
     perror("malloc");
     exit(-1);
   }
 
-  data = srslte_vec_malloc(sizeof(uint8_t) * 150000);
+  data = srslte_vec_u8_malloc(150000);
   if (!data) {
     perror("malloc");
     exit(-1);
   }
 
-  data_rx = srslte_vec_malloc(sizeof(uint8_t) * 150000);
+  data_rx = srslte_vec_u8_malloc(150000);
   if (!data_rx) {
     perror("malloc");
     exit(-1);
@@ -281,6 +281,8 @@ int main(int argc, char** argv)
   srslte_chest_ul_res_set_identity(&chest_res);
 
   cfg.enable_64qam = enable_64_qam;
+  uint64_t decode_us   = 0;
+  uint64_t decode_bits = 0;
 
   for (int n = 0; n < subframe; n++) {
     ret = SRSLTE_SUCCESS;
@@ -348,10 +350,10 @@ int main(int argc, char** argv)
         srslte_vec_fprint_byte(stdout, pusch_res.uci.ack.ack_value, cfg.uci_cfg.ack[0].nof_acks);
         ret = SRSLTE_ERROR;
       } else {
-        INFO("Rx ACK (%d bits) is Ok, %d%d\n",
-             uci_data_tx.cfg.ack[0].nof_acks,
-             uci_data_tx.value.ack.ack_value[0],
-             uci_data_tx.value.ack.ack_value[1]);
+        INFO("Rx ACK (%d bits) is Ok: ", uci_data_tx.cfg.ack[0].nof_acks);
+        if (srslte_verbose >= SRSLTE_VERBOSE_INFO) {
+          srslte_vec_fprint_byte(stdout, uci_data_tx.value.ack.ack_value, uci_data_tx.cfg.ack[0].nof_acks);
+        }
       }
     }
 
@@ -385,8 +387,11 @@ int main(int argc, char** argv)
            cfg.grant.tb.tbs,
            (float)cfg.grant.tb.tbs / 1000,
            (float)cfg.grant.tb.tbs / t[0].tv_usec);
+    decode_us += t[0].tv_usec;
+    decode_bits += cfg.grant.tb.tbs;
   }
 
+  printf("Decoded Rate: %f Mbps\n", (double)decode_bits / (double)decode_us);
 quit:
   srslte_chest_ul_res_free(&chest_res);
   srslte_pusch_free(&pusch_tx);

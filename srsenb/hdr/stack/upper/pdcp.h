@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -33,30 +33,24 @@ namespace srsenb {
 class pdcp : public pdcp_interface_rlc, public pdcp_interface_gtpu, public pdcp_interface_rrc
 {
 public:
-  pdcp(srslte::timer_handler* timers, srslte::log* pdcp_log_);
-  virtual ~pdcp(){};
+  pdcp(srslte::task_handler_interface* task_executor_, const char* logname);
+  virtual ~pdcp() {}
   void init(rlc_interface_pdcp* rlc_, rrc_interface_pdcp* rrc_, gtpu_interface_pdcp* gtpu_);
   void stop();
 
   // pdcp_interface_rlc
-  void write_pdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu);
+  void write_pdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu) override;
   void write_pdu_mch(uint32_t lcid, srslte::unique_byte_buffer_t sdu) {}
 
   // pdcp_interface_rrc
-  void reset(uint16_t rnti);
-  void add_user(uint16_t rnti);
-  void rem_user(uint16_t rnti);
-  void write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu);
-  void add_bearer(uint16_t rnti, uint32_t lcid, srslte::pdcp_config_t cnfg);
-  void config_security(uint16_t                            rnti,
-                       uint32_t                            lcid,
-                       uint8_t*                            k_rrc_enc_,
-                       uint8_t*                            k_rrc_int_,
-                       uint8_t*                            k_up_enc_,
-                       srslte::CIPHERING_ALGORITHM_ID_ENUM cipher_algo_,
-                       srslte::INTEGRITY_ALGORITHM_ID_ENUM integ_algo_);
-  void enable_integrity(uint16_t rnti, uint32_t lcid);
-  void enable_encryption(uint16_t rnti, uint32_t lcid);
+  void reset(uint16_t rnti) override;
+  void add_user(uint16_t rnti) override;
+  void rem_user(uint16_t rnti) override;
+  void write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu) override;
+  void add_bearer(uint16_t rnti, uint32_t lcid, srslte::pdcp_config_t cnfg) override;
+  void config_security(uint16_t rnti, uint32_t lcid, srslte::as_security_config_t cfg_sec) override;
+  void enable_integrity(uint16_t rnti, uint32_t lcid) override;
+  void enable_encryption(uint16_t rnti, uint32_t lcid) override;
   bool get_bearer_status(uint16_t rnti, uint32_t lcid, uint16_t* dlsn, uint16_t* dlhfn, uint16_t* ulsn, uint16_t* ulhfn)
       override;
 
@@ -109,14 +103,12 @@ private:
 
   std::map<uint32_t, user_interface> users;
 
-  pthread_rwlock_t rwlock;
-
-  rlc_interface_pdcp*       rlc;
-  rrc_interface_pdcp*       rrc;
-  gtpu_interface_pdcp*      gtpu;
-  srslte::timer_handler*    timers;
-  srslte::log*              log_h;
-  srslte::byte_buffer_pool* pool;
+  rlc_interface_pdcp*             rlc;
+  rrc_interface_pdcp*             rrc;
+  gtpu_interface_pdcp*            gtpu;
+  srslte::task_handler_interface* task_executor;
+  srslte::log_ref                 log_h;
+  srslte::byte_buffer_pool*       pool;
 };
 
 } // namespace srsenb

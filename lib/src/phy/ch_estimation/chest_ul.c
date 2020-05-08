@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -60,30 +60,30 @@ int srslte_chest_ul_init(srslte_chest_ul_t* q, uint32_t max_prb)
       goto clean_exit;
     }
 
-    q->tmp_noise = srslte_vec_malloc(sizeof(cf_t) * MAX_REFS_SF);
+    q->tmp_noise = srslte_vec_cf_malloc(MAX_REFS_SF);
     if (!q->tmp_noise) {
       perror("malloc");
       goto clean_exit;
     }
-    q->pilot_estimates = srslte_vec_malloc(sizeof(cf_t) * MAX_REFS_SF);
+    q->pilot_estimates = srslte_vec_cf_malloc(MAX_REFS_SF);
     if (!q->pilot_estimates) {
       perror("malloc");
       goto clean_exit;
     }
     for (int i = 0; i < 4; i++) {
-      q->pilot_estimates_tmp[i] = srslte_vec_malloc(sizeof(cf_t) * MAX_REFS_SF);
+      q->pilot_estimates_tmp[i] = srslte_vec_cf_malloc(MAX_REFS_SF);
       if (!q->pilot_estimates_tmp[i]) {
         perror("malloc");
         goto clean_exit;
       }
     }
-    q->pilot_recv_signal = srslte_vec_malloc(sizeof(cf_t) * (MAX_REFS_SF + 1));
+    q->pilot_recv_signal = srslte_vec_cf_malloc(MAX_REFS_SF + 1);
     if (!q->pilot_recv_signal) {
       perror("malloc");
       goto clean_exit;
     }
 
-    q->pilot_known_signal = srslte_vec_malloc(sizeof(cf_t) * (MAX_REFS_SF + 1));
+    q->pilot_known_signal = srslte_vec_cf_malloc(MAX_REFS_SF + 1);
     if (!q->pilot_known_signal) {
       perror("malloc");
       goto clean_exit;
@@ -145,7 +145,7 @@ int srslte_chest_ul_res_init(srslte_chest_ul_res_t* q, uint32_t max_prb)
 {
   bzero(q, sizeof(srslte_chest_ul_res_t));
   q->nof_re = SRSLTE_SF_LEN_RE(max_prb, SRSLTE_CP_NORM);
-  q->ce     = srslte_vec_malloc(q->nof_re * sizeof(cf_t));
+  q->ce     = srslte_vec_cf_malloc(q->nof_re);
   if (!q->ce) {
     perror("malloc");
     return -1;
@@ -293,7 +293,7 @@ int srslte_chest_ul_estimate_pusch(srslte_chest_ul_t*     q,
   }
 
   int nrefs_sym = nof_prb * SRSLTE_NRE;
-  int nrefs_sf  = nrefs_sym * 2;
+  int nrefs_sf  = nrefs_sym * SRSLTE_NOF_SLOTS_PER_SF;
 
   /* Get references from the input signal */
   srslte_refsignal_dmrs_pusch_get(&q->dmrs_signal, cfg, input, q->pilot_recv_signal);
@@ -301,6 +301,21 @@ int srslte_chest_ul_estimate_pusch(srslte_chest_ul_t*     q,
   /* Use the known DMRS signal to compute Least-squares estimates */
   srslte_vec_prod_conj_ccc(
       q->pilot_recv_signal, q->dmrs_pregen.r[cfg->grant.n_dmrs][sf->tti % 10][nof_prb], q->pilot_estimates, nrefs_sf);
+
+  // Calculate time alignment error
+  float ta_err = 0.0f;
+  if (cfg->meas_ta_en) {
+    for (int i = 0; i < SRSLTE_NOF_SLOTS_PER_SF; i++) {
+      ta_err += srslte_vec_estimate_frequency(&q->pilot_estimates[i * nrefs_sym], nrefs_sym) / SRSLTE_NOF_SLOTS_PER_SF;
+    }
+  }
+
+  // Average and store time aligment error
+  if (isnormal(ta_err)) {
+    res->ta_us = roundf(ta_err / 15e-3 * 10) / 10;
+  } else {
+    res->ta_us = 0.0f;
+  }
 
   if (cfg->grant.n_prb[0] != cfg->grant.n_prb[1]) {
     printf("ERROR: intra-subframe frequency hopping not supported in the estimator!!\n");

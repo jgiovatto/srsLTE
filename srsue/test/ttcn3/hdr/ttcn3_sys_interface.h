@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -22,6 +22,7 @@
 #ifndef SRSUE_TTCN3_SYS_INTERFACE_H
 #define SRSUE_TTCN3_SYS_INTERFACE_H
 
+#include "srslte/asn1/rrc_asn1_utils.h"
 #include "srslte/common/buffer_pool.h"
 #include "ttcn3_helpers.h"
 #include "ttcn3_interfaces.h"
@@ -29,13 +30,13 @@
 using namespace srslte;
 
 // The EUTRA.SYS interface
-class ttcn3_sys_interface : public netsource_handler
+class ttcn3_sys_interface : public ttcn3_port_handler
 {
 public:
-  ttcn3_sys_interface() : netsource_handler("TTCN3_SYS_IF"){};
+  ttcn3_sys_interface(){};
   ~ttcn3_sys_interface(){};
 
-  void init(ss_sys_interface* syssim_, srslte::log* log_, std::string net_ip_, uint32_t net_port_)
+  int init(ss_sys_interface* syssim_, srslte::log* log_, std::string net_ip_, uint32_t net_port_)
   {
     syssim      = syssim_;
     net_ip      = net_ip_;
@@ -44,11 +45,87 @@ public:
     initialized = true;
     log->debug("Initialized.\n");
     pool = byte_buffer_pool::get_instance();
+    return port_listen();
   }
 
 private:
+  ///< Main message handler
+  int handle_message(const unique_byte_array_t& rx_buf, const uint32_t n)
+  {
+    log->debug("Received %d B from remote.\n", n);
+
+    // Chop incoming msg, first two bytes are length of the JSON
+    // (see IPL4_EUTRA_SYSTEM_Definitions.ttcn
+    uint16_t json_len = ((uint16_t)rx_buf->at(0) << 8) | rx_buf->at(1);
+
+    // Copy JSON from received buffer and null-terminate
+    char json[json_len + 1];
+    memcpy(json, &rx_buf->at(2), json_len);
+    json[json_len] = '\0';
+
+    // The data part after the JSON starts right here but handling
+    // is done in the respective functions
+    uint16_t rx_buf_offset = json_len + 2;
+
+    Document document;
+    if (document.Parse(json).HasParseError() || document.IsObject() == false) {
+      log->error_hex((uint8*)json, json_len, "Error parsing incoming data.\n");
+      return SRSLTE_ERROR;
+    }
+
+    // Pretty-print
+    StringBuffer               buffer;
+    PrettyWriter<StringBuffer> writer(buffer);
+    document.Accept(writer);
+    log->info_long("Received %d bytes\n%s\n", json_len, (char*)buffer.GetString());
+
+    // check for common
+    assert(document.HasMember("Common"));
+    assert(document["Common"].IsObject());
+
+    // Check for request type
+    assert(document.HasMember("Request"));
+    assert(document["Request"].IsObject());
+
+    // Get request type
+    const Value& request = document["Request"];
+    if (request.HasMember("Cell")) {
+      log->info("Received Cell request.\n");
+      handle_request_cell(document, &rx_buf->at(rx_buf_offset), n - rx_buf_offset);
+    } else if (request.HasMember("L1MacIndCtrl")) {
+      log->info("Received L1MacIndCtrl request.\n");
+      handle_request_l1_mac_ind_ctrl(document);
+    } else if (request.HasMember("RadioBearerList")) {
+      log->info("Received RadioBearerList request.\n");
+      handle_request_radio_bearer_list(document);
+    } else if (request.HasMember("CellAttenuationList")) {
+      log->info("Received CellAttenuationList request.\n");
+      handle_request_cell_attenuation_list(document);
+    } else if (request.HasMember("PdcpCount")) {
+      log->info("Received PdcpCount request.\n");
+      handle_request_pdcp_count(document);
+    } else if (request.HasMember("AS_Security")) {
+      log->info("Received AS_Security request.\n");
+      handle_request_as_security(document);
+    } else if (request.HasMember("EnquireTiming")) {
+      log->info("Received EnquireTiming request.\n");
+      handle_request_enquire_timing(document);
+    } else if (request.HasMember("Paging")) {
+      log->info("Received Paging request.\n");
+      handle_request_paging(document, &rx_buf->at(rx_buf_offset), n - rx_buf_offset);
+    } else {
+      log->error("Received unknown request.\n");
+    }
+
+    return SRSLTE_SUCCESS;
+  }
+
   void handle_request_cell_basic(Document& document, const uint8_t* payload, const uint16_t len)
   {
+    // That is the cellId or name that the testsuites uses to refer to a specific cell
+    const Value& cell_name = document["Common"]["CellId"];
+    assert(cell_name.IsString());
+
     if (document["Request"]["Cell"]["AddOrReconfigure"]["Basic"].HasMember("StaticCellInfo")) {
       // Extract EARFCN
       const Value& earfcn =
@@ -83,37 +160,36 @@ private:
           document["Request"]["Cell"]["AddOrReconfigure"]["Basic"]["InitialCellPower"]["MaxReferencePower"];
       assert(ref_power.IsInt());
 
-      // That is the cellId or name that the testsuites uses to refer to a specific cell
-      const Value& cell_name = document["Common"]["CellId"];
-      assert(cell_name.IsString());
-
       // Now configure cell
-      syssim->set_cell_config(cell_name.GetString(), earfcn.GetInt(), cell, ref_power.GetInt());
+      syssim->set_cell_config(
+          ttcn3_helpers::get_timing_info(document), cell_name.GetString(), earfcn.GetInt(), cell, ref_power.GetInt());
+    }
 
-      // Pull out SIBs and send to syssim
-      uint16_t       consumed_bytes = 0;
-      const uint8_t* payload_ptr    = payload;
-      while (consumed_bytes < len) {
-        uint16_t tb_len = ((uint16_t)payload_ptr[0] << 8) | payload_ptr[1];
-        payload_ptr += 2;
+    // Pull out SIBs and send to syssim
+    uint16_t       consumed_bytes = 0;
+    const uint8_t* payload_ptr    = payload;
+    while (consumed_bytes < len) {
+      uint16_t tb_len = ((uint16_t)payload_ptr[0] << 8) | payload_ptr[1];
+      payload_ptr += 2;
 
-        unique_byte_buffer_t sib = pool_allocate_blocking;
-        memcpy(sib->msg, payload_ptr, tb_len);
-        payload_ptr += tb_len;
-        sib->N_bytes = tb_len;
+      unique_byte_buffer_t sib = pool_allocate_blocking;
+      memcpy(sib->msg, payload_ptr, tb_len);
+      payload_ptr += tb_len;
+      sib->N_bytes = tb_len;
 
-        // Push to main component
-        log->info_hex(sib->msg, sib->N_bytes, "Received BCCH DL-SCH for %s\n", cell_name.GetString());
-        syssim->add_bcch_dlsch_pdu(cell_name.GetString(), std::move(sib));
+      // Push to main component
+      log->info_hex(sib->msg, sib->N_bytes, "Received BCCH DL-SCH for %s\n", cell_name.GetString());
+      syssim->add_bcch_dlsch_pdu(cell_name.GetString(), std::move(sib));
 
-        consumed_bytes = payload_ptr - payload;
-      }
+      consumed_bytes = payload_ptr - payload;
+    }
 
+    if (document["Request"]["Cell"]["AddOrReconfigure"]["Basic"].HasMember("StaticCellInfo")) {
       // Create response for template car_CellConfig_CNF(CellId_Type p_CellId)
       std::string resp = ttcn3_helpers::get_basic_sys_req_cnf(cell_name.GetString(), "Cell");
 
       log->info("Sending %s to tester (%zd B)\n", resp.c_str(), resp.length());
-      srslte_netsource_write(&net_source, (char*)resp.c_str(), resp.length());
+      send((const uint8_t*)resp.c_str(), resp.length());
     }
   }
 
@@ -125,7 +201,7 @@ private:
     std::string resp = ttcn3_helpers::get_basic_sys_req_cnf(cell_id, "Cell");
 
     log->info("Sending %s to tester (%zd B)\n", resp.c_str(), resp.length());
-    srslte_netsource_write(&net_source, (char*)resp.c_str(), resp.length());
+    send((const uint8_t*)resp.c_str(), resp.length());
   }
 
   void handle_request_cell(Document& document, const uint8_t* payload, const uint16_t len)
@@ -183,7 +259,7 @@ private:
       std::string resp = ttcn3_helpers::get_basic_sys_req_cnf(cell_id.GetString(), "L1MacIndCtrl");
 
       log->info("Sending %s to tester (%zd B)\n", resp.c_str(), resp.length());
-      srslte_netsource_write(&net_source, (char*)resp.c_str(), resp.length());
+      send((const uint8_t*)resp.c_str(), resp.length());
     }
   }
 
@@ -213,22 +289,28 @@ private:
       if (id.HasMember("Srb")) {
         const Value& config = (*itr)["Config"];
         if (config.HasMember("AddOrReconfigure")) {
-          uint32_t lcid = id["Srb"].GetInt();
+          uint32_t     lcid = id["Srb"].GetInt();
+          const Value& aor  = config["AddOrReconfigure"];
+          if (aor.HasMember("Mac") && aor["Mac"].HasMember("TestMode") && aor["Mac"]["TestMode"].HasMember("Info") &&
+              aor["Mac"]["TestMode"]["Info"].HasMember("DiffLogChId")) {
+            uint32_t     force_lcid = 0;
+            const Value& dlcid      = aor["Mac"]["TestMode"]["Info"]["DiffLogChId"];
+            assert(dlcid.HasMember("LogChId"));
+            force_lcid = dlcid["LogChId"].GetInt();
+            log->info("TestMode: lcid overridden: %d\n", force_lcid);
+            syssim->set_forced_lcid(force_lcid);
+          } else {
+            // Unset override function to use different lcid
+            log->info("TestMode: lcid reset\n");
+            syssim->set_forced_lcid(-1);
+          }
           if (lcid > 0) {
-            log->info("Configure SRB%d\n", lcid);
-            pdcp_config_t pdcp_cfg = {.bearer_id     = static_cast<uint8_t>(lcid),
-                                      .rb_type       = PDCP_RB_IS_SRB,
-                                      .tx_direction  = SECURITY_DIRECTION_DOWNLINK,
-                                      .rx_direction  = SECURITY_DIRECTION_UPLINK,
-                                      .sn_len        = PDCP_SN_LEN_5,
-                                      .t_reorderding = srslte::pdcp_t_reordering_t::ms500,
-                                      .discard_timer = srslte::pdcp_discard_timer_t::infinity};
-            syssim->add_srb(lcid, pdcp_cfg);
+            pdcp_config_t pdcp_cfg = make_srb_pdcp_config_t(static_cast<uint8_t>(lcid), false);
+            syssim->add_srb(ttcn3_helpers::get_timing_info(document), lcid, pdcp_cfg);
           }
         } else if (config.HasMember("Release")) {
-          log->info("Releasing SRB%d\n", id["Srb"].GetInt());
           uint32_t lcid = id["Srb"].GetInt();
-          syssim->del_srb(lcid);
+          syssim->del_srb(ttcn3_helpers::get_timing_info(document), lcid);
         } else {
           log->error("Unknown config.\n");
         }
@@ -242,7 +324,7 @@ private:
     std::string resp = ttcn3_helpers::get_basic_sys_req_cnf(cell_id.GetString(), "RadioBearerList");
 
     log->info("Sending %s to tester (%zd B)\n", resp.c_str(), resp.length());
-    srslte_netsource_write(&net_source, (char*)resp.c_str(), resp.length());
+    send((const uint8_t*)resp.c_str(), resp.length());
   }
 
   void handle_request_cell_attenuation_list(Document& document)
@@ -285,13 +367,13 @@ private:
       }
 
       log->info("Configuring attenuation of %s to %.2f dB\n", id.GetString(), att_value);
-      syssim->set_cell_attenuation(id.GetString(), att_value);
+      syssim->set_cell_attenuation(ttcn3_helpers::get_timing_info(document), id.GetString(), att_value);
     }
 
     std::string resp = ttcn3_helpers::get_basic_sys_req_cnf(cell_id.GetString(), "CellAttenuationList");
 
     log->info("Sending %s to tester (%zd B)\n", resp.c_str(), resp.length());
-    srslte_netsource_write(&net_source, (char*)resp.c_str(), resp.length());
+    send((const uint8_t*)resp.c_str(), resp.length());
   }
 
   void handle_request_pdcp_count(Document& document)
@@ -316,19 +398,10 @@ private:
     const Value& get = pdcp_count["Get"];
     assert(get.HasMember("AllRBs"));
 
-    // prepare response to SS
-    std::vector<ttcn3_helpers::pdcp_count_t> bearers;
-    ttcn3_helpers::pdcp_count_t              srb1;
-    srb1.rb_is_srb = true;
-    srb1.rb_id     = 1;
-    srb1.dl_value  = 0;
-    srb1.ul_value  = 1;
-    bearers.push_back(srb1);
-
-    std::string resp = ttcn3_helpers::get_pdcp_count_response(cell_id.GetString(), bearers);
+    std::string resp = ttcn3_helpers::get_pdcp_count_response(cell_id.GetString(), syssim->get_pdcp_count());
 
     log->info("Sending %s to tester (%zd B)\n", resp.c_str(), resp.length());
-    srslte_netsource_write(&net_source, (char*)resp.c_str(), resp.length());
+    send((const uint8_t*)resp.c_str(), resp.length());
   }
 
   void handle_request_as_security(Document& document)
@@ -376,9 +449,9 @@ private:
       std::string cipher_algo_string                  = as_sec["StartRestart"]["Ciphering"]["Algorithm"].GetString();
       if (cipher_algo_string == "eea0") {
         cipher_algo = srslte::CIPHERING_ALGORITHM_ID_EEA0;
-      } else if (int_algo_string == "eea1") {
+      } else if (cipher_algo_string == "eea1") {
         cipher_algo = srslte::CIPHERING_ALGORITHM_ID_128_EEA1;
-      } else if (int_algo_string == "eea2") {
+      } else if (cipher_algo_string == "eea2") {
         cipher_algo = srslte::CIPHERING_ALGORITHM_ID_128_EEA2;
       } else {
         log->error("Unsupported ciphering algorithm %s\n", cipher_algo_string.c_str());
@@ -394,27 +467,53 @@ private:
       std::array<uint8_t, 32> k_up_enc          = get_key_from_string(up_enc_key_string);
       log->debug_hex(k_up_enc.data(), k_up_enc.size(), "K_UP_enc");
 
-      // get LCID
-      uint32_t lcid = 0;
+      // parse ActTimeList
+      ttcn3_helpers::pdcp_count_map_t bearers;
       if (as_sec["StartRestart"]["Ciphering"].HasMember("ActTimeList")) {
         const Value& act_time_list = as_sec["StartRestart"]["Ciphering"]["ActTimeList"];
         if (act_time_list.IsArray()) {
           for (Value::ConstValueIterator itr = act_time_list.Begin(); itr != act_time_list.End(); ++itr) {
+            ttcn3_helpers::pdcp_count_t bearer = {};
+
+            // obtain LCID and type
             if (itr->HasMember("RadioBearerId") && (*itr)["RadioBearerId"].HasMember("Srb")) {
-              lcid = (*itr)["RadioBearerId"]["Srb"].GetInt();
+              bearer.rb_is_srb = true;
+              bearer.rb_id     = (*itr)["RadioBearerId"]["Srb"].GetInt();
+            } else if (itr->HasMember("RadioBearerId") && (*itr)["RadioBearerId"].HasMember("Drb")) {
+              bearer.rb_is_srb = false;
+              bearer.rb_id     = (*itr)["RadioBearerId"]["Drb"].GetInt();
             }
+
+            // obtain UL count
+            if (itr->HasMember("UL")) {
+              bearer.ul_value       = (*itr)["UL"]["SQN"]["Value"].GetInt();
+              bearer.ul_value_valid = true;
+            }
+
+            // obtain DL count
+            if (itr->HasMember("DL")) {
+              bearer.dl_value       = (*itr)["DL"]["SQN"]["Value"].GetInt();
+              bearer.dl_value_valid = true;
+            }
+
+            // append to list
+            bearers.push_back(bearer);
           }
         }
       }
 
       // configure SS to use AS security
-      syssim->set_as_security(lcid, k_rrc_enc, k_rrc_int, k_up_enc, cipher_algo, integ_algo);
+      syssim->set_as_security(
+          ttcn3_helpers::get_timing_info(document), k_rrc_enc, k_rrc_int, k_up_enc, cipher_algo, integ_algo, bearers);
+    } else if (as_sec.HasMember("Release")) {
+      // release all security configs
+      syssim->release_as_security(ttcn3_helpers::get_timing_info(document));
     }
 
     if (config_flag.GetBool() == true) {
       std::string resp = ttcn3_helpers::get_basic_sys_req_cnf(cell_id.GetString(), "AS_Security");
       log->info("Sending %s to tester (%zd B)\n", resp.c_str(), resp.length());
-      srslte_netsource_write(&net_source, (char*)resp.c_str(), resp.length());
+      send((const uint8_t*)resp.c_str(), resp.length());
     } else {
       log->info("Skipping response for AS_Security message.\n");
     }
@@ -452,7 +551,7 @@ private:
         ttcn3_helpers::get_sys_req_cnf_with_time(cell_id.GetString(), "EnquireTiming", syssim->get_tti());
 
     log->info("Sending %s to tester (%zd B)\n", resp.c_str(), resp.length());
-    srslte_netsource_write(&net_source, (char*)resp.c_str(), resp.length());
+    send((const uint8_t*)resp.c_str(), resp.length());
   }
 
   void handle_request_paging(Document& document, const uint8_t* payload, const uint16_t len)
@@ -493,113 +592,14 @@ private:
       std::string resp = ttcn3_helpers::get_sys_req_cnf_with_time(cell_id.GetString(), "Paging", syssim->get_tti());
 
       log->info("Sending %s to tester (%zd B)\n", resp.c_str(), resp.length());
-      srslte_netsource_write(&net_source, (char*)resp.c_str(), resp.length());
+      send((const uint8_t*)resp.c_str(), resp.length());
     } else {
       log->info("Skipping response for Paging message.\n");
     }
   }
 
-  void run_thread()
-  {
-    if (!initialized) {
-      fprintf(stderr, "SYS interface not initialized. Exiting.\n");
-      exit(-1);
-    }
-
-    // open TCP socket
-    if (srslte_netsource_init(&net_source, net_ip.c_str(), net_port, SRSLTE_NETSOURCE_TCP)) {
-      fprintf(stderr, "Error creating input TCP socket at port %d\n", net_port);
-      exit(-1);
-    }
-
-    log->info("Listening on %s:%d for incoming connections ..\n", net_ip.c_str(), net_port);
-
-    running = true;
-
-    int n;
-    while (run_enable) {
-      log->debug("Reading from SYS port ..\n");
-      n = srslte_netsource_read(&net_source, rx_buf->begin(), RX_BUF_SIZE);
-      if (n > 0) {
-        rx_buf->at(n) = '\0';
-
-        log->debug("Received %d B from remote.\n", n);
-
-        // Chop incoming msg, first two bytes are length of the JSON
-        // (see IPL4_EUTRA_SYSTEM_Definitions.ttcn
-        uint16_t json_len = ((uint16_t)rx_buf->at(0) << 8) | rx_buf->at(1);
-
-        // Copy JSON from received buffer and null-terminate
-        char json[json_len + 1];
-        memcpy(json, &rx_buf->at(2), json_len);
-        json[json_len] = '\0';
-
-        // The data part after the JSON starts right here but handling
-        // is done in the respective functions
-        uint16_t rx_buf_offset = json_len + 2;
-
-        Document document;
-        if (document.Parse(json).HasParseError()) {
-          log->error_hex((uint8*)json, json_len, "Error parsing incoming data.\n");
-          break;
-        }
-        assert(document.IsObject());
-
-        // Pretty-print
-        StringBuffer               buffer;
-        PrettyWriter<StringBuffer> writer(buffer);
-        document.Accept(writer);
-        log->info_long("Received %d bytes\n%s\n", json_len, (char*)buffer.GetString());
-
-        // check for common
-        assert(document.HasMember("Common"));
-        assert(document["Common"].IsObject());
-
-        // Check for request type
-        assert(document.HasMember("Request"));
-        assert(document["Request"].IsObject());
-
-        // Get request type
-        const Value& request = document["Request"];
-        if (request.HasMember("Cell")) {
-          log->info("Received Cell request.\n");
-          handle_request_cell(document, &rx_buf->at(rx_buf_offset), n - rx_buf_offset);
-        } else if (request.HasMember("L1MacIndCtrl")) {
-          log->info("Received L1MacIndCtrl request.\n");
-          handle_request_l1_mac_ind_ctrl(document);
-        } else if (request.HasMember("RadioBearerList")) {
-          log->info("Received RadioBearerList request.\n");
-          handle_request_radio_bearer_list(document);
-        } else if (request.HasMember("CellAttenuationList")) {
-          log->info("Received CellAttenuationList request.\n");
-          handle_request_cell_attenuation_list(document);
-        } else if (request.HasMember("PdcpCount")) {
-          log->info("Received PdcpCount request.\n");
-          handle_request_pdcp_count(document);
-        } else if (request.HasMember("AS_Security")) {
-          log->info("Received AS_Security request.\n");
-          handle_request_as_security(document);
-        } else if (request.HasMember("EnquireTiming")) {
-          log->info("Received EnquireTiming request.\n");
-          handle_request_enquire_timing(document);
-        } else if (request.HasMember("Paging")) {
-          log->info("Received Paging request.\n");
-          handle_request_paging(document, &rx_buf->at(rx_buf_offset), n - rx_buf_offset);
-        } else {
-          log->error("Received unknown request.\n");
-        }
-      } else {
-        log->error("Error receiving from network\n");
-      }
-    }
-    running = false;
-
-    srslte_netsource_free(&net_source);
-  }
-
-  phy_interface_syssim* phy    = nullptr;
-  ss_sys_interface*     syssim = nullptr;
-  byte_buffer_pool*     pool   = nullptr;
+  ss_sys_interface* syssim = nullptr;
+  byte_buffer_pool* pool   = nullptr;
 };
 
 #endif // SRSUE_TTCN3_SYS_INTERFACE_H

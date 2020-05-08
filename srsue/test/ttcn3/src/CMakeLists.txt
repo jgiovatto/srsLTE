@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -24,11 +24,13 @@ target_link_libraries(ttcn3_dut srsue_stack
                                 srsue_rrc
                                 srslte_upper
                                 srslte_common
+                                srslte_mac
                                 srslte_phy
                                 srslte_radio
                                 srslte_upper
                                 srsue_phy
                                 srsue_mac
                                 rrc_asn1
+                                sctp
                                 ${Boost_LIBRARIES})
 include_directories(${PROJECT_SOURCE_DIR}/srsue/test/ttcn3/hdr)

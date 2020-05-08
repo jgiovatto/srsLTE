@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -54,7 +54,7 @@ typedef struct SRSLTE_API {
 typedef struct SRSLTE_API {
   srslte_nbiot_ue_sync_t ue_sync;
 
-  cf_t* rx_buffer[SRSLTE_MAX_PORTS];
+  cf_t* rx_buffer[SRSLTE_MAX_CHANNELS];
   cf_t* nsss_buffer;
   int   nsss_sf_counter;
 
@@ -65,7 +65,7 @@ typedef struct SRSLTE_API {
 SRSLTE_API int
 srslte_ue_cellsearch_nbiot_init(srslte_ue_cellsearch_nbiot_t* q,
                                 uint32_t                      max_frames_total,
-                                int(recv_callback)(void*, cf_t* [SRSLTE_MAX_PORTS], uint32_t, srslte_timestamp_t*),
+                                int(recv_callback)(void*, cf_t* [SRSLTE_MAX_CHANNELS], uint32_t, srslte_timestamp_t*),
                                 void* stream_handler);
 
 SRSLTE_API void srslte_ue_cellsearch_nbiot_free(srslte_ue_cellsearch_nbiot_t* q);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -28,7 +28,6 @@
 #define CHECK_SIM_PIN 0
 
 using namespace srslte;
-using namespace asn1::rrc;
 
 namespace srsue {
 
@@ -264,14 +263,9 @@ void pcsc_usim::generate_nas_keys(uint8_t*                    k_asme,
   RRC interface
 *******************************************************************************/
 
-void pcsc_usim::generate_as_keys(uint8_t*                    k_asme,
-                                 uint32_t                    count_ul,
-                                 uint8_t*                    k_rrc_enc,
-                                 uint8_t*                    k_rrc_int,
-                                 uint8_t*                    k_up_enc,
-                                 uint8_t*                    k_up_int,
-                                 CIPHERING_ALGORITHM_ID_ENUM cipher_algo,
-                                 INTEGRITY_ALGORITHM_ID_ENUM integ_algo)
+void pcsc_usim::generate_as_keys(uint8_t*                      k_asme,
+                                 uint32_t                      count_ul,
+                                 srslte::as_security_config_t* sec_cfg)
 {
   if (!initiated) {
     ERROR("USIM not initiated!\n");
@@ -284,23 +278,17 @@ void pcsc_usim::generate_as_keys(uint8_t*                    k_asme,
   memcpy(this->k_asme, k_asme, 32);
 
   // Generate K_rrc_enc and K_rrc_int
-  security_generate_k_rrc(k_enb, cipher_algo, integ_algo, k_rrc_enc, k_rrc_int);
+  security_generate_k_rrc(
+      k_enb, sec_cfg->cipher_algo, sec_cfg->integ_algo, sec_cfg->k_rrc_enc.data(), sec_cfg->k_rrc_int.data());
 
   // Generate K_up_enc and K_up_int
-  security_generate_k_up(k_enb, cipher_algo, integ_algo, k_up_enc, k_up_int);
+  security_generate_k_up(
+      k_enb, sec_cfg->cipher_algo, sec_cfg->integ_algo, sec_cfg->k_up_enc.data(), sec_cfg->k_up_int.data());
 
   current_ncc = 0;
 }
 
-void pcsc_usim::generate_as_keys_ho(uint32_t                    pci,
-                                    uint32_t                    earfcn,
-                                    int                         ncc,
-                                    uint8_t*                    k_rrc_enc,
-                                    uint8_t*                    k_rrc_int,
-                                    uint8_t*                    k_up_enc,
-                                    uint8_t*                    k_up_int,
-                                    CIPHERING_ALGORITHM_ID_ENUM cipher_algo,
-                                    INTEGRITY_ALGORITHM_ID_ENUM integ_algo)
+void pcsc_usim::generate_as_keys_ho(uint32_t pci, uint32_t earfcn, int ncc, srslte::as_security_config_t* sec_cfg)
 {
   if (!initiated) {
     ERROR("USIM not initiated!\n");
@@ -338,10 +326,12 @@ void pcsc_usim::generate_as_keys_ho(uint32_t                    pci,
   memcpy(k_enb, k_enb_star, 32);
 
   // Generate K_rrc_enc and K_rrc_int
-  security_generate_k_rrc(k_enb, cipher_algo, integ_algo, k_rrc_enc, k_rrc_int);
+  security_generate_k_rrc(
+      k_enb, sec_cfg->cipher_algo, sec_cfg->integ_algo, sec_cfg->k_rrc_enc.data(), sec_cfg->k_rrc_int.data());
 
   // Generate K_up_enc and K_up_int
-  security_generate_k_up(k_enb, cipher_algo, integ_algo, k_up_enc, k_up_int);
+  security_generate_k_up(
+      k_enb, sec_cfg->cipher_algo, sec_cfg->integ_algo, sec_cfg->k_up_enc.data(), sec_cfg->k_up_int.data());
 }
 
 /*******************************************************************************
@@ -942,7 +932,7 @@ int pcsc_usim::scard::get_imsi(char* imsi, size_t* len)
 
   imsilen = (blen - 2) * 2 + 1;
   log->debug("SCARD: IMSI file length=%ld imsilen=%ld\n", (long)blen, (long)imsilen);
-  if (blen < 2 || imsilen > *len) {
+  if (imsilen > *len) {
     *len = imsilen;
     return -4;
   }

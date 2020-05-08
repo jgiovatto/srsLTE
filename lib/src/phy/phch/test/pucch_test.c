@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -172,7 +172,7 @@ int main(int argc, char** argv)
     goto quit;
   }
 
-  sf_symbols = srslte_vec_malloc(sizeof(cf_t) * SRSLTE_NOF_RE(cell));
+  sf_symbols = srslte_vec_cf_malloc(SRSLTE_NOF_RE(cell));
   if (!sf_symbols) {
     goto quit;
   }

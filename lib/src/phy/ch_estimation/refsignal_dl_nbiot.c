@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -102,7 +102,7 @@ int srslte_refsignal_dl_nbiot_init(srslte_refsignal_dl_nbiot_t* q)
 
     for (uint32_t p = 0; p < 2; p++) {
       for (uint32_t i = 0; i < SRSLTE_NOF_SF_X_FRAME; i++) {
-        q->pilots[p][i] = srslte_vec_malloc(sizeof(cf_t) * SRSLTE_NBIOT_REFSIGNAL_NUM_SF(SRSLTE_NBIOT_MAX_PRB, p));
+        q->pilots[p][i] = srslte_vec_cf_malloc(SRSLTE_NBIOT_REFSIGNAL_NUM_SF(SRSLTE_NBIOT_MAX_PRB, p));
         if (!q->pilots[p][i]) {
           perror("malloc");
           goto free_and_exit;

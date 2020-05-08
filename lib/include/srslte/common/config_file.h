@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -25,6 +25,8 @@
 #include "common.h"
 #include <fstream>
 #include <pwd.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 bool config_exists(std::string& filename, std::string default_name)
 {

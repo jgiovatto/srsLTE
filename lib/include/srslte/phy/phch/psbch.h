@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -22,6 +22,7 @@
 #ifndef SRSLTE_PSBCH_H
 #define SRSLTE_PSBCH_H
 
+#include <srslte/phy/common/phy_common_sl.h>
 #include <srslte/phy/dft/dft_precoding.h>
 #include <srslte/phy/fec/convcoder.h>
 #include <srslte/phy/fec/crc.h>
@@ -42,12 +43,13 @@ typedef struct SRSLTE_API {
   srslte_sl_tm_t tm;
   srslte_cp_t    cp;
 
-  uint32_t nof_data_re;
+  uint32_t nof_data_re; ///< Number of RE considered during the channel mapping
+  uint32_t nof_tx_re;   ///< Number of RE actually transmitted over the air (without last OFDM symbol)
   uint32_t E;
   uint32_t Qm;
-  uint32_t len_after_mod;
   uint32_t nof_prb;
   uint32_t nof_data_symbols;
+  uint32_t nof_tx_symbols;
   uint32_t sl_bch_tb_len;
   uint32_t sl_bch_tb_crc_len;
   uint32_t sl_bch_encoded_len;
@@ -64,14 +66,16 @@ typedef struct SRSLTE_API {
   srslte_viterbi_t   dec;
   srslte_convcoder_t encoder;
   uint8_t*           d;
-  float*             d_float;
+  int16_t*           d_16;
 
   // rate matching
   uint8_t* e;
-  float*   e_float;
+  uint8_t* e_bytes; ///< To pack bits to bytes
+  int16_t* e_16;
 
   uint8_t* codeword;
-  float*   llr;
+  uint8_t* codeword_bytes;
+  int16_t* llr;
 
   // interleaving
   uint32_t* interleaver_lut;

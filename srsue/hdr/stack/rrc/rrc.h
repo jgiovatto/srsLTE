@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -30,7 +30,7 @@
 #include "srslte/common/block_queue.h"
 #include "srslte/common/buffer_pool.h"
 #include "srslte/common/common.h"
-#include "srslte/common/log.h"
+#include "srslte/common/logmap.h"
 #include "srslte/common/security.h"
 #include "srslte/common/stack_procedure.h"
 #include "srslte/interfaces/ue_interfaces.h"
@@ -68,9 +68,9 @@ namespace srsue {
 class cell_t
 {
 public:
-  bool is_valid() { return phy_cell.earfcn != 0 && srslte_cell_isvalid(&phy_cell.cell); }
-  bool equals(cell_t* x) { return equals(x->phy_cell.earfcn, x->phy_cell.cell.id); }
-  bool equals(uint32_t earfcn, uint32_t pci) { return earfcn == phy_cell.earfcn && pci == phy_cell.cell.id; }
+  bool is_valid() { return phy_cell.earfcn != 0 && srslte_cellid_isvalid(phy_cell.pci); }
+  bool equals(cell_t* x) { return equals(x->phy_cell.earfcn, x->phy_cell.pci); }
+  bool equals(uint32_t earfcn, uint32_t pci) { return earfcn == phy_cell.earfcn && pci == phy_cell.pci; }
   // NaN means an RSRP value has not yet been obtained. Keep then in the list and clean them if never updated
   bool greater(cell_t* x) { return rsrp > x->rsrp || std::isnan(rsrp); }
   bool plmn_equals(asn1::rrc::plmn_id_s plmn_id)
@@ -113,29 +113,29 @@ public:
     }
   }
 
-  cell_t()
-  {
-    phy_interface_rrc_lte::phy_cell_t tmp = {};
-    cell_t(tmp, 0);
-  }
-  cell_t(phy_interface_rrc_lte::phy_cell_t phy_cell, float rsrp_)
-  {
+  cell_t() {
     gettimeofday(&last_update, nullptr);
-    this->has_valid_sib1  = false;
-    this->has_valid_sib2  = false;
-    this->has_valid_sib3  = false;
-    this->has_valid_sib13 = false;
-    this->phy_cell        = phy_cell;
-    rsrp                  = rsrp_;
-    bzero(&sib1, sizeof(sib1));
-    bzero(&sib2, sizeof(sib2));
-    bzero(&sib3, sizeof(sib3));
-    bzero(&sib13, sizeof(sib13));
+    has_valid_sib1  = false;
+    has_valid_sib2  = false;
+    has_valid_sib3  = false;
+    has_valid_sib13 = false;
+    phy_cell        = {0,0,0};
+    rsrp            = NAN;
+    rsrq            = NAN;
+    sib1            = {};
+    sib2            = {};
+    sib3            = {};
+    sib13           = {};
+  }
+
+  cell_t(phy_interface_rrc_lte::phy_cell_t phy_cell_) : cell_t()
+  {
+    phy_cell = phy_cell_;
   }
 
   uint32_t get_earfcn() { return phy_cell.earfcn; }
 
-  uint32_t get_pci() { return phy_cell.cell.id; }
+  uint32_t get_pci() { return phy_cell.pci; }
 
   void set_rsrp(float rsrp_)
   {
@@ -144,29 +144,27 @@ public:
     }
     gettimeofday(&last_update, nullptr);
   }
+  void set_rsrq(float rsrq_)
+  {
+    if (!std::isnan(rsrq_)) {
+      rsrq = rsrq_;
+    }
+  }
+  void set_cfo(float cfo_Hz_)
+  {
+    if (not std::isnan(cfo_Hz_) && not std::isinf(cfo_Hz_)) {
+      phy_cell.cfo_hz = cfo_Hz_;
+    }
+  }
 
   float get_rsrp() { return rsrp; }
+  float get_rsrq() { return rsrq; }
+  float get_cfo_hz() { return phy_cell.cfo_hz; }
 
-  void set_sib1(asn1::rrc::sib_type1_s* sib1_)
-  {
-    sib1           = *sib1_;
-    has_valid_sib1 = true;
-  }
-  void set_sib2(asn1::rrc::sib_type2_s* sib2_)
-  {
-    sib2           = *sib2_;
-    has_valid_sib2 = true;
-  }
-  void set_sib3(asn1::rrc::sib_type3_s* sib3_)
-  {
-    sib3           = *sib3_;
-    has_valid_sib3 = true;
-  }
-  void set_sib13(asn1::rrc::sib_type13_r9_s* sib13_)
-  {
-    sib13           = *sib13_;
-    has_valid_sib13 = true;
-  }
+  void set_sib1(asn1::rrc::sib_type1_s* sib1_);
+  void set_sib2(asn1::rrc::sib_type2_s* sib2_);
+  void set_sib3(asn1::rrc::sib_type3_s* sib3_);
+  void set_sib13(asn1::rrc::sib_type13_r9_s* sib13_);
 
   // TODO: replace with TTI count
   uint32_t timeout_secs(struct timeval now)
@@ -241,12 +239,21 @@ public:
     return 0;
   }
 
-  std::string print()
+  std::string to_string()
   {
     char buf[256];
-    snprintf(buf, 256, "{cell_id: 0x%x, pci: %d, dl_earfcn: %d}\n", get_cell_id(), get_pci(), get_earfcn());
+    snprintf(buf,
+             256,
+             "{cell_id: 0x%x, pci: %d, dl_earfcn: %d, rsrp=%+.1f, cfo=%+.1f}",
+             get_cell_id(),
+             get_pci(),
+             get_earfcn(),
+             get_rsrp(),
+             get_cfo_hz());
     return std::string{buf};
   }
+
+  bool is_sib_scheduled(uint32_t sib_index) const;
 
   phy_interface_rrc_lte::phy_cell_t phy_cell = {};
   bool                              has_mcch = false;
@@ -258,13 +265,15 @@ public:
 
 private:
   float rsrp = NAN;
+  float rsrq = NAN;
 
   struct timeval last_update = {};
 
-  bool has_valid_sib1  = false;
-  bool has_valid_sib2  = false;
-  bool has_valid_sib3  = false;
-  bool has_valid_sib13 = false;
+  bool                         has_valid_sib1  = false;
+  bool                         has_valid_sib2  = false;
+  bool                         has_valid_sib3  = false;
+  bool                         has_valid_sib13 = false;
+  std::map<uint32_t, uint32_t> sib_info_map; ///< map of sib_index to index of schedInfoList in SIB1
 };
 
 class rrc : public rrc_interface_nas,
@@ -275,7 +284,7 @@ class rrc : public rrc_interface_nas,
             public srslte::timer_callback
 {
 public:
-  rrc(srslte::log* rrc_log_);
+  rrc(stack_interface_rrc* stack_);
   ~rrc();
 
   void init(phy_interface_rrc_lte* phy_,
@@ -285,8 +294,6 @@ public:
             nas_interface_rrc*     nas_,
             usim_interface_rrc*    usim_,
             gw_interface_rrc*      gw_,
-            srslte::timer_handler* timers_,
-            stack_interface_rrc*   stack_,
             const rrc_args_t&      args_);
 
   void stop();
@@ -322,12 +329,12 @@ public:
   // PHY interface
   void in_sync() final;
   void out_of_sync() final;
-  void new_phy_meas(float rsrp, float rsrq, uint32_t tti, int earfcn, int pci) final;
+  void new_cell_meas(const std::vector<phy_meas_t>& meas);
 
   // MAC interface
   void ho_ra_completed(bool ra_successful);
   void release_pucch_srs();
-  void run_tti(uint32_t tti);
+  void run_tti();
   void ra_problem();
 
   // GW interface
@@ -344,10 +351,16 @@ public:
   // STACK interface
   void cell_search_completed(const phy_interface_rrc_lte::cell_search_ret_t& cs_ret,
                              const phy_interface_rrc_lte::phy_cell_t&        found_cell);
+  void cell_select_completed(bool cs_ret);
+
+protected:
+  // Moved to protected to be accessible by unit tests
+  void set_serving_cell(phy_interface_rrc_lte::phy_cell_t phy_cell, bool discard_serving);
+  bool has_neighbour_cell(const uint32_t earfcn, const uint32_t pci);
 
 private:
   typedef struct {
-    enum { PDU, PCCH, PDU_MCH, RLF, PDU_BCCH_DLSCH, STOP } command;
+    enum { PCCH, RLF, HO_COMPLETE, STOP } command;
     srslte::unique_byte_buffer_t pdu;
     uint16_t                     lcid;
   } cmd_msg_t;
@@ -357,8 +370,9 @@ private:
 
   void process_pcch(srslte::unique_byte_buffer_t pdu);
 
+  stack_interface_rrc*      stack   = nullptr;
   srslte::byte_buffer_pool* pool    = nullptr;
-  srslte::log*              rrc_log = nullptr;
+  srslte::log_ref             rrc_log;
   phy_interface_rrc_lte*    phy     = nullptr;
   mac_interface_rrc*        mac     = nullptr;
   rlc_interface_rrc*        rlc     = nullptr;
@@ -366,7 +380,6 @@ private:
   nas_interface_rrc*        nas     = nullptr;
   usim_interface_rrc*       usim    = nullptr;
   gw_interface_rrc*         gw      = nullptr;
-  stack_interface_rrc*      stack   = nullptr;
 
   srslte::unique_byte_buffer_t dedicated_info_nas;
 
@@ -393,24 +406,18 @@ private:
   cell_t                      ho_src_cell = {};
   srslte::phy_cfg_t           current_phy_cfg, previous_phy_cfg = {};
   srslte::mac_cfg_t           current_mac_cfg, previous_mac_cfg = {};
+  bool                        current_scell_configured[SRSLTE_MAX_CARRIERS] = {};
   bool                        pending_mob_reconf = false;
   asn1::rrc::rrc_conn_recfg_s mob_reconf         = {};
 
-  uint8_t k_rrc_enc[32] = {};
-  uint8_t k_rrc_int[32] = {};
-  uint8_t k_up_enc[32]  = {};
-  uint8_t k_up_int[32]  = {}; // Not used: only for relay nodes (3GPP 33.401 Annex A.7)
-
-  srslte::CIPHERING_ALGORITHM_ID_ENUM cipher_algo = srslte::CIPHERING_ALGORITHM_ID_EEA0;
-  srslte::INTEGRITY_ALGORITHM_ID_ENUM integ_algo  = srslte::INTEGRITY_ALGORITHM_ID_EIA0;
+  srslte::as_security_config_t sec_cfg = {};
 
   std::map<uint32_t, asn1::rrc::srb_to_add_mod_s> srbs;
   std::map<uint32_t, asn1::rrc::drb_to_add_mod_s> drbs;
 
   // RRC constants and timers
-  srslte::timer_handler*              timers = nullptr;
-  uint32_t                            n310_cnt, N310 = 0;
-  uint32_t                            n311_cnt, N311 = 0;
+  uint32_t                            n310_cnt = 0, N310 = 0;
+  uint32_t                            n311_cnt = 0, N311 = 0;
   srslte::timer_handler::unique_timer t300, t301, t302, t310, t311, t304;
 
   // Radio bearers
@@ -448,19 +455,18 @@ private:
   std::vector<unique_cell_t>      neighbour_cells;
   unique_cell_t                   serving_cell = nullptr;
   void                            set_serving_cell(uint32_t cell_idx);
-  void                            set_serving_cell(phy_interface_rrc_lte::phy_cell_t phy_cell);
 
-  unique_cell_t remove_neighbour_cell(const uint32_t earfcn, const uint32_t pci);
-  cell_t*       get_neighbour_cell_handle(const uint32_t earfcn, const uint32_t pci);
-  bool          has_neighbour_cell(const uint32_t earfcn, const uint32_t pci);
-  int           find_neighbour_cell(uint32_t earfcn, uint32_t pci);
-  bool          add_neighbour_cell(uint32_t earfcn, uint32_t pci, float rsrp);
-  bool          add_neighbour_cell(phy_interface_rrc_lte::phy_cell_t phy_cell, float rsrp);
-  bool          add_neighbour_cell(unique_cell_t new_cell);
-  void          sort_neighbour_cells();
-  void          clean_neighbours();
-  void          delete_last_neighbour();
-  std::string   print_neighbour_cells();
+  unique_cell_t      remove_neighbour_cell(const uint32_t earfcn, const uint32_t pci);
+  cell_t*            get_neighbour_cell_handle(const uint32_t earfcn, const uint32_t pci);
+  int                find_neighbour_cell(uint32_t earfcn, uint32_t pci);
+  bool               add_neighbour_cell(phy_meas_t meas);
+  bool               add_neighbour_cell(unique_cell_t new_cell);
+  void               log_neighbour_cells();
+  void               sort_neighbour_cells();
+  void               clean_neighbours();
+  void               delete_last_neighbour();
+  std::string        print_neighbour_cells();
+  std::set<uint32_t> get_neighbour_pcis(uint32_t earfcn);
 
   bool                     initiated                  = false;
   asn1::rrc::reest_cause_e m_reest_cause              = asn1::rrc::reest_cause_e::nulltype;
@@ -469,117 +475,23 @@ private:
   bool                     reestablishment_started    = false;
   bool                     reestablishment_successful = false;
 
-  // Measurements sub-class
-  class rrc_meas
-  {
-  public:
-    void init(rrc* parent);
-    void reset();
-    bool parse_meas_config(asn1::rrc::meas_cfg_s* meas_config);
-    void new_phy_meas(uint32_t earfcn, uint32_t pci, float rsrp, float rsrq, uint32_t tti);
-    void run_tti(uint32_t tti);
-    bool timer_expired(uint32_t timer_id);
-    void ho_finish();
-    void delete_report(uint32_t earfcn, uint32_t pci);
+  // Process HO completition in the background
+  void process_ho_ra_completed(bool ra_successful);
 
-  private:
-    const static int NOF_MEASUREMENTS = 3;
+  // Measurements private subclass
+  class rrc_meas;
+  std::unique_ptr<rrc_meas> measurements;
 
-    typedef enum { RSRP = 0, RSRQ = 1, BOTH = 2 } quantity_t;
+  // Interface from rrc_meas
+  void               send_srb1_msg(const asn1::rrc::ul_dcch_msg_s& msg);
+  std::set<uint32_t> get_cells(const uint32_t earfcn);
+  float              get_cell_rsrp(const uint32_t earfcn, const uint32_t pci);
+  float              get_cell_rsrq(const uint32_t earfcn, const uint32_t pci);
+  cell_t*            get_serving_cell();
 
-    typedef struct {
-      uint32_t pci;
-      float    q_offset;
-    } meas_cell_t;
-
-    typedef struct {
-      uint32_t                        earfcn;
-      float                           q_offset;
-      std::map<uint32_t, meas_cell_t> meas_cells;
-      std::map<uint32_t, meas_cell_t> found_cells;
-    } meas_obj_t;
-
-    typedef struct {
-      uint32_t                 interval;
-      uint32_t                 max_cell;
-      int32_t                  amount;
-      quantity_t               trigger_quantity;
-      quantity_t               report_quantity;
-      asn1::rrc::eutra_event_s event;
-      enum { EVENT, PERIODIC } trigger_type;
-    } report_cfg_t;
-
-    typedef struct {
-      float    ms[NOF_MEASUREMENTS];
-      bool     triggered;
-      bool     timer_enter_triggered;
-      bool     timer_exit_triggered;
-      uint32_t enter_tti;
-      uint32_t exit_tti;
-    } meas_value_t;
-
-    typedef struct {
-      uint32_t                            nof_reports_sent;
-      uint32_t                            report_id;
-      uint32_t                            object_id;
-      bool                                triggered;
-      srslte::timer_handler::unique_timer periodic_timer;
-      std::map<uint32_t, meas_value_t>    cell_values; // Value for each PCI in this object
-    } meas_t;
-
-    std::map<uint32_t, meas_obj_t>   objects;
-    std::map<uint32_t, report_cfg_t> reports_cfg;
-    std::map<uint32_t, meas_t>       active;
-
-    rrc*                   parent = nullptr;
-    srslte::log*           log_h  = nullptr;
-    phy_interface_rrc_lte* phy    = nullptr;
-    srslte::timer_handler* timers = nullptr;
-
-    uint32_t filter_k_rsrp, filter_k_rsrq = 0;
-    float    filter_a[NOF_MEASUREMENTS] = {};
-
-    meas_value_t pcell_measurement = {};
-
-    bool  s_measure_enabled = false;
-    float s_measure_value   = 0.0;
-
-    void    stop_reports(meas_t* m);
-    void    stop_reports_object(uint32_t object_id);
-    void    remove_meas_object(uint32_t object_id);
-    void    remove_meas_report(uint32_t report_id);
-    void    remove_meas_id(uint32_t measId);
-    void    remove_meas_id(std::map<uint32_t, meas_t>::iterator it);
-    void    calculate_triggers(uint32_t tti);
-    void    update_phy();
-    void    L3_filter(meas_value_t* value, float rsrp[NOF_MEASUREMENTS]);
-    bool    find_earfcn_cell(uint32_t earfcn, uint32_t pci, meas_obj_t** object, int* cell_idx);
-    float   range_to_value(quantity_t quant, uint8_t range);
-    uint8_t value_to_range(quantity_t quant, float value);
-    bool    process_event(asn1::rrc::eutra_event_s* event,
-                          uint32_t                  tti,
-                          bool                      enter_condition,
-                          bool                      exit_condition,
-                          meas_t*                   m,
-                          meas_value_t*             cell);
-
-    void generate_report(uint32_t meas_id);
-  };
-
-  rrc_meas measurements;
-
-  // Measurement object from phy
-  typedef struct {
-    float    rsrp;
-    float    rsrq;
-    uint32_t tti;
-    uint32_t earfcn;
-    uint32_t pci;
-  } phy_meas_t;
-
-  void                            process_phy_meas();
-  void                            process_new_phy_meas(phy_meas_t meas);
-  srslte::block_queue<phy_meas_t> phy_meas_q;
+  void                                          process_cell_meas();
+  void                                          process_new_cell_meas(const std::vector<phy_meas_t>& meas);
+  srslte::block_queue<std::vector<phy_meas_t> > cell_meas_q;
 
   // Cell selection/reselection functions/variables
   typedef struct {
@@ -664,7 +576,7 @@ private:
   void ho_failed();
   void start_ho();
   void start_go_idle();
-  void rrc_connection_release();
+  void rrc_connection_release(const std::string& cause);
   void radio_link_failure();
   void leave_connected();
   void stop_timers();

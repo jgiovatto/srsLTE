@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -138,7 +138,7 @@ int main(int argc, char** argv)
   cell.base.nof_ports      = 1;
 
   cf_t* buff_ptrs[SRSLTE_MAX_PORTS] = {NULL, NULL, NULL, NULL};
-  buff_ptrs[0]                      = srslte_vec_malloc(sizeof(cf_t) * SRSLTE_SF_LEN_PRB_NBIOT * 10);
+  buff_ptrs[0]                      = srslte_vec_cf_malloc(SRSLTE_SF_LEN_PRB_NBIOT * 10);
 
   srslte_nbiot_ue_sync_t ue_sync;
   if (srslte_ue_sync_nbiot_init(&ue_sync, cell, srslte_rf_recv_wrapper, (void*)&rf)) {

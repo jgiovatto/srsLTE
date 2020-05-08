@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -52,6 +52,8 @@ SRSLTE_API int srslte_dft_precoding_init_rx(srslte_dft_precoding_t* q, uint32_t 
 SRSLTE_API void srslte_dft_precoding_free(srslte_dft_precoding_t* q);
 
 SRSLTE_API bool srslte_dft_precoding_valid_prb(uint32_t nof_prb);
+
+SRSLTE_API uint32_t srslte_dft_precoding_get_valid_prb(uint32_t nof_prb);
 
 SRSLTE_API int
 srslte_dft_precoding(srslte_dft_precoding_t* q, cf_t* input, cf_t* output, uint32_t nof_prb, uint32_t nof_symbols);

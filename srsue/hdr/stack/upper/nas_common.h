@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -24,18 +24,24 @@
 
 namespace srsue {
 
+typedef struct {
+  int airplane_t_on_ms  = -1;
+  int airplane_t_off_ms = -1;
+} nas_sim_args_t;
+
 class nas_args_t
 {
 public:
   nas_args_t() : force_imsi_attach(false) {}
 
-  std::string apn_name;
-  std::string apn_protocol;
-  std::string apn_user;
-  std::string apn_pass;
-  bool        force_imsi_attach;
-  std::string eia;
-  std::string eea;
+  std::string    apn_name;
+  std::string    apn_protocol;
+  std::string    apn_user;
+  std::string    apn_pass;
+  bool           force_imsi_attach;
+  std::string    eia;
+  std::string    eea;
+  nas_sim_args_t sim;
 };
 
 // EMM states (3GPP 24.302 v10.0.0)

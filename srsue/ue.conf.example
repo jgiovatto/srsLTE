@@ -13,9 +13,8 @@
 # Optional parameters: 
 # dl_freq:            Override DL frequency corresponding to dl_earfcn
 # ul_freq:            Override UL frequency corresponding to dl_earfcn
-# nof_radios:         Number of available RF devices
-# nof_rf_channels:    Number of RF channels per radio
-# nof_rx_ant:         Number of RX antennas per channel
+# nof_carriers:       Number of carriers
+# nof_antennas:       Number of antennas per carrier (all carriers have the same number of antennas)
 # device_name:        Device driver family. Supported options: "auto" (uses first found), "UHD" or "bladeRF" 
 # device_args:        Arguments for the device driver. Options are "auto" or any string. 
 #                     Default for UHD: "recv_frame_size=9232,send_frame_size=9232"
@@ -25,8 +24,6 @@
 # time_adv_nsamples:  Transmission time advance (in number of samples) to compensate for RF delay
 #                     from antenna to timestamp insertion. 
 #                     Default "auto". B210 USRP: 100 samples, bladeRF: 27.
-# burst_preamble_us:  Preamble length to transmit before start of burst. 
-#                     Default "auto". B210 USRP: 400 us, bladeRF: 0 us.
 # continuous_tx:      Transmit samples continuously to the radio or on bursts (auto/yes/no).
 #                     Default is auto (yes for UHD, no for rest)
 #####################################################################
@@ -36,8 +33,8 @@ freq_offset = 0
 tx_gain = 80
 #rx_gain = 40
 
-#nof_radios = 1
-#nof_rx_ant = 1
+#nof_carriers = 1
+#nof_antennas = 1
 
 # For best performance in 2x2 MIMO and >= 15 MHz use the following device_args settings:
 #     USRP B210: num_recv_frames=64,num_send_frames=64
@@ -47,9 +44,11 @@ tx_gain = 80
 
 #device_args = auto
 #time_adv_nsamples = auto
-#burst_preamble_us = auto
 #continuous_tx     = auto
 
+# Example for ZMQ-based operation with TCP transport for I/Q samples
+#device_name = zmq
+#device_args = tx_port=tcp://*:2001,rx_port=tcp://localhost:2000,id=ue,base_srate=23.04e6
 
 #####################################################################
 # Packet capture configuration
@@ -167,10 +166,12 @@ imei = 353490069873319
 #####################################################################
 # GW configuration
 #
+# netns:                Network namespace to create TUN device. Default: empty
 # ip_devname:           Name of the tun_srsue device. Default: tun_srsue
 # ip_netmask:           Netmask of the tun_srsue device. Default: 255.255.255.0
 #####################################################################
 [gw]
+#netns =
 #ip_devname = tun_srsue
 #ip_netmask = 255.255.255.0
 
@@ -187,6 +188,10 @@ enable = false
 #####################################################################
 # Channel emulator options:
 # enable:            Enable/Disable internal Downlink/Uplink channel emulator
+#
+# -- AWGN Generator
+# awgn.enable:       Enable/disable AWGN generator
+# awgn.n0:           Noise power in dBfs
 #
 # -- Fading emulator
 # fading.enable:     Enable/disable fading simulator
@@ -214,6 +219,10 @@ enable = false
 [channel.dl]
 #enable        = false
 
+[channel.dl.awgn]
+#enable        = false
+#n0            = -30
+
 [channel.dl.fading]
 #enable        = false
 #model         = none
@@ -238,6 +247,10 @@ enable = false
 
 [channel.ul]
 #enable        = false
+
+[channel.ul.awgn]
+#enable        = false
+#n0            = -30
 
 [channel.ul.fading]
 #enable        = false
@@ -275,10 +288,13 @@ enable = false
 #                                   refs:  use difference between noise references and noiseless (after filtering)
 #                                   empty: use empty subcarriers in the boarder of pss/sss signal
 # pdsch_max_its:        Maximum number of turbo decoder iterations (Default 4)
+# pdsch_meas_evm:       Measure PDSCH EVM, increases CPU load (default false)
 # nof_phy_threads:      Selects the number of PHY threads (maximum 4, minimum 1, default 2)
 # equalizer_mode:       Selects equalizer mode. Valid modes are: "mmse", "zf" or any 
 #                       non-negative real number to indicate a regularized zf coefficient.
 #                       Default is MMSE.
+# correct_sync_error:   Channel estimator measures and pre-compensates time synchronization error. Increases CPU usage,
+#                       improves PDSCH decoding in high SFO and high speed UE scenarios.
 # sfo_ema:              EMA coefficient to average sample offsets used to compute SFO
 # sfo_correct_period:   Period in ms to correct sample time to adjust for SFO
 # sss_algorithm:        Selects the SSS estimation algorithm. Can choose between
@@ -290,19 +306,18 @@ enable = false
 #
 # snr_to_cqi_offset:    Sets an offset in the SNR to CQI table. This is used to adjust the reported CQI.
 #
-# pregenerate_signals:  Pregenerate uplink signals after attach. Improves CPU performance.
-#
 # interpolate_subframe_enabled: Interpolates in the time domain the channel estimates within 1 subframe. Default is to average.
-#
-# sic_pss_enabled:      Applies Successive Interference Cancellation to PSS signals when searching for neighbour cells.
-#                       Must be disabled if cells have identical channel and timing, for instance if generated from
-#                       the same source.
 #
 # pdsch_csi_enabled:     Stores the Channel State Information and uses it for weightening the softbits. It is only
 #                        used in TM1. It is True by default.
 #
 # pdsch_8bit_decoder:    Use 8-bit for LLR representation and turbo decoder trellis computation (Experimental)
 # force_ul_amplitude:    Forces the peak amplitude in the PUCCH, PUSCH and SRS (set 0.0 to 1.0, set to 0 or negative for disabling)
+#
+# in_sync_rsrp_dbm_th:    RSRP threshold (in dBm) above which the UE considers to be in-sync
+# in_sync_snr_db_th:      SNR threshold (in dB) above which the UE considers to be in-sync
+# nof_in_sync_events:     Number of PHY in-sync events before sending an in-sync event to RRC
+# nof_out_of_sync_events: Number of PHY out-sync events before sending an out-sync event to RRC
 #
 #####################################################################
 [phy]
@@ -313,8 +328,10 @@ enable = false
 #snr_ema_coeff       = 0.1
 #snr_estim_alg       = refs
 #pdsch_max_its       = 8    # These are half iterations
+#pdsch_meas_evm      = false
 #nof_phy_threads     = 3
 #equalizer_mode      = mmse
+#correct_sync_error  = false
 #sfo_ema             = 0.1
 #sfo_correct_period  = 10
 #sss_algorithm       = full
@@ -323,11 +340,29 @@ enable = false
 #estimator_fil_order  = 4
 #snr_to_cqi_offset   = 0.0
 #interpolate_subframe_enabled = false
-#sic_pss_enabled     = true
-#pregenerate_signals = false
 #pdsch_csi_enabled  = true
 #pdsch_8bit_decoder = false
 #force_ul_amplitude = 0
+
+#in_sync_rsrp_dbm_th    = -130.0
+#in_sync_snr_db_th      = 3.0
+#nof_in_sync_events     = 10
+#nof_out_of_sync_events = 20
+
+#####################################################################
+# Simulation configuration options
+#
+# The UE simulation supports turning on and off airplane mode in the UE.
+# The actions are carried periodically until the UE is stopped.
+#
+# airplane_t_on_ms:   Time to leave airplane mode turned on (in ms)
+#
+# airplane_t_off_ms:  Time to leave airplane mode turned off (in ms)
+#
+#####################################################################
+[sim]
+#airplane_t_on_ms  = -1
+#airplane_t_off_ms = -1
 
 #####################################################################
 # General configuration options
@@ -338,8 +373,11 @@ enable = false
 #
 # metrics_csv_filename: File path to use for CSV metrics.
 #
+# have_tti_time_stats:  Calculate TTI execution statistics using system clock
+#
 #####################################################################
 [general]
 #metrics_csv_enable  = false
 #metrics_period_secs = 1
 #metrics_csv_filename = /tmp/ue_metrics.csv
+#have_tti_time_stats = true

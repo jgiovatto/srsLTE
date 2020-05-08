@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2019 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -52,7 +47,7 @@ int rf_zmq_tx_open(rf_zmq_tx_t* q, rf_zmq_opts_t opts, void* zmq_ctx, char* sock
     }
     q->socket_type   = opts.socket_type;
     q->sample_format = opts.sample_format;
-    q->frequency_hz_mhz = opts.frequency_mhz;
+    q->frequency_mhz = opts.frequency_mhz;
 
     rf_zmq_info(q->id, "Binding transmitter: %s\n", sock_args);
 
@@ -143,7 +138,7 @@ static int _rf_zmq_tx_baseband(rf_zmq_tx_t* q, cf_t* buffer, uint32_t nsamples)
 
     // Send base-band if request was received
     if (n > 0) {
-      n = zmq_send(q->sock, buf, sample_sz * nsamples, 0);
+      n = zmq_send(q->sock, buf, (size_t)sample_sz * nsamples, 0);
       if (n < 0) {
         if (rf_zmq_handle_error(q->id, "tx baseband send")) {
           n = SRSLTE_ERROR;
@@ -216,7 +211,7 @@ bool rf_zmq_tx_match_freq(rf_zmq_tx_t* q, uint32_t freq_hz)
 {
   bool ret = false;
   if (q) {
-    ret = (q->frequency_hz_mhz == 0 || q->frequency_hz_mhz == freq_hz);
+    ret = (q->frequency_mhz == 0 || q->frequency_mhz == freq_hz);
   }
   return ret;
 }

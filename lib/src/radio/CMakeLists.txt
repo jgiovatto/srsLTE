@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -19,9 +19,8 @@
 #
 
 if(RF_FOUND)
-  add_library(srslte_radio STATIC radio.cc radio_multi.cc)
+  add_library(srslte_radio STATIC radio.cc)
   target_link_libraries(srslte_radio srslte_rf)
-  install(TARGETS srslte_radio DESTINATION ${LIBRARY_DIR})
 endif(RF_FOUND)
 
 add_subdirectory(test)

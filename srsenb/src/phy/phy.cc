@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -50,11 +50,7 @@ using namespace asn1::rrc;
 namespace srsenb {
 
 phy::phy(srslte::logger* logger_) :
-  logger(logger_),
-  workers_pool(MAX_WORKERS),
-  workers(MAX_WORKERS),
-  workers_common(MAX_WORKERS),
-  nof_workers(0)
+  logger(logger_), workers_pool(MAX_WORKERS), workers(MAX_WORKERS), workers_common(), nof_workers(0)
 {
 }
 
@@ -63,46 +59,20 @@ phy::~phy()
   stop();
 }
 
-void phy::parse_config(const phy_cfg_t& cfg)
+void phy::parse_common_config(const phy_cfg_t& cfg)
 {
   // PRACH configuration
-  prach_cfg.config_idx     = cfg.prach_cnfg.prach_cfg_info.prach_cfg_idx;
-  prach_cfg.hs_flag        = cfg.prach_cnfg.prach_cfg_info.high_speed_flag;
-  prach_cfg.root_seq_idx   = cfg.prach_cnfg.root_seq_idx;
-  prach_cfg.zero_corr_zone = cfg.prach_cnfg.prach_cfg_info.zero_correlation_zone_cfg;
-  prach_cfg.freq_offset    = cfg.prach_cnfg.prach_cfg_info.prach_freq_offset;
-
+  prach_cfg.config_idx       = cfg.prach_cnfg.prach_cfg_info.prach_cfg_idx;
+  prach_cfg.hs_flag          = cfg.prach_cnfg.prach_cfg_info.high_speed_flag;
+  prach_cfg.root_seq_idx     = cfg.prach_cnfg.root_seq_idx;
+  prach_cfg.zero_corr_zone   = cfg.prach_cnfg.prach_cfg_info.zero_correlation_zone_cfg;
+  prach_cfg.freq_offset      = cfg.prach_cnfg.prach_cfg_info.prach_freq_offset;
+  prach_cfg.num_ra_preambles = cfg.phy_cell_cfg.at(0).num_ra_preambles;
   // DMRS
-  workers_common.ul_cfg_com.dmrs.cyclic_shift        = cfg.pusch_cnfg.ul_ref_sigs_pusch.cyclic_shift;
-  workers_common.ul_cfg_com.dmrs.delta_ss            = cfg.pusch_cnfg.ul_ref_sigs_pusch.group_assign_pusch;
-  workers_common.ul_cfg_com.dmrs.group_hopping_en    = cfg.pusch_cnfg.ul_ref_sigs_pusch.group_hop_enabled;
-  workers_common.ul_cfg_com.dmrs.sequence_hopping_en = cfg.pusch_cnfg.ul_ref_sigs_pusch.seq_hop_enabled;
-
-  // Hopping
-  workers_common.ul_cfg_com.hopping.hop_mode =
-      cfg.pusch_cnfg.pusch_cfg_basic.hop_mode ==
-              asn1::rrc::pusch_cfg_common_s::pusch_cfg_basic_s_::hop_mode_e_::intra_and_inter_sub_frame
-          ? srslte_pusch_hopping_cfg_t::SRSLTE_PUSCH_HOP_MODE_INTRA_SF
-          : srslte_pusch_hopping_cfg_t::SRSLTE_PUSCH_HOP_MODE_INTER_SF;
-
-  workers_common.ul_cfg_com.hopping.n_sb             = cfg.pusch_cnfg.pusch_cfg_basic.n_sb;
-  workers_common.ul_cfg_com.hopping.hopping_offset   = cfg.pusch_cnfg.pusch_cfg_basic.pusch_hop_offset;
-  workers_common.ul_cfg_com.pusch.max_nof_iterations = workers_common.params.pusch_max_its;
-  workers_common.ul_cfg_com.pusch.csi_enable         = false;
-  workers_common.ul_cfg_com.pusch.meas_time_en       = true;
-
-  // PUCCH
-  workers_common.ul_cfg_com.pucch.delta_pucch_shift = cfg.pucch_cnfg.delta_pucch_shift.to_number();
-  workers_common.ul_cfg_com.pucch.N_cs              = cfg.pucch_cnfg.ncs_an;
-  workers_common.ul_cfg_com.pucch.n_rb_2            = cfg.pucch_cnfg.nrb_cqi;
-  workers_common.ul_cfg_com.pucch.N_pucch_1         = cfg.pucch_cnfg.n1_pucch_an;
-  workers_common.ul_cfg_com.pucch.threshold_format1 = 0.8;
-
-  // PDSCH configuration
-  workers_common.dl_cfg_com.tm                 = SRSLTE_TM1;
-  workers_common.dl_cfg_com.pdsch.rs_power     = cfg.pdsch_cnfg.ref_sig_pwr;
-  workers_common.dl_cfg_com.pdsch.p_b          = cfg.pdsch_cnfg.p_b;
-  workers_common.dl_cfg_com.pdsch.meas_time_en = true;
+  workers_common.dmrs_pusch_cfg.cyclic_shift        = cfg.pusch_cnfg.ul_ref_sigs_pusch.cyclic_shift;
+  workers_common.dmrs_pusch_cfg.delta_ss            = cfg.pusch_cnfg.ul_ref_sigs_pusch.group_assign_pusch;
+  workers_common.dmrs_pusch_cfg.group_hopping_en    = cfg.pusch_cnfg.ul_ref_sigs_pusch.group_hop_enabled;
+  workers_common.dmrs_pusch_cfg.sequence_hopping_en = cfg.pusch_cnfg.ul_ref_sigs_pusch.seq_hop_enabled;
 }
 
 int phy::init(const phy_args_t&            args,
@@ -122,6 +92,7 @@ int phy::init(const phy_args_t&            args,
     mylog->set_hex_limit(args.log.phy_hex_limit);
     log_vec.push_back(std::move(mylog));
   }
+  log_h = log_vec[0].get();
 
   // Add PHY lib log
   if (log_vec.at(0)->get_level_from_string(args.log.phy_lib_level) != srslte::LOG_LEVEL_NONE) {
@@ -141,9 +112,9 @@ int phy::init(const phy_args_t&            args,
 
   workers_common.params = args;
 
-  workers_common.init(cfg.cell, radio, stack_);
+  workers_common.init(cfg.phy_cell_cfg, radio, stack_);
 
-  parse_config(cfg);
+  parse_common_config(cfg);
 
   // Add workers to workers pool and start threads
   for (uint32_t i = 0; i < nof_workers; i++) {
@@ -152,8 +123,9 @@ int phy::init(const phy_args_t&            args,
   }
 
   // For each carrier, initialise PRACH worker
-  for (uint32_t cc = 0; cc < args.nof_carriers; cc++) {
-    prach.init(cc, cfg.cell, prach_cfg, stack_, log_vec.at(0).get(), PRACH_WORKER_THREAD_PRIO);
+  for (uint32_t cc = 0; cc < cfg.phy_cell_cfg.size(); cc++) {
+    prach_cfg.root_seq_idx = cfg.phy_cell_cfg[cc].root_seq_idx;
+    prach.init(cc, cfg.phy_cell_cfg[cc].cell, prach_cfg, stack_, log_vec.at(0).get(), PRACH_WORKER_THREAD_PRIO);
   }
   prach.set_max_prach_offset_us(args.max_prach_offset_us);
 
@@ -169,9 +141,6 @@ void phy::stop()
 {
   if (initialized) {
     tx_rx.stop();
-    for (uint32_t i = 0; i < nof_workers; i++) {
-      workers[i].stop();
-    }
     workers_common.stop();
     workers_pool.stop();
     prach.stop();
@@ -180,38 +149,37 @@ void phy::stop()
   }
 }
 
-uint32_t phy::tti_to_SFN(uint32_t tti)
-{
-  return tti / 10;
-}
-
-uint32_t phy::tti_to_subf(uint32_t tti)
-{
-  return tti % 10;
-}
-
 /***** MAC->PHY interface **********/
-int phy::add_rnti(uint16_t rnti, bool is_temporal)
+int phy::add_rnti(uint16_t rnti, uint32_t pcell_index, bool is_temporal)
 {
   if (SRSLTE_RNTI_ISUSER(rnti)) {
-    workers_common.ue_db_add_rnti(rnti);
+    // Create default PHY configuration with the desired PCell index
+    phy_interface_rrc_lte::phy_rrc_dedicated_list_t phy_rrc_dedicated_list(1);
+    phy_rrc_dedicated_list[0].enb_cc_idx = pcell_index;
+
+    workers_common.ue_db.addmod_rnti(rnti, phy_rrc_dedicated_list);
   }
 
   for (uint32_t i = 0; i < nof_workers; i++) {
-    if (workers[i].add_rnti(rnti, is_temporal)) {
+    if (workers[i].add_rnti(rnti, pcell_index, true, is_temporal)) {
       return SRSLTE_ERROR;
     }
   }
+
   return SRSLTE_SUCCESS;
 }
 
 void phy::rem_rnti(uint16_t rnti)
 {
-  if (SRSLTE_RNTI_ISUSER(rnti)) {
-    workers_common.ue_db_rem_rnti(rnti);
-  }
+  // Remove the RNTI when the TTI finishes, this has a delay up to the pipeline length (3 ms)
   for (uint32_t i = 0; i < nof_workers; i++) {
-    workers[i].rem_rnti(rnti);
+    sf_worker* w = (sf_worker*)workers_pool.wait_worker_id(i);
+    w->rem_rnti(rnti);
+    w->release();
+  }
+  if (SRSLTE_RNTI_ISUSER(rnti)) {
+    workers_common.ue_db.rem_rnti(rnti);
+    workers_common.clear_grants(rnti);
   }
 }
 
@@ -220,9 +188,17 @@ void phy::set_mch_period_stop(uint32_t stop)
   workers_common.set_mch_period_stop(stop);
 }
 
+void phy::set_activation_deactivation_scell(uint16_t rnti, const std::array<bool, SRSLTE_MAX_CARRIERS>& activation)
+{
+  // Iterate all elements except 0 that is reserved for primary cell
+  for (uint32_t scell_idx = 1; scell_idx < SRSLTE_MAX_CARRIERS; scell_idx++) {
+    workers_common.ue_db.activate_deactivate_scell(rnti, scell_idx, activation[scell_idx]);
+  }
+}
+
 void phy::get_metrics(phy_metrics_t metrics[ENB_METRICS_MAX_USERS])
 {
-  phy_metrics_t metrics_tmp[ENB_METRICS_MAX_USERS];
+  phy_metrics_t metrics_tmp[ENB_METRICS_MAX_USERS] = {};
 
   uint32_t nof_users = workers[0].get_nof_rnti();
   bzero(metrics, sizeof(phy_metrics_t) * ENB_METRICS_MAX_USERS);
@@ -252,14 +228,32 @@ void phy::get_metrics(phy_metrics_t metrics[ENB_METRICS_MAX_USERS])
 
 /***** RRC->PHY interface **********/
 
-void phy::set_config_dedicated(uint16_t rnti, phys_cfg_ded_s* dedicated)
+void phy::set_config_dedicated(uint16_t rnti, const phy_rrc_dedicated_list_t& dedicated_list)
 {
-  for (uint32_t i = 0; i < nof_workers; i++) {
-    workers[i].set_config_dedicated(rnti, dedicated);
+  // Update UE Database
+  workers_common.ue_db.addmod_rnti(rnti, dedicated_list);
+
+  // Iterate over the list and add the RNTIs
+  for (uint32_t scell_idx = 0; scell_idx < dedicated_list.size(); scell_idx++) {
+    auto& config = dedicated_list[scell_idx];
+
+    // Configure only if active, ignore otherwise
+    if (scell_idx != 0 && config.configured) {
+      // Add RNTI to workers
+      for (uint32_t w = 0; w < nof_workers; w++) {
+        workers[w].add_rnti(rnti, config.enb_cc_idx, false, false);
+      }
+    }
   }
 }
 
-void phy::configure_mbsfn(sib_type2_s* sib2, sib_type13_r9_s* sib13, mcch_msg_s mcch)
+void phy::complete_config_dedicated(uint16_t rnti)
+{
+  // Forwards call to the UE Database
+  workers_common.ue_db.complete_config(rnti);
+}
+
+void phy::configure_mbsfn(sib_type2_s* sib2, sib_type13_r9_s* sib13, const mcch_msg_s& mcch)
 {
   if (sib2->mbsfn_sf_cfg_list_present) {
     if (sib2->mbsfn_sf_cfg_list.size() == 0) {

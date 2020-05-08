@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -33,7 +33,6 @@
 #include "srslte/phy/utils/debug.h"
 #include "srslte/phy/utils/vector.h"
 
-#include "ul_rs_tables.h"
 
 // n_dmrs_2 table 5.5.2.1.1-1 from 36.211
 uint32_t n_dmrs_2[8] = {0, 6, 3, 4, 2, 8, 10, 9};
@@ -155,7 +154,7 @@ int srslte_refsignal_ul_init(srslte_refsignal_ul_t* q, uint32_t max_prb)
     bzero(q, sizeof(srslte_refsignal_ul_t));
 
     // Allocate temporal buffer for computing signal argument
-    q->tmp_arg = srslte_vec_malloc(SRSLTE_NRE * max_prb * sizeof(cf_t));
+    q->tmp_arg = srslte_vec_f_malloc(SRSLTE_NRE * max_prb);
     if (!q->tmp_arg) {
       perror("malloc");
       goto free_and_exit;
@@ -233,7 +232,7 @@ static void arg_r_uv_2prb(float* arg, uint32_t u)
   }
 }
 
-static uint32_t get_q(uint32_t u, uint32_t v, uint32_t N_sz)
+uint32_t srslte_refsignal_get_q(uint32_t u, uint32_t v, uint32_t N_sz)
 {
   float q;
   float q_hat;
@@ -253,7 +252,7 @@ static void arg_r_uv_mprb(float* arg, uint32_t M_sc, uint32_t u, uint32_t v)
 
   uint32_t N_sz = largest_prime_lower_than(M_sc);
   if (N_sz > 0) {
-    float q    = get_q(u, v, N_sz);
+    float q    = srslte_refsignal_get_q(u, v, N_sz);
     float n_sz = (float)N_sz;
     for (uint32_t i = 0; i < M_sc; i++) {
       float m = (float)(i % N_sz);
@@ -361,9 +360,8 @@ int srslte_refsignal_dmrs_pusch_pregen_init(srslte_refsignal_ul_dmrs_pregen_t* p
       if (pregen->r[cs][sf_idx]) {
         for (uint32_t n = 0; n <= max_prb; n++) {
           if (srslte_dft_precoding_valid_prb(n)) {
-            pregen->r[cs][sf_idx][n] = (cf_t*)srslte_vec_malloc(sizeof(cf_t) * n * 2 * SRSLTE_NRE);
-            if (pregen->r[cs][sf_idx][n]) {
-            } else {
+            pregen->r[cs][sf_idx][n] = srslte_vec_cf_malloc(n * 2 * SRSLTE_NRE);
+            if (!pregen->r[cs][sf_idx][n]) {
               return SRSLTE_ERROR;
             }
           }
@@ -943,7 +941,7 @@ int srslte_refsignal_srs_pregen(srslte_refsignal_ul_t*             q,
 {
   uint32_t M_sc = srslte_refsignal_srs_M_sc(q, cfg);
   for (uint32_t sf_idx = 0; sf_idx < SRSLTE_NOF_SF_X_FRAME; sf_idx++) {
-    pregen->r[sf_idx] = srslte_vec_malloc(2 * M_sc * sizeof(cf_t));
+    pregen->r[sf_idx] = srslte_vec_cf_malloc(2 * M_sc);
     if (pregen->r[sf_idx]) {
       if (srslte_refsignal_srs_gen(q, cfg, dmrs, sf_idx, pregen->r[sf_idx])) {
         return SRSLTE_ERROR;

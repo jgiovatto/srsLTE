@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -24,11 +24,9 @@
 
 #define RX_MOD_NR_BASE(x) (((x)-RX_Next_Highest - cfg.um_nr.UM_Window_Size) % cfg.um_nr.mod)
 
-using namespace asn1::rrc;
-
 namespace srslte {
 
-rlc_um_nr::rlc_um_nr(srslte::log*               log_,
+rlc_um_nr::rlc_um_nr(srslte::log_ref            log_,
                      uint32_t                   lcid_,
                      srsue::pdcp_interface_rlc* pdcp_,
                      srsue::rrc_interface_rlc*  rrc_,
@@ -42,7 +40,7 @@ rlc_um_nr::~rlc_um_nr()
   stop();
 }
 
-bool rlc_um_nr::configure(rlc_config_t cnfg_)
+bool rlc_um_nr::configure(const rlc_config_t& cnfg_)
 {
   // determine bearer name and configure Rx/Tx objects
   rb_name = get_rb_name(rrc, lcid, cnfg_.um.is_mrb);
@@ -101,7 +99,7 @@ uint32_t rlc_um_nr::rlc_um_nr_tx::get_buffer_state()
   return n_bytes;
 }
 
-bool rlc_um_nr::rlc_um_nr_tx::configure(rlc_config_t cnfg_, std::string rb_name_)
+bool rlc_um_nr::rlc_um_nr_tx::configure(const rlc_config_t& cnfg_, std::string rb_name_)
 {
   cfg = cnfg_;
 
@@ -245,7 +243,6 @@ bool rlc_um_nr::rlc_um_nr_rx::configure()
 
 void rlc_um_nr::rlc_um_nr_rx::stop()
 {
-  std::lock_guard<std::mutex> lock(mutex);
   reset();
   reassembly_timer.stop();
 }
@@ -277,7 +274,6 @@ void rlc_um_nr::rlc_um_nr_rx::reestablish()
 // TS 38.322 v15.003 Section 5.2.2.2.4
 void rlc_um_nr::rlc_um_nr_rx::timer_expired(uint32_t timeout_id)
 {
-  std::lock_guard<std::mutex> lock(mutex);
   if (reassembly_timer.id() == timeout_id) {
     log->info("%s reassembly timeout expiry - updating RX_Next_Reassembly and reassembling\n", rb_name.c_str());
 
@@ -495,8 +491,6 @@ inline void rlc_um_nr::rlc_um_nr_rx::update_total_sdu_length(rlc_umd_pdu_segment
 // Section 5.2.2.2.2
 void rlc_um_nr::rlc_um_nr_rx::handle_data_pdu(uint8_t* payload, uint32_t nof_bytes)
 {
-  std::lock_guard<std::mutex> lock(mutex);
-
   rlc_um_nr_pdu_header_t header = {};
   rlc_um_nr_read_data_pdu_header(payload, nof_bytes, cfg.um_nr.sn_field_length, &header);
   log->debug_hex(payload, nof_bytes, "RX %s Rx data PDU (%d B)", rb_name.c_str(), nof_bytes);

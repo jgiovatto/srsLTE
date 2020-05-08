@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -322,7 +322,7 @@ int srslte_cqi_size(srslte_cqi_cfg_t* cfg)
   int size = 0;
 
   if (!cfg->data_enable) {
-    return 0;
+    return cfg->ri_len;
   }
 
   switch (cfg->type) {
@@ -526,13 +526,13 @@ static bool ri_send(uint32_t I_cqi_pmi, uint32_t I_ri, uint32_t tti, bool is_fdd
   return false;
 }
 
-bool srslte_cqi_periodic_ri_send(srslte_cqi_report_cfg_t* cfg, uint32_t tti, srslte_frame_type_t frame_type)
+bool srslte_cqi_periodic_ri_send(const srslte_cqi_report_cfg_t* cfg, uint32_t tti, srslte_frame_type_t frame_type)
 {
   return cfg->periodic_configured && cfg->ri_idx_present &&
          ri_send(cfg->pmi_idx, cfg->ri_idx, tti, frame_type == SRSLTE_FDD);
 }
 
-bool srslte_cqi_periodic_send(srslte_cqi_report_cfg_t* cfg, uint32_t tti, srslte_frame_type_t frame_type)
+bool srslte_cqi_periodic_send(const srslte_cqi_report_cfg_t* cfg, uint32_t tti, srslte_frame_type_t frame_type)
 {
   return cfg->periodic_configured && cqi_send(cfg->pmi_idx, tti, frame_type == SRSLTE_FDD);
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -46,7 +46,6 @@
   log_h->debug(fmt, ##__VA_ARGS__)
 
 using namespace std;
-using namespace asn1::rrc;
 
 namespace srsue {
 
@@ -77,33 +76,33 @@ void phy::srslte_phy_logger(phy_logger_level_t log_level, char* str)
   }
 }
 
-void phy::set_default_args(phy_args_t* args)
+void phy::set_default_args(phy_args_t& args_)
 {
-  args->nof_rx_ant           = 1;
-  args->ul_pwr_ctrl_en       = false;
-  args->prach_gain           = -1;
-  args->cqi_max              = -1;
-  args->cqi_fixed            = -1;
-  args->snr_ema_coeff        = 0.1;
-  args->snr_estim_alg        = "refs";
-  args->pdsch_max_its        = 4;
-  args->nof_phy_threads      = DEFAULT_WORKERS;
-  args->equalizer_mode       = "mmse";
-  args->cfo_integer_enabled  = false;
-  args->cfo_correct_tol_hz   = 50;
-  args->sss_algorithm        = "full";
-  args->estimator_fil_auto   = false;
-  args->estimator_fil_stddev = 1.0f;
-  args->estimator_fil_order  = 4;
+  args_.nof_rx_ant           = 1;
+  args_.ul_pwr_ctrl_en       = false;
+  args_.prach_gain           = -1;
+  args_.cqi_max              = -1;
+  args_.cqi_fixed            = -1;
+  args_.snr_ema_coeff        = 0.1;
+  args_.snr_estim_alg        = "refs";
+  args_.pdsch_max_its        = 4;
+  args_.nof_phy_threads      = DEFAULT_WORKERS;
+  args_.equalizer_mode       = "mmse";
+  args_.cfo_integer_enabled  = false;
+  args_.cfo_correct_tol_hz   = 50;
+  args_.sss_algorithm        = "full";
+  args_.estimator_fil_auto   = false;
+  args_.estimator_fil_stddev = 1.0f;
+  args_.estimator_fil_order  = 4;
 }
 
-bool phy::check_args(const phy_args_t& args)
+bool phy::check_args(const phy_args_t& args_)
 {
-  if (args.nof_phy_threads > MAX_WORKERS) {
+  if (args_.nof_phy_threads > MAX_WORKERS) {
     log_h->console("Error in PHY args: nof_phy_threads must be 1, 2 or 3\n");
     return false;
   }
-  if (args.snr_ema_coeff > 1.0) {
+  if (args_.snr_ema_coeff > 1.0) {
     log_h->console("Error in PHY args: snr_ema_coeff must be 0<=w<=1\n");
     return false;
   }
@@ -127,8 +126,6 @@ int phy::init(const phy_args_t& args_)
 
   args = args_;
 
-  set_earfcn(args.earfcn_list);
-
   // Force frequency if given as argument
   if (args.dl_freq > 0 && args.ul_freq > 0) {
     sfsync.force_freq(args.dl_freq, args.ul_freq);
@@ -142,7 +139,7 @@ int phy::init(const phy_args_t& args_)
     mylog->init(tmp, logger, true);
     mylog->set_level(args.log.phy_level);
     mylog->set_hex_limit(args.log.phy_hex_limit);
-    log_vec.push_back(std::move(std::unique_ptr<srslte::log_filter>(mylog)));
+    log_vec.push_back(std::unique_ptr<srslte::log_filter>(mylog));
   }
 
   // Add PHY lib log
@@ -153,7 +150,7 @@ int phy::init(const phy_args_t& args_)
     lib_log->init(tmp, logger, true);
     lib_log->set_level(args.log.phy_lib_level);
     lib_log->set_hex_limit(args.log.phy_hex_limit);
-    log_vec.push_back(std::move(std::unique_ptr<srslte::log_filter>(lib_log)));
+    log_vec.push_back(std::unique_ptr<srslte::log_filter>(lib_log));
   } else {
     log_vec.push_back(nullptr);
   }
@@ -193,13 +190,6 @@ void phy::run_thread()
     workers.push_back(std::move(w));
   }
 
-  // Load Asynchronous SCell objects
-  for (int i = 0; i < (int)args.nof_radios - 1; i++) {
-    auto t = scell::async_recv_ptr(new scell::async_scell_recv());
-    t->init(radio, &common, log_h);
-    scell_sync.push_back(std::move(t));
-  }
-
   // Warning this must be initialized after all workers have been added to the pool
   sfsync.init(radio,
               stack,
@@ -208,7 +198,6 @@ void phy::run_thread()
               &common,
               log_h,
               log_phy_lib_h,
-              &scell_sync,
               SF_RECV_THREAD_PRIO,
               args.sync_cpu_affinity);
 
@@ -238,10 +227,6 @@ void phy::stop()
   std::unique_lock<std::mutex> lock(config_mutex);
   if (is_configured) {
     sfsync.stop();
-    for (uint32_t i = 0; i < args.nof_radios - 1; i++) {
-      scell_sync.at(i)->stop();
-    }
-
     workers_pool.stop();
     prach_buffer.stop();
 
@@ -253,7 +238,7 @@ void phy::get_metrics(phy_metrics_t* m)
 {
   uint32_t      dl_earfcn = 0;
   srslte_cell_t cell      = {};
-  get_current_cell(&cell, &dl_earfcn);
+  sfsync.get_current_cell(&cell, &dl_earfcn);
   m->info[0].pci       = cell.id;
   m->info[0].dl_earfcn = dl_earfcn;
 
@@ -270,21 +255,12 @@ void phy::get_metrics(phy_metrics_t* m)
 
 void phy::set_timeadv_rar(uint32_t ta_cmd)
 {
-  n_ta = srslte_N_ta_new_rar(ta_cmd);
-  sfsync.set_time_adv_sec(((float)n_ta) * SRSLTE_LTE_TS);
-  Info("PHY:   Set TA RAR: ta_cmd: %d, n_ta: %d, ta_usec: %.1f\n", ta_cmd, n_ta, ((float)n_ta) * SRSLTE_LTE_TS * 1e6);
+  common.ta.add_ta_cmd_rar(ta_cmd);
 }
 
 void phy::set_timeadv(uint32_t ta_cmd)
 {
-  uint32_t new_nta = srslte_N_ta_new(n_ta, ta_cmd);
-  sfsync.set_time_adv_sec(((float)new_nta) * SRSLTE_LTE_TS);
-  Info("PHY:   Set TA: ta_cmd: %d, n_ta: %d, old_n_ta: %d, ta_usec: %.1f\n",
-       ta_cmd,
-       new_nta,
-       n_ta,
-       ((float)new_nta) * SRSLTE_LTE_TS * 1e6);
-  n_ta = new_nta;
+  common.ta.add_ta_cmd_new(ta_cmd);
 }
 
 void phy::set_activation_deactivation_scell(uint32_t cmd)
@@ -315,22 +291,17 @@ void phy::configure_prach_params()
   }
 }
 
-void phy::meas_reset()
+void phy::set_cells_to_meas(uint32_t earfcn, const std::set<uint32_t>& pci)
 {
-  sfsync.meas_reset();
+  sfsync.set_cells_to_meas(earfcn, pci);
 }
 
-int phy::meas_start(uint32_t earfcn, int pci)
+void phy::meas_stop()
 {
-  return sfsync.meas_start(earfcn, pci);
+  sfsync.meas_stop();
 }
 
-int phy::meas_stop(uint32_t earfcn, int pci)
-{
-  return sfsync.meas_stop(earfcn, pci);
-}
-
-bool phy::cell_select(phy_cell_t* cell)
+bool phy::cell_select(const phy_cell_t* cell)
 {
   return sfsync.cell_select(cell);
 }
@@ -347,7 +318,7 @@ bool phy::cell_is_camping()
 
 float phy::get_phr()
 {
-  float phr = radio->get_max_tx_power() - common.cur_pusch_power;
+  float phr = radio->get_info()->max_tx_gain - common.cur_pusch_power;
   return phr;
 }
 
@@ -356,29 +327,9 @@ float phy::get_pathloss_db()
   return common.cur_pathloss;
 }
 
-void phy::get_current_cell(srslte_cell_t* cell, uint32_t* current_earfcn)
+void phy::prach_send(uint32_t preamble_idx, int allowed_subframe, float target_power_dbm, float ta_base_sec)
 {
-  sfsync.get_current_cell(cell, current_earfcn);
-}
-
-uint32_t phy::get_current_pci()
-{
-  srslte_cell_t cell;
-  sfsync.get_current_cell(&cell);
-  return cell.id;
-}
-
-uint32_t phy::get_current_earfcn()
-{
-  uint32_t earfcn;
-  sfsync.get_current_cell(nullptr, &earfcn);
-  return earfcn;
-}
-
-void phy::prach_send(uint32_t preamble_idx, int allowed_subframe, float target_power_dbm)
-{
-  n_ta = 0;
-  sfsync.set_time_adv_sec(0.0f);
+  common.ta.set_base_sec(ta_base_sec);
   common.reset_radio();
   if (!prach_buffer.prepare_to_send(preamble_idx, allowed_subframe, target_power_dbm)) {
     Error("Preparing PRACH to send\n");
@@ -405,8 +356,7 @@ void phy::radio_failure()
 void phy::reset()
 {
   Info("Resetting PHY\n");
-  n_ta = 0;
-  sfsync.set_time_adv_sec(0);
+  common.ta.set_base_sec(0);
   for (uint32_t i = 0; i < nof_workers; i++) {
     workers[i]->reset();
   }
@@ -430,11 +380,6 @@ int phy::sr_last_tx_tti()
   return common.sr_last_tx_tti;
 }
 
-void phy::set_earfcn(vector<uint32_t> earfcns)
-{
-  sfsync.set_earfcn(earfcns);
-}
-
 void phy::set_rar_grant(uint8_t grant_payload[SRSLTE_RAR_GRANT_LEN], uint16_t rnti)
 {
   common.set_rar_grant(grant_payload, rnti, tdd_config);
@@ -442,8 +387,11 @@ void phy::set_rar_grant(uint8_t grant_payload[SRSLTE_RAR_GRANT_LEN], uint16_t rn
 
 void phy::set_crnti(uint16_t rnti)
 {
+  // set_crnti() is an operation that takes time, apply asynrhonously with processing
   for (uint32_t i = 0; i < nof_workers; i++) {
-    workers[i]->set_crnti(rnti);
+    sf_worker* w = (sf_worker*)workers_pool.wait_worker_id(i);
+    w->set_crnti(rnti);
+    w->release();
   }
 }
 
@@ -467,34 +415,41 @@ void phy::set_config(srslte::phy_cfg_t& config_, uint32_t cc_idx, uint32_t earfc
     return;
   }
 
+  // Disable cell_info if configuration has not been set
+  if (cell_info) {
+    if (!srslte_cell_isvalid(cell_info)) {
+      cell_info = nullptr;
+    }
+  }
+
   // Component carrier index zero should be reserved for PCell
   if (cc_idx < args.nof_carriers) {
-    carrier_map_t* m = &args.carrier_map[cc_idx];
-
     // Send configuration to workers
     for (uint32_t i = 0; i < nof_workers; i++) {
       if (cell_info) {
-        workers[i]->set_cell(cc_idx, *cell_info);
+        // set_cell() is an operation that takes time, apply asynrhonously with processing
+        sf_worker* w = (sf_worker*)workers_pool.wait_worker_id(i);
+        w->set_cell(cc_idx, *cell_info);
+        w->release();
       }
+      // set_config() is just a memcpy
       workers[i]->set_config(cc_idx, config_);
+    }
+
+    // Set inter-frequency measurement primary cell
+    if (cell_info) {
+      sfsync.set_inter_frequency_measurement(cc_idx, earfcn, *cell_info);
     }
 
     if (cc_idx == 0) {
       prach_cfg = config_.prach_cfg;
     } else if (cell_info) {
-      // If SCell does not share synchronism with PCell ...
-      if (m->radio_idx > 0) {
-        scell_sync.at(m->radio_idx - 1)->set_scell_cell(cc_idx, cell_info, earfcn);
-      } else {
-        // Change frequency only if the earfcn was modified
-        if (common.scell_cfg[cc_idx].earfcn != earfcn) {
-          float dl_freq = srslte_band_fd(earfcn) * 1e6f;
-          float ul_freq = srslte_band_fu(srslte_band_ul_earfcn(earfcn)) * 1e6f;
-          for (uint32_t p = 0; p < common.args->nof_rx_ant; p++) {
-            radio->set_rx_freq(m->radio_idx, m->channel_idx + p, dl_freq);
-            radio->set_tx_freq(m->radio_idx, m->channel_idx + p, ul_freq);
-          }
-        }
+      // Change frequency only if the earfcn was modified
+      if (common.scell_cfg[cc_idx].earfcn != earfcn) {
+        double dl_freq = srslte_band_fd(earfcn) * 1e6;
+        double ul_freq = srslte_band_fu(common.get_ul_earfcn(earfcn)) * 1e6;
+        radio->set_rx_freq(cc_idx, dl_freq);
+        radio->set_tx_freq(cc_idx, ul_freq);
       }
 
       // Store SCell earfcn and pci

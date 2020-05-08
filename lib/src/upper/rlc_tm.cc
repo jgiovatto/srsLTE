@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -23,7 +23,7 @@
 
 namespace srslte {
 
-rlc_tm::rlc_tm(srslte::log*               log_,
+rlc_tm::rlc_tm(srslte::log_ref            log_,
                uint32_t                   lcid_,
                srsue::pdcp_interface_rlc* pdcp_,
                srsue::rrc_interface_rlc*  rrc_,
@@ -44,7 +44,7 @@ rlc_tm::~rlc_tm()
   pool = NULL;
 }
 
-bool rlc_tm::configure(rlc_config_t cnfg)
+bool rlc_tm::configure(const rlc_config_t& cnfg)
 {
   log->error("Attempted to configure TM RLC entity\n");
   return true;

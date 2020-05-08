@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -19,6 +19,7 @@
  *
  */
 
+#include "srslte/common/move_callback.h"
 #include <functional>
 #include <list>
 #include <memory>
@@ -30,7 +31,7 @@
 
 namespace srslte {
 
-enum class proc_outcome_t { repeat, yield, success, error };
+enum class proc_outcome_t { yield, success, error };
 
 /**************************************************************************************
  * helper functions for method optional overloading
@@ -73,7 +74,7 @@ class callback_group_t
 {
 public:
   using callback_id_t = uint32_t;
-  using callback_t    = std::function<void(Args...)>;
+  using callback_t    = srslte::move_callback<void(Args...)>;
 
   //! register callback, that gets called once
   callback_id_t on_next_call(callback_t f_)
@@ -93,11 +94,11 @@ public:
 
   // call all callbacks
   template <typename... ArgsRef>
-  void operator()(const ArgsRef&... args)
+  void operator()(ArgsRef&&... args)
   {
     for (auto& f : func_list) {
       if (f.active) {
-        f.func(args...);
+        f.func(std::forward<ArgsRef>(args)...);
         if (not f.call_always) {
           f.active = false;
         }
@@ -184,11 +185,12 @@ class proc_future_t
 public:
   proc_future_t() = default;
   explicit proc_future_t(const std::shared_ptr<proc_result_t<ResultType> >& p_) : ptr(p_) {}
-  bool              is_error() const { return ptr->is_error(); }
-  bool              is_success() const { return ptr->is_success(); }
-  bool              is_complete() const { return ptr->is_complete(); }
+  bool              is_error() const { return not is_empty() and ptr->is_error(); }
+  bool              is_success() const { return not is_empty() and ptr->is_success(); }
+  bool              is_complete() const { return not is_empty() and ptr->is_complete(); }
   const ResultType* value() const { return is_success() ? ptr->value() : nullptr; }
-  bool              is_valid() const { return ptr != nullptr; }
+  bool              is_empty() const { return ptr == nullptr; }
+  void              clear() { ptr.reset(); }
 
 private:
   std::shared_ptr<proc_result_t<ResultType> > ptr;
@@ -210,8 +212,6 @@ using proc_future_state_t = proc_future_t<void>;
  *            executes a procedure "action" based on its current internal state,
  *            and return a proc_outcome_t variable with possible values:
  *            - yield - the procedure performed the action but hasn't completed yet.
- *            - repeat - the same as yield, but explicitly asking that run() should
- *            recall step() again (probably the procedure state has changed)
  *            - error - the procedure has finished unsuccessfully
  *            - success - the procedure has completed successfully
  ************************************************************************************/
@@ -223,9 +223,8 @@ public:
   //! common proc::run() interface. Returns true if procedure is still running
   bool run()
   {
-    proc_outcome_t outcome = proc_outcome_t::repeat;
-    while (is_busy() and outcome == proc_outcome_t::repeat) {
-      outcome = step();
+    if (is_busy()) {
+      proc_outcome_t outcome = step();
       handle_outcome(outcome);
     }
     return is_busy();
@@ -276,7 +275,7 @@ public:
   using result_type          = ResultType;
   using proc_result_type     = proc_result_t<result_type>;
   using proc_future_type     = proc_future_t<result_type>;
-  using then_callback_list_t = callback_group_t<proc_result_type>;
+  using then_callback_list_t = callback_group_t<const proc_result_type&>;
   using callback_t           = typename then_callback_list_t::callback_t;
   using callback_id_t        = typename then_callback_list_t::callback_id_t;
 
@@ -292,20 +291,21 @@ public:
 
   //! method to handle external events. "T" must have the method "T::react(const Event&)" for the trigger to take effect
   template <class Event>
-  void trigger(Event&& e)
+  bool trigger(Event&& e)
   {
     if (is_busy()) {
       proc_outcome_t outcome = proc_ptr->react(std::forward<Event>(e));
       handle_outcome(outcome);
-      if (outcome == proc_outcome_t::repeat) {
-        run();
-      }
     }
+    return is_busy();
   }
 
   //! returns an object which the user can use to check if the procedure has ended.
   proc_future_type get_future()
   {
+    if (is_idle()) {
+      return proc_future_type{};
+    }
     if (future_result == nullptr) {
       future_result = std::make_shared<proc_result_type>();
     }
@@ -313,8 +313,8 @@ public:
   }
 
   //! methods to schedule continuation tasks
-  callback_id_t then(const callback_t& c) { return complete_callbacks.on_next_call(c); }
-  callback_id_t then_always(const callback_t& c) { return complete_callbacks.on_every_call(c); }
+  callback_id_t then(callback_t c) { return complete_callbacks.on_next_call(std::move(c)); }
+  callback_id_t then_always(callback_t c) { return complete_callbacks.on_every_call(std::move(c)); }
 
   //! launch a procedure, returning true if successful or running and false if it error or it failed to launch
   template <class... Args>
@@ -326,16 +326,22 @@ public:
     proc_state              = proc_base_t::proc_status_t::on_going;
     proc_outcome_t init_ret = proc_ptr->init(std::forward<Args>(args)...);
     handle_outcome(init_ret);
-    switch (init_ret) {
-      case proc_outcome_t::error:
-        return false;
-      case proc_outcome_t::repeat:
-        run(); // call run right away
-        break;
-      default:
-        break;
+    return init_ret != proc_outcome_t::error;
+  }
+
+  //! launch a procedure, returning a future where the result is going to be saved
+  template <class... Args>
+  bool launch(proc_future_type* fut, Args&&... args)
+  {
+    if (is_busy()) {
+      fut->clear();
+      return false;
     }
-    return true;
+    proc_state              = proc_base_t::proc_status_t::on_going;
+    *fut                    = get_future();
+    proc_outcome_t init_ret = proc_ptr->init(std::forward<Args>(args)...);
+    handle_outcome(init_ret);
+    return init_ret != proc_outcome_t::error;
   }
 
 protected:
@@ -358,7 +364,7 @@ protected:
     // call T::then() if it exists
     proc_detail::optional_then(proc_ptr.get(), &result);
     // signal continuations
-    complete_callbacks(result);
+    complete_callbacks(std::move(result));
     // back to inactive
     proc_detail::optional_clear(proc_ptr.get());
     proc_state = proc_status_t::idle;
@@ -477,6 +483,25 @@ public:
 private:
   std::list<proc_obj_t> proc_list;
 };
+
+template <typename Functor>
+struct deferred_callback {
+  explicit deferred_callback(Functor&& f_) : f(std::forward<Functor>(f_)) {}
+  deferred_callback(const deferred_callback&)     = delete;
+  deferred_callback(deferred_callback&&) noexcept = default;
+  deferred_callback& operator=(const deferred_callback&) = delete;
+  deferred_callback& operator=(deferred_callback&&) noexcept = default;
+  ~deferred_callback() { f(); }
+
+private:
+  Functor f;
+};
+template <typename Functor>
+deferred_callback<Functor> defer_call(Functor&& f)
+{
+  return deferred_callback<Functor>{std::forward<Functor>(f)};
+}
+#define DEFER(FUNC) auto on_exit_call = ::srslte::defer_call([&]() { FUNC })
 
 } // namespace srslte
 

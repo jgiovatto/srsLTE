@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -113,7 +113,7 @@ int main(int argc, char** argv)
   sample_count = 0;
 
   for (int i = 0; i < nof_rx_antennas; i++) {
-    buffer[i] = malloc(sizeof(cf_t) * buflen);
+    buffer[i] = srslte_vec_cf_malloc(buflen);
     if (!buffer[i]) {
       perror("malloc");
       exit(-1);

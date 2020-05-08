@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -26,24 +26,14 @@
 #include "srslte/common/bcd_helpers.h"
 #include "srslte/common/config_file.h"
 #include "srslte/common/crash_handler.h"
-#include <boost/algorithm/string.hpp>
+#include "srslte/common/signal_handler.h"
 #include <boost/program_options.hpp>
-#include <errno.h>
-#include <fstream>
 #include <iostream>
 #include <signal.h>
-#include <sstream>
 
 using namespace std;
 using namespace srsepc;
 namespace bpo = boost::program_options;
-
-bool running = true;
-
-void sig_int_handler(int signo)
-{
-  running = false;
-}
 
 typedef struct {
   std::string nas_level;
@@ -242,13 +232,14 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     cout << "Error parsing mme.mnc:" << mnc << " - must be a 2 or 3-digit string." << endl;
   }
 
-  if (boost::iequals(encryption_algo, "eea0")) {
+  std::transform(encryption_algo.begin(), encryption_algo.end(), encryption_algo.begin(), ::tolower);
+  if (encryption_algo == "eea0") {
     args->mme_args.s1ap_args.encryption_algo = srslte::CIPHERING_ALGORITHM_ID_EEA0;
-  } else if (boost::iequals(encryption_algo, "eea1")) {
+  } else if (encryption_algo == "eea1") {
     args->mme_args.s1ap_args.encryption_algo = srslte::CIPHERING_ALGORITHM_ID_128_EEA1;
-  } else if (boost::iequals(encryption_algo, "eea2")) {
+  } else if (encryption_algo == "eea2") {
     args->mme_args.s1ap_args.encryption_algo = srslte::CIPHERING_ALGORITHM_ID_128_EEA2;
-  } else if (boost::iequals(encryption_algo, "eea3")) {
+  } else if (encryption_algo == "eea3") {
     args->mme_args.s1ap_args.encryption_algo = srslte::CIPHERING_ALGORITHM_ID_128_EEA3;
   } else {
     args->mme_args.s1ap_args.encryption_algo = srslte::CIPHERING_ALGORITHM_ID_EEA0;
@@ -256,15 +247,16 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     cout << "Using default mme.encryption_algo: EEA0" << endl;
   }
 
-  if (boost::iequals(integrity_algo, "eia0")) {
+  std::transform(integrity_algo.begin(), integrity_algo.end(), integrity_algo.begin(), ::tolower);
+  if (integrity_algo == "eia0") {
     args->mme_args.s1ap_args.integrity_algo = srslte::INTEGRITY_ALGORITHM_ID_EIA0;
     cout << "Warning parsing mme.integrity_algo:" << encryption_algo
          << " - EIA0 will not supported by UEs use EIA1 or EIA2" << endl;
-  } else if (boost::iequals(integrity_algo, "eia1")) {
+  } else if (integrity_algo == "eia1") {
     args->mme_args.s1ap_args.integrity_algo = srslte::INTEGRITY_ALGORITHM_ID_128_EIA1;
-  } else if (boost::iequals(integrity_algo, "eia2")) {
+  } else if (integrity_algo == "eia2") {
     args->mme_args.s1ap_args.integrity_algo = srslte::INTEGRITY_ALGORITHM_ID_128_EIA2;
-  } else if (boost::iequals(integrity_algo, "eia3")) {
+  } else if (integrity_algo == "eia3") {
     args->mme_args.s1ap_args.integrity_algo = srslte::INTEGRITY_ALGORITHM_ID_128_EIA3;
   } else {
     args->mme_args.s1ap_args.integrity_algo = srslte::INTEGRITY_ALGORITHM_ID_128_EIA1;
@@ -344,7 +336,7 @@ void parse_args(all_args_t* args, int argc, char* argv[])
 
 srslte::LOG_LEVEL_ENUM level(std::string l)
 {
-  boost::to_upper(l);
+  std::transform(l.begin(), l.end(), l.begin(), ::toupper);
   if ("NONE" == l) {
     return srslte::LOG_LEVEL_NONE;
   } else if ("ERROR" == l) {
@@ -382,9 +374,7 @@ std::string get_build_string()
 
 int main(int argc, char* argv[])
 {
-  signal(SIGINT, sig_int_handler);
-  signal(SIGTERM, sig_int_handler);
-  signal(SIGKILL, sig_int_handler);
+  srslte_register_signal_handler();
 
   // print build info
   cout << endl << get_build_string() << endl;
@@ -396,11 +386,10 @@ int main(int argc, char* argv[])
   parse_args(&args, argc, argv);
 
   srslte::logger_stdout logger_stdout;
-  srslte::logger_file   logger_file;
   srslte::logger*       logger;
 
   /*Init logger*/
-  if (!args.log_args.filename.compare("stdout")) {
+  if (args.log_args.filename == "stdout") {
     logger = &logger_stdout;
   } else {
     logger_file.init(args.log_args.filename);
@@ -409,6 +398,7 @@ int main(int argc, char* argv[])
     logger_file.log_char("\n---  Software Radio Systems EPC log ---\n\n");
     logger = &logger_file;
   }
+  srslte::logmap::set_default_logger(logger);
 
   srslte::log_filter nas_log;
   nas_log.init("NAS ", logger);
@@ -435,10 +425,9 @@ int main(int argc, char* argv[])
   spgw_gtpc_log.set_level(level(args.log_args.spgw_gtpc_level));
   spgw_gtpc_log.set_hex_limit(args.log_args.spgw_gtpc_hex_limit);
 
-  srslte::log_filter gtpu_log;
-  gtpu_log.init("GTPU", logger);
-  gtpu_log.set_level(level(args.log_args.mme_gtpc_level));
-  gtpu_log.set_hex_limit(args.log_args.mme_gtpc_hex_limit);
+  srslte::log_ref gtpu_log{"GTPU"};
+  gtpu_log->set_level(level(args.log_args.mme_gtpc_level));
+  gtpu_log->set_hex_limit(args.log_args.mme_gtpc_hex_limit);
 
   srslte::log_filter spgw_log;
   spgw_log.init("SPGW", logger);
@@ -458,7 +447,7 @@ int main(int argc, char* argv[])
   }
 
   spgw* spgw = spgw::get_instance();
-  if (spgw->init(&args.spgw_args, &gtpu_log, &spgw_gtpc_log, &spgw_log, hss->get_ip_to_imsi())) {
+  if (spgw->init(&args.spgw_args, gtpu_log, &spgw_gtpc_log, &spgw_log, hss->get_ip_to_imsi())) {
     cout << "Error initializing SP-GW" << endl;
     exit(1);
   }

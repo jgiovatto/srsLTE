@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -152,8 +152,7 @@ srslte::rlc_config_t make_rlc_config_t(const asn1::rrc::srb_to_add_mod_s& asn1_t
   if (asn1_type.srb_id <= 2) {
     return rlc_config_t::srb_config(asn1_type.srb_id);
   } else {
-    asn1::rrc::rrc_log_print(
-        asn1::LOG_LEVEL_ERROR, "SRB %d does not support default initialization type\n", asn1_type.srb_id);
+    asn1::log_error("SRB %d does not support default initialization type\n", asn1_type.srb_id);
     return rlc_config_t();
   }
 }
@@ -215,26 +214,34 @@ srslte::pdcp_config_t make_drb_pdcp_config_t(const uint8_t bearer_id, bool is_ue
 
 srslte::pdcp_config_t make_drb_pdcp_config_t(const uint8_t bearer_id, bool is_ue, const asn1::rrc::pdcp_cfg_s& pdcp_cfg)
 {
-  pdcp_config_t cfg = make_drb_pdcp_config_t(bearer_id, is_ue);
-  // TODO: complete config processing
+  // TODO: complete config processing 
+  pdcp_discard_timer_t discard_timer =  pdcp_discard_timer_t::infinity;
   if (pdcp_cfg.discard_timer_present) {
     switch (pdcp_cfg.discard_timer.to_number()) {
       case 10:
-        cfg.discard_timer = pdcp_discard_timer_t::ms10;
+        discard_timer = pdcp_discard_timer_t::ms10;
         break;
       default:
-        cfg.discard_timer = pdcp_discard_timer_t::infinity;
+        discard_timer = pdcp_discard_timer_t::infinity;
         break;
     }
   }
 
+  pdcp_t_reordering_t t_reordering = pdcp_t_reordering_t::ms500;
   if (pdcp_cfg.t_reordering_r12_present) {
     switch (pdcp_cfg.t_reordering_r12.to_number()) {
       case 0:
-        cfg.t_reordering = pdcp_t_reordering_t::ms0;
+        t_reordering = pdcp_t_reordering_t::ms0;
         break;
       default:
-        cfg.t_reordering = pdcp_t_reordering_t::ms500;
+        t_reordering = pdcp_t_reordering_t::ms500;
+    }
+  }
+
+  uint8_t sn_len = srslte::PDCP_SN_LEN_12;
+  if (pdcp_cfg.rlc_um_present) {
+    if (pdcp_cfg.rlc_um.pdcp_sn_size.value == pdcp_cfg_s::rlc_um_s_::pdcp_sn_size_e_::len7bits) {
+      sn_len = srslte::PDCP_SN_LEN_7;
     }
   }
 
@@ -242,6 +249,13 @@ srslte::pdcp_config_t make_drb_pdcp_config_t(const uint8_t bearer_id, bool is_ue
     // TODO: handle RLC AM config for PDCP
   }
 
+  pdcp_config_t cfg(bearer_id,
+                    PDCP_RB_IS_DRB,
+                    is_ue ? SECURITY_DIRECTION_UPLINK : SECURITY_DIRECTION_DOWNLINK,
+                    is_ue ? SECURITY_DIRECTION_DOWNLINK : SECURITY_DIRECTION_UPLINK,
+                    sn_len,
+                    t_reordering,
+                    discard_timer);
   return cfg;
 }
 
@@ -315,6 +329,54 @@ void set_mac_cfg_t_rach_cfg_common(mac_cfg_t* cfg, const asn1::rrc::rach_cfg_com
 void set_mac_cfg_t_time_alignment(mac_cfg_t* cfg, const asn1::rrc::time_align_timer_opts asn1_type)
 {
   cfg->time_alignment_timer = asn1_type.to_number();
+}
+
+srsenb::sched_interface::ant_info_ded_t make_ant_info_ded(const asn1::rrc::ant_info_ded_s& asn1_type)
+{
+  srsenb::sched_interface::ant_info_ded_t ant_ded = {};
+  ant_ded.tx_mode = static_cast<srsenb::sched_interface::ant_info_ded_t::tx_mode_t>(asn1_type.tx_mode.value);
+  ant_ded.cookbook_subset_type = srsenb::sched_interface::ant_info_ded_t::codebook_t::none;
+  if (asn1_type.codebook_subset_restrict_present) {
+    auto& asn1code = asn1_type.codebook_subset_restrict;
+    ant_ded.cookbook_subset_type =
+        static_cast<srsenb::sched_interface::ant_info_ded_t::codebook_t>(asn1code.type().value);
+    switch (asn1code.type().value) {
+      case ant_info_ded_s::codebook_subset_restrict_c_::types_opts::n2_tx_ant_tm3:
+        ant_ded.codebook_subset_restrict = asn1code.n2_tx_ant_tm3().to_number();
+        break;
+      case ant_info_ded_s::codebook_subset_restrict_c_::types_opts::n4_tx_ant_tm3:
+        ant_ded.codebook_subset_restrict = asn1code.n4_tx_ant_tm3().to_number();
+        break;
+      case ant_info_ded_s::codebook_subset_restrict_c_::types_opts::n2_tx_ant_tm4:
+        ant_ded.codebook_subset_restrict = asn1code.n2_tx_ant_tm4().to_number();
+        break;
+      case ant_info_ded_s::codebook_subset_restrict_c_::types_opts::n4_tx_ant_tm4:
+        ant_ded.codebook_subset_restrict = asn1code.n4_tx_ant_tm4().to_number();
+        break;
+      case ant_info_ded_s::codebook_subset_restrict_c_::types_opts::n2_tx_ant_tm5:
+        ant_ded.codebook_subset_restrict = asn1code.n2_tx_ant_tm5().to_number();
+        break;
+      case ant_info_ded_s::codebook_subset_restrict_c_::types_opts::n4_tx_ant_tm5:
+        ant_ded.codebook_subset_restrict = asn1code.n4_tx_ant_tm5().to_number();
+        break;
+      case ant_info_ded_s::codebook_subset_restrict_c_::types_opts::n2_tx_ant_tm6:
+        ant_ded.codebook_subset_restrict = asn1code.n2_tx_ant_tm6().to_number();
+        break;
+      case ant_info_ded_s::codebook_subset_restrict_c_::types_opts::n4_tx_ant_tm6:
+        ant_ded.codebook_subset_restrict = asn1code.n4_tx_ant_tm6().to_number();
+        break;
+      default:
+        asn1::log_error("Failed to convert antenna codebook type to number\n");
+    }
+  }
+  ant_ded.ue_tx_ant_sel = srsenb::sched_interface::ant_info_ded_t::ue_tx_ant_sel_t::release;
+  if (asn1_type.ue_tx_ant_sel.type().value == setup_opts::setup) {
+    ant_ded.ue_tx_ant_sel =
+        (asn1_type.ue_tx_ant_sel.setup().value == ant_info_ded_s::ue_tx_ant_sel_c_::setup_opts::closed_loop)
+            ? srsenb::sched_interface::ant_info_ded_t::ue_tx_ant_sel_t::closed_loop
+            : srsenb::sched_interface::ant_info_ded_t::ue_tx_ant_sel_t::open_loop;
+  }
+  return ant_ded;
 }
 
 void set_phy_cfg_t_dedicated_cfg(phy_cfg_t* cfg, const asn1::rrc::phys_cfg_ded_s& asn1_type)
@@ -594,7 +656,6 @@ void set_phy_cfg_t_common_pwr_ctrl(phy_cfg_t* cfg, const asn1::rrc::ul_pwr_ctrl_
 
 void set_phy_cfg_t_scell_config(phy_cfg_t* cfg, const asn1::rrc::scell_to_add_mod_r10_s& asn1_type)
 {
-
   if (asn1_type.rr_cfg_common_scell_r10_present) {
 
     // Enable always CSI request extra bit
@@ -746,6 +807,79 @@ void set_phy_cfg_t_scell_config(phy_cfg_t* cfg, const asn1::rrc::scell_to_add_mo
       }
     }
   }
+}
+
+/*
+ * UE Capabilities parser
+ */
+
+template <class T>
+static void set_rrc_ue_eutra_cap_t_gen(rrc_ue_capabilities_t& ue_cap, const T& ue_eutra_cap)
+{
+  if (ue_eutra_cap.non_crit_ext_present) {
+    set_rrc_ue_eutra_cap_t_gen(ue_cap, ue_eutra_cap.non_crit_ext);
+  }
+}
+
+static void set_rrc_ue_eutra_cap_t_gen(rrc_ue_capabilities_t& ue_cap, const asn1::rrc::ue_eutra_cap_s& ue_eutra_cap)
+{
+  ue_cap.release  = ue_eutra_cap.access_stratum_release.to_number();
+  ue_cap.category = ue_eutra_cap.ue_category;
+
+  if (ue_eutra_cap.non_crit_ext_present) {
+    set_rrc_ue_eutra_cap_t_gen(ue_cap, ue_eutra_cap.non_crit_ext);
+  }
+}
+
+static void set_rrc_ue_eutra_cap_t_gen(rrc_ue_capabilities_t&                     ue_cap,
+                                       const asn1::rrc::ue_eutra_cap_v1020_ies_s& ue_eutra_cap)
+{
+  if (ue_eutra_cap.ue_category_v1020_present) {
+    ue_cap.category = ue_eutra_cap.ue_category_v1020;
+  }
+
+  if (ue_eutra_cap.non_crit_ext_present) {
+    set_rrc_ue_eutra_cap_t_gen(ue_cap, ue_eutra_cap.non_crit_ext);
+  }
+}
+
+static void set_rrc_ue_eutra_cap_t_gen(rrc_ue_capabilities_t&                     ue_cap,
+                                       const asn1::rrc::ue_eutra_cap_v1250_ies_s& ue_eutra_cap)
+{
+  if (ue_eutra_cap.ue_category_dl_r12_present) {
+    ue_cap.category_dl = ue_eutra_cap.ue_category_dl_r12;
+  }
+
+  if (ue_eutra_cap.ue_category_ul_r12_present) {
+    ue_cap.category_ul = ue_eutra_cap.ue_category_ul_r12;
+  }
+
+  if (ue_eutra_cap.rf_params_v1250_present) {
+    const asn1::rrc::rf_params_v1250_s& rf_params = ue_eutra_cap.rf_params_v1250;
+    if (rf_params.supported_band_list_eutra_v1250_present) {
+      ue_cap.support_dl_256qam = true;
+
+      for (const asn1::rrc::supported_band_eutra_v1250_s& supported_band : rf_params.supported_band_list_eutra_v1250) {
+        ue_cap.support_dl_256qam &= supported_band.dl_minus256_qam_r12_present;
+        ue_cap.support_ul_64qam &= supported_band.ul_minus64_qam_r12_present;
+      }
+    }
+  }
+
+  if (ue_eutra_cap.non_crit_ext_present) {
+    set_rrc_ue_eutra_cap_t_gen(ue_cap, ue_eutra_cap.non_crit_ext);
+  }
+}
+
+static void set_rrc_ue_eutra_cap_t_gen(rrc_ue_capabilities_t&                     ue_cap,
+                                       const asn1::rrc::ue_eutra_cap_v1530_ies_s& ue_eutra_cap)
+{
+  ; // Do nothing
+}
+
+void set_rrc_ue_capabilities_t(rrc_ue_capabilities_t& ue_cap, const asn1::rrc::ue_eutra_cap_s& eutra_cap_s)
+{
+  set_rrc_ue_eutra_cap_t_gen(ue_cap, eutra_cap_s);
 }
 
 // MBMS

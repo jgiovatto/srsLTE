@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -19,22 +19,15 @@
  *
  */
 
-#define Error(fmt, ...) log_h->error(fmt, ##__VA_ARGS__)
-#define Warning(fmt, ...) log_h->warning(fmt, ##__VA_ARGS__)
-#define Info(fmt, ...) log_h->info(fmt, ##__VA_ARGS__)
-#define Debug(fmt, ...) log_h->debug(fmt, ##__VA_ARGS__)
-
 #include "srsue/hdr/stack/mac/proc_bsr.h"
-#include "srsue/hdr/stack/mac/mac.h"
+#include "srslte/common/log_helper.h"
 #include "srsue/hdr/stack/mac/mux.h"
 
 namespace srsue {
 
 bsr_proc::bsr_proc()
 {
-  log_h              = NULL;
   initiated          = false;
-  last_print         = 0;
   current_tti        = 0;
   trigger_tti        = 0;
   triggered_bsr_type = NONE;
@@ -42,16 +35,34 @@ bsr_proc::bsr_proc()
   pthread_mutex_init(&mutex, NULL);
 }
 
-void bsr_proc::init(rlc_interface_mac* rlc_, srslte::log* log_h_, srslte::timer_handler* timers_db_)
+void bsr_proc::init(rlc_interface_mac* rlc_, srslte::log_ref log_h_, srslte::task_handler_interface* task_handler_)
 {
-  log_h     = log_h_;
-  rlc       = rlc_;
-  timers_db = timers_db_;
+  log_h        = log_h_;
+  rlc          = rlc_;
+  task_handler = task_handler_;
 
-  timer_periodic = timers_db->get_unique_timer();
-  timer_retx     = timers_db->get_unique_timer();
+  timer_periodic           = task_handler->get_unique_timer();
+  timer_retx               = task_handler->get_unique_timer();
+  timer_queue_status_print = task_handler->get_unique_timer();
 
   reset();
+
+  // Print periodically the LCID queue status
+  auto queue_status_print_task = [this](uint32_t tid) {
+    char str[128];
+    str[0] = '\0';
+    int n  = 0;
+    for (auto& lcg : lcgs) {
+      for (auto& iter : lcg) {
+        n = srslte_print_check(str, 128, n, "%d: %d ", iter.first, iter.second.old_buffer);
+      }
+    }
+    Info("BSR:   triggered_bsr_type=%d, LCID QUEUE status: %s\n", triggered_bsr_type, str);
+    timer_queue_status_print.run();
+  };
+  timer_queue_status_print.set(QUEUE_STATUS_PERIOD_MS, queue_status_print_task);
+  timer_queue_status_print.run();
+
   initiated = true;
 }
 
@@ -73,19 +84,19 @@ void bsr_proc::reset()
   trigger_tti = 0;
 }
 
-void bsr_proc::set_config(srslte::bsr_cfg_t& bsr_cfg)
+void bsr_proc::set_config(srslte::bsr_cfg_t& bsr_cfg_)
 {
   pthread_mutex_lock(&mutex);
 
-  this->bsr_cfg = bsr_cfg;
+  bsr_cfg = bsr_cfg_;
 
-  if (bsr_cfg.periodic_timer > 0) {
-    timer_periodic.set(bsr_cfg.periodic_timer, [this](uint32_t tid) { timer_expired(tid); });
-    Info("BSR:   Configured timer periodic %d ms\n", bsr_cfg.periodic_timer);
+  if (bsr_cfg_.periodic_timer > 0) {
+    timer_periodic.set(bsr_cfg_.periodic_timer, [this](uint32_t tid) { timer_expired(tid); });
+    Info("BSR:   Configured timer periodic %d ms\n", bsr_cfg_.periodic_timer);
   }
-  if (bsr_cfg.retx_timer > 0) {
-    timer_retx.set(bsr_cfg.retx_timer, [this](uint32_t tid) { timer_expired(tid); });
-    Info("BSR:   Configured timer reTX %d ms\n", bsr_cfg.retx_timer);
+  if (bsr_cfg_.retx_timer > 0) {
+    timer_retx.set(bsr_cfg_.retx_timer, [this](uint32_t tid) { timer_expired(tid); });
+    Info("BSR:   Configured timer reTX %d ms\n", bsr_cfg_.retx_timer);
   }
   pthread_mutex_unlock(&mutex);
 }
@@ -269,6 +280,7 @@ void bsr_proc::step(uint32_t tti)
   }
 
   pthread_mutex_lock(&mutex);
+
   current_tti = tti;
 
   update_new_data();
@@ -280,18 +292,6 @@ void bsr_proc::step(uint32_t tti)
 
   update_buffer_state();
 
-  if ((tti - last_print) % 10240 > QUEUE_STATUS_PERIOD_MS) {
-    char str[128];
-    str[0] = '\0';
-    int n  = 0;
-    for (int i = 0; i < NOF_LCG; i++) {
-      for (std::map<uint32_t, lcid_t>::iterator iter = lcgs[i].begin(); iter != lcgs[i].end(); ++iter) {
-        n = srslte_print_check(str, 128, n, "%d: %d ", iter->first, iter->second.old_buffer);
-      }
-    }
-    Info("BSR:   triggered_bsr_type=%d, LCID QUEUE status: %s\n", triggered_bsr_type, str);
-    last_print = tti;
-  }
   pthread_mutex_unlock(&mutex);
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -121,5 +121,20 @@ SRSLTE_API uint32_t srslte_sch_find_Ioffset_ack(float beta);
 SRSLTE_API uint32_t srslte_sch_find_Ioffset_cqi(float beta);
 
 SRSLTE_API uint32_t srslte_sch_find_Ioffset_ri(float beta);
+
+///< Sidelink uses PUSCH Interleaver in all channels
+SRSLTE_API void srslte_sl_ulsch_interleave(uint8_t* g_bits,
+                                           uint32_t Qm,
+                                           uint32_t H_prime_total,
+                                           uint32_t N_pusch_symbs,
+                                           uint8_t* q_bits);
+
+///< Sidelink uses PUSCH Deinterleaver in all channels
+SRSLTE_API void srslte_sl_ulsch_deinterleave(int16_t*  q_bits,
+                                  uint32_t  Qm,
+                                  uint32_t  H_prime_total,
+                                  uint32_t  N_pusch_symbs,
+                                  int16_t*  g_bits,
+                                  uint32_t* inteleaver_lut);
 
 #endif // SRSLTE_SCH_H

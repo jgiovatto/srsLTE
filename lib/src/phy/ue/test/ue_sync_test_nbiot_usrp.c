@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -168,7 +168,7 @@ int main(int argc, char** argv)
   // Allocate memory for rx'ing samples (1 full frame)
   cf_t* rx_buffer[SRSLTE_MAX_PORTS] = {NULL, NULL, NULL, NULL};
   for (uint32_t i = 0; i < SRSLTE_NBIOT_NUM_RX_ANTENNAS; i++) {
-    rx_buffer[i] = srslte_vec_malloc(10 * SRSLTE_SF_LEN_PRB_NBIOT * sizeof(cf_t));
+    rx_buffer[i] = srslte_vec_cf_malloc(SRSLTE_NOF_SF_X_FRAME * SRSLTE_SF_LEN_PRB_NBIOT);
     if (!rx_buffer[i]) {
       perror("malloc");
       goto clean_exit;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -35,16 +35,23 @@ using namespace std;
 
 namespace srsue {
 
-metrics_csv::metrics_csv(std::string filename) : n_reports(0), metrics_report_period(1.0), ue(NULL)
+metrics_csv::metrics_csv(std::string filename, bool append_)
 {
-  file.open(filename.c_str(), std::ios_base::out);
-  pthread_mutex_init(&mutex, NULL);
+  std::ios_base::openmode flags = std::ios_base::out;
+  if (append_) {
+    // check if file exists
+    ifstream f(filename.c_str());
+    if (f.good()) {
+      file_exists = true;
+      flags |= std::ios_base::app;
+    }
+  }
+  file.open(filename.c_str(), flags);
 }
 
 metrics_csv::~metrics_csv()
 {
   stop();
-  pthread_mutex_destroy(&mutex);
 }
 
 void metrics_csv::set_ue_handle(ue_metrics_interface* ue_)
@@ -52,91 +59,103 @@ void metrics_csv::set_ue_handle(ue_metrics_interface* ue_)
   ue = ue_;
 }
 
+void metrics_csv::set_flush_period(const uint32_t flush_period_sec_)
+{
+  flush_period_sec = flush_period_sec_;
+}
+
 void metrics_csv::stop()
 {
-  pthread_mutex_lock(&mutex);
+  std::unique_lock<std::mutex> lock(mutex);
   if (file.is_open()) {
     file << "#eof\n";
     file.flush();
     file.close();
   }
-  pthread_mutex_unlock(&mutex);
 }
 
-void metrics_csv::set_metrics(ue_metrics_t& metrics, const uint32_t period_usec)
+void metrics_csv::set_metrics(const ue_metrics_t& metrics, const uint32_t period_usec)
 {
-  pthread_mutex_lock(&mutex);
+  std::unique_lock<std::mutex> lock(mutex);
+
+  time_ms += period_usec / 1000;
+
   if (file.is_open() && ue != NULL) {
-    if (n_reports == 0) {
-      file << "time;rsrp;pl;cfo;dl_mcs;dl_snr;dl_turbo;dl_brate;dl_bler;ul_ta;ul_mcs;ul_buff;ul_brate;ul_bler;rf_o;rf_"
+    if (n_reports == 0 && !file_exists) {
+      file << "time;cc;pci;earfcn;rsrp;pl;cfo;dl_mcs;dl_snr;dl_turbo;dl_brate;dl_bler;ul_ta;ul_mcs;ul_buff;ul_brate;ul_"
+              "bler;"
+              "rf_o;rf_"
               "u;rf_l;is_attached\n";
     }
 
-    file << (metrics_report_period * n_reports) << ";";
-
-    // Print PHY metrics for first CC
-    file << float_to_string(metrics.phy.dl[0].rsrp, 2);
-    file << float_to_string(metrics.phy.dl[0].pathloss, 2);
-    file << float_to_string(metrics.phy.sync[0].cfo, 2);
-    file << float_to_string(metrics.phy.dl[0].mcs, 2);
-    file << float_to_string(metrics.phy.dl[0].sinr, 2);
-    file << float_to_string(metrics.phy.dl[0].turbo_iters, 2);
-
-    // Sum DL rate for all CCs
-    float rx_brate = 0;
     for (uint32_t r = 0; r < metrics.phy.nof_active_cc; r++) {
-      rx_brate += metrics.stack.mac[r].rx_brate;
-    }
-    file << float_to_string(rx_brate / period_usec * 1e6, 2);
+      file << time_ms << ";";
 
-    // Sum BLER for all CCs
-    int rx_pkts   = 0;
-    int rx_errors = 0;
-    for (uint32_t r = 0; r < metrics.phy.nof_active_cc; r++) {
-      rx_pkts += metrics.stack.mac[r].rx_pkts;
-      rx_errors += metrics.stack.mac[r].rx_errors;
-    }
-    if (rx_pkts > 0) {
-      file << float_to_string((float)100 * rx_errors / rx_pkts, 1);
-    } else {
-      file << float_to_string(0, 2);
-    }
+      // CC and PCI
+      file << r << ";";
+      file << metrics.phy.info[r].pci << ";";
+      file << metrics.phy.info[r].dl_earfcn << ";";
 
-    file << float_to_string(metrics.phy.sync[0].ta_us, 2);
-    file << float_to_string(metrics.phy.ul[0].mcs, 2);
-    file << float_to_string((float)metrics.stack.mac[0].ul_buffer, 2);
+      // Print PHY metrics for first CC
+      file << float_to_string(metrics.phy.dl[r].rsrp, 2);
+      file << float_to_string(metrics.phy.dl[r].pathloss, 2);
+      file << float_to_string(metrics.phy.sync[r].cfo, 2);
+      file << float_to_string(metrics.phy.dl[r].mcs, 2);
+      file << float_to_string(metrics.phy.dl[r].sinr, 2);
+      file << float_to_string(metrics.phy.dl[r].turbo_iters, 2);
 
-    // Sum UL rate for all CCs
-    float tx_brate = 0;
-    for (uint32_t r = 0; r < metrics.phy.nof_active_cc; r++) {
-      tx_brate += metrics.stack.mac[r].tx_brate;
-    }
-    file << float_to_string(tx_brate / period_usec * 1e6, 2);
+      if (metrics.stack.mac[r].rx_brate > 0) {
+        file << float_to_string(metrics.stack.mac[r].rx_brate / (metrics.stack.mac[r].nof_tti * 1e-3), 2);
+      } else {
+        file << float_to_string(0, 2);
+      }
 
-    // Sum UL BLER for all CCs
-    int tx_pkts   = 0;
-    int tx_errors = 0;
-    for (uint32_t r = 0; r < metrics.phy.nof_active_cc; r++) {
-      tx_pkts += metrics.stack.mac[r].tx_pkts;
-      tx_errors += metrics.stack.mac[r].tx_errors;
-    }
-    if (tx_pkts > 0) {
-      file << float_to_string((float)100 * tx_errors / tx_pkts, 1);
-    } else {
-      file << float_to_string(0, 2);
-    }
+      int rx_pkts   = metrics.stack.mac[r].rx_pkts;
+      int rx_errors = metrics.stack.mac[r].rx_errors;
+      if (rx_pkts > 0) {
+        file << float_to_string((float)100 * rx_errors / rx_pkts, 1);
+      } else {
+        file << float_to_string(0, 2);
+      }
 
-    file << float_to_string(metrics.rf.rf_o, 2);
-    file << float_to_string(metrics.rf.rf_u, 2);
-    file << float_to_string(metrics.rf.rf_l, 2);
-    file << (metrics.stack.rrc.state == RRC_STATE_CONNECTED ? "1.0" : "0.0");
-    file << "\n";
+      file << float_to_string(metrics.phy.sync[r].ta_us, 2);
+      file << float_to_string(metrics.phy.ul[r].mcs, 2);
+      file << float_to_string((float)metrics.stack.mac[r].ul_buffer, 2);
+
+      if (metrics.stack.mac[r].tx_brate > 0) {
+        file << float_to_string(metrics.stack.mac[r].tx_brate / (metrics.stack.mac[r].nof_tti * 1e-3), 2);
+      } else {
+        file << float_to_string(0, 2);
+      }
+
+      // Sum UL BLER for all CCs
+      int tx_pkts   = metrics.stack.mac[r].tx_pkts;
+      int tx_errors = metrics.stack.mac[r].tx_errors;
+      if (tx_pkts > 0) {
+        file << float_to_string((float)100 * tx_errors / tx_pkts, 1);
+      } else {
+        file << float_to_string(0, 2);
+      }
+
+      file << float_to_string(metrics.rf.rf_o, 2);
+      file << float_to_string(metrics.rf.rf_u, 2);
+      file << float_to_string(metrics.rf.rf_l, 2);
+      file << (metrics.stack.rrc.state == RRC_STATE_CONNECTED ? "1.0" : "0.0");
+      file << "\n";
+    }
 
     n_reports++;
+
+    if (flush_period_sec > 0) {
+      flush_time_ms += period_usec / 1000;
+      if (flush_time_ms / 1000 >= flush_period_sec) {
+        file.flush();
+        flush_time_ms -= flush_period_sec * 1000;
+      }
+    }
   } else {
     std::cout << "couldn't write CSV file." << std::endl;
   }
-  pthread_mutex_unlock(&mutex);
 }
 
 std::string metrics_csv::float_to_string(float f, int digits, bool add_semicolon)

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -50,7 +50,7 @@ uint32_t sf_idx     = 1;
 uint8_t non_mbsfn_region = 2;
 int     mbsfn_area_id    = 1;
 
-srslte_softbuffer_rx_t softbuffer_rx;
+srslte_softbuffer_rx_t softbuffer_rx = {};
 srslte_filesource_t    fsrc;
 srslte_ue_dl_t         ue_dl;
 cf_t*                  input_buffer[SRSLTE_MAX_PORTS];
@@ -80,7 +80,7 @@ void parse_args(int argc, char** argv)
         cell.id = (uint32_t)strtol(argv[optind], NULL, 10);
         break;
       case 's':
-        sf_idx = (int)strtol(argv[optind], NULL, 10);
+        sf_idx = (uint32_t)strtol(argv[optind], NULL, 10);
         break;
       case 'f':
         cfi = (uint32_t)strtol(argv[optind], NULL, 10);
@@ -121,7 +121,7 @@ int base_init()
 
   flen = 2 * (SRSLTE_SLOT_LEN(srslte_symbol_sz(cell.nof_prb)));
 
-  input_buffer[0] = malloc(flen * sizeof(cf_t));
+  input_buffer[0] = srslte_vec_cf_malloc(flen);
   if (!input_buffer[0]) {
     perror("malloc");
     exit(-1);
@@ -151,6 +151,7 @@ void base_free()
 {
   srslte_filesource_free(&fsrc);
   srslte_ue_dl_free(&ue_dl);
+  srslte_softbuffer_rx_free(&softbuffer_rx);
   free(input_buffer[0]);
 }
 
@@ -194,7 +195,7 @@ int main(int argc, char** argv)
   // Special configuration for MBSFN channel estimation
   ue_dl_cfg.chest_cfg.filter_type          = SRSLTE_CHEST_FILTER_TRIANGLE;
   ue_dl_cfg.chest_cfg.filter_coef[0]       = 0.1;
-  ue_dl_cfg.chest_cfg.interpolate_subframe = true;
+  ue_dl_cfg.chest_cfg.estimator_alg        = SRSLTE_ESTIMATOR_ALG_INTERPOLATE;
   ue_dl_cfg.chest_cfg.noise_alg            = SRSLTE_NOISE_ALG_PSS;
 
   if ((ret = srslte_ue_dl_decode_fft_estimate(&ue_dl, &dl_sf, &ue_dl_cfg)) < 0) {

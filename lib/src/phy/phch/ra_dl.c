@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -26,7 +26,6 @@
 #include "srslte/phy/utils/debug.h"
 #include "srslte/phy/utils/vector.h"
 #include "srslte/srslte.h"
-#include "tbs_tables.h"
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -45,7 +44,7 @@ const int tbs_format1c_table[32] = {40,  56,   72,   120,  136,  144,  176,  208
  **********/
 
 /* Returns the number of RE in a PRB in a slot and subframe */
-static uint32_t ra_re_x_prb(srslte_cell_t* cell, srslte_dl_sf_cfg_t* sf, uint32_t slot, uint32_t prb_idx)
+static uint32_t ra_re_x_prb(const srslte_cell_t* cell, srslte_dl_sf_cfg_t* sf, uint32_t slot, uint32_t prb_idx)
 {
 
   uint32_t subframe         = sf->tti % 10;
@@ -166,7 +165,9 @@ static uint32_t ra_re_x_prb(srslte_cell_t* cell, srslte_dl_sf_cfg_t* sf, uint32_
  * This function only writes grant->prb_idx and grant->nof_prb.
  */
 /** Compute PRB allocation for Downlink as defined in 7.1.6 of 36.213 */
-int srslte_ra_dl_grant_to_grant_prb_allocation(srslte_dci_dl_t* dci, srslte_pdsch_grant_t* grant, uint32_t nof_prb)
+int srslte_ra_dl_grant_to_grant_prb_allocation(const srslte_dci_dl_t* dci,
+                                               srslte_pdsch_grant_t*  grant,
+                                               uint32_t               nof_prb)
 {
   int      i, j;
   uint32_t bitmask;
@@ -319,50 +320,16 @@ int srslte_ra_dl_grant_to_grant_prb_allocation(srslte_dci_dl_t* dci, srslte_pdsc
 
 int srslte_dl_fill_ra_mcs(srslte_ra_tb_t* tb, int last_tbs, uint32_t nprb, bool pdsch_use_tbs_index_alt)
 {
-  int i_tbs = 0;
-  if (!pdsch_use_tbs_index_alt) {
-    // Implements 3GPP 36.211 Table  3.56.35-431
-    if (tb->mcs_idx < 10) {
-      tb->mod = SRSLTE_MOD_QPSK;
-      i_tbs   = tb->mcs_idx;
-    } else if (tb->mcs_idx < 17) {
-      tb->mod = SRSLTE_MOD_16QAM;
-      i_tbs   = tb->mcs_idx - 1;
-    } else if (tb->mcs_idx < 29) {
-      tb->mod = SRSLTE_MOD_64QAM;
-      i_tbs   = tb->mcs_idx - 2;
-    } else if (tb->mcs_idx == 29) {
-      tb->mod = SRSLTE_MOD_QPSK;
-      i_tbs   = -1;
-    } else if (tb->mcs_idx == 30) {
-      tb->mod = SRSLTE_MOD_16QAM;
-      i_tbs   = -1;
-    } else if (tb->mcs_idx == 31) {
-      tb->mod = SRSLTE_MOD_64QAM;
-      i_tbs   = -1;
-    }
-  } else {
-    if (tb->mcs_idx < 28) {
-      i_tbs = dl_mcs_tbs_idx_table2[tb->mcs_idx];
-    } else {
-      i_tbs = SRSLTE_ERROR;
-    }
+  // Get modulation
+  tb->mod = srslte_ra_dl_mod_from_mcs(tb->mcs_idx, pdsch_use_tbs_index_alt);
 
-    if (tb->mcs_idx < 5 || tb->mcs_idx == 28) {
-      tb->mod = SRSLTE_MOD_QPSK;
-    } else if (tb->mcs_idx < 11 || tb->mcs_idx == 29) {
-      tb->mod = SRSLTE_MOD_16QAM;
-    } else if (tb->mcs_idx < 20 || tb->mcs_idx == 30) {
-      tb->mod = SRSLTE_MOD_64QAM;
-    } else {
-      tb->mod = SRSLTE_MOD_256QAM;
-    }
-  }
+  // Get Transport block size index
+  int i_tbs = srslte_ra_tbs_idx_from_mcs(tb->mcs_idx, pdsch_use_tbs_index_alt, false);
 
   // If i_tbs = -1, TBS is determined from the latest PDCCH for this TB (7.1.7.2 36.213)
   int tbs = 0;
   if (i_tbs >= 0) {
-    tbs     = srslte_ra_tbs_from_idx(i_tbs, nprb);
+    tbs     = srslte_ra_tbs_from_idx((uint32_t)i_tbs, nprb);
     tb->tbs = tbs;
   } else {
     tb->tbs = last_tbs;
@@ -373,7 +340,7 @@ int srslte_dl_fill_ra_mcs(srslte_ra_tb_t* tb, int last_tbs, uint32_t nprb, bool 
 
 /* Modulation order and transport block size determination 7.1.7 in 36.213
  * */
-static int dl_dci_compute_tb(bool pdsch_use_tbs_index_alt, srslte_dci_dl_t* dci, srslte_pdsch_grant_t* grant)
+static int dl_dci_compute_tb(bool pdsch_use_tbs_index_alt, const srslte_dci_dl_t* dci, srslte_pdsch_grant_t* grant)
 {
   uint32_t n_prb = 0;
   int      tbs   = -1;
@@ -430,7 +397,9 @@ static int dl_dci_compute_tb(bool pdsch_use_tbs_index_alt, srslte_dci_dl_t* dci,
       if (grant->tb[i].enabled) {
         grant->tb[i].tbs = srslte_dl_fill_ra_mcs(&grant->tb[i], grant->last_tbs[i], n_prb, pdsch_use_tbs_index_alt);
         if (grant->tb[i].tbs < 0) {
-          ERROR("Computing TBS from MCS=%d, n_prb=%d\n", grant->tb[i].mcs_idx, n_prb);
+          char str[128];
+          srslte_dci_dl_info(dci, str, sizeof(str));
+          ERROR("Computing TBS from %s\n", str);
           return SRSLTE_ERROR;
         }
       } else {
@@ -441,7 +410,7 @@ static int dl_dci_compute_tb(bool pdsch_use_tbs_index_alt, srslte_dci_dl_t* dci,
   return SRSLTE_SUCCESS;
 }
 
-void srslte_ra_dl_compute_nof_re(srslte_cell_t* cell, srslte_dl_sf_cfg_t* sf, srslte_pdsch_grant_t* grant)
+void srslte_ra_dl_compute_nof_re(const srslte_cell_t* cell, srslte_dl_sf_cfg_t* sf, srslte_pdsch_grant_t* grant)
 {
   // Compute number of RE
   grant->nof_re   = srslte_ra_dl_grant_nof_re(cell, sf, grant);
@@ -468,7 +437,8 @@ void srslte_ra_dl_compute_nof_re(srslte_cell_t* cell, srslte_dl_sf_cfg_t* sf, sr
 }
 
 /* Determine MIMO type based on number of cell ports and receive antennas, transport blocks and pinfo */
-static int config_mimo_type(srslte_cell_t* cell, srslte_tm_t tm, srslte_dci_dl_t* dci, srslte_pdsch_grant_t* grant)
+static int
+config_mimo_type(const srslte_cell_t* cell, srslte_tm_t tm, const srslte_dci_dl_t* dci, srslte_pdsch_grant_t* grant)
 {
   grant->tx_scheme  = SRSLTE_TXSCHEME_PORT0;
   bool valid_config = true;
@@ -525,7 +495,7 @@ static int config_mimo_type(srslte_cell_t* cell, srslte_tm_t tm, srslte_dci_dl_t
 }
 
 /* Translates Precoding Information (pinfo) to Precoding matrix Index (pmi) as 3GPP 36.212 Table 5.3.3.1.5-4 */
-static int config_mimo_pmi(srslte_cell_t* cell, srslte_dci_dl_t* dci, srslte_pdsch_grant_t* grant)
+static int config_mimo_pmi(const srslte_cell_t* cell, const srslte_dci_dl_t* dci, srslte_pdsch_grant_t* grant)
 {
   uint32_t nof_tb = grant->nof_tb;
   if (grant->tx_scheme == SRSLTE_TXSCHEME_SPATIALMUX) {
@@ -556,7 +526,7 @@ static int config_mimo_pmi(srslte_cell_t* cell, srslte_dci_dl_t* dci, srslte_pds
 }
 
 /* Determine number of MIMO layers */
-static int config_mimo_layers(srslte_cell_t* cell, srslte_dci_dl_t* dci, srslte_pdsch_grant_t* grant)
+static int config_mimo_layers(const srslte_cell_t* cell, const srslte_dci_dl_t* dci, srslte_pdsch_grant_t* grant)
 {
   uint32_t nof_tb = grant->nof_tb;
   switch (grant->tx_scheme) {
@@ -599,7 +569,8 @@ static int config_mimo_layers(srslte_cell_t* cell, srslte_dci_dl_t* dci, srslte_
   return 0;
 }
 
-static int config_mimo(srslte_cell_t* cell, srslte_tm_t tm, srslte_dci_dl_t* dci, srslte_pdsch_grant_t* grant)
+static int
+config_mimo(const srslte_cell_t* cell, srslte_tm_t tm, const srslte_dci_dl_t* dci, srslte_pdsch_grant_t* grant)
 {
 
   if (config_mimo_type(cell, tm, dci, grant)) {
@@ -626,12 +597,12 @@ static int config_mimo(srslte_cell_t* cell, srslte_tm_t tm, srslte_dci_dl_t* dci
  **********/
 
 /** Compute the DL grant parameters  */
-int srslte_ra_dl_dci_to_grant(srslte_cell_t*        cell,
-                              srslte_dl_sf_cfg_t*   sf,
-                              srslte_tm_t           tm,
-                              bool                  pdsch_use_tbs_index_alt,
-                              srslte_dci_dl_t*      dci,
-                              srslte_pdsch_grant_t* grant)
+int srslte_ra_dl_dci_to_grant(const srslte_cell_t*   cell,
+                              srslte_dl_sf_cfg_t*    sf,
+                              srslte_tm_t            tm,
+                              bool                   pdsch_use_tbs_index_alt,
+                              const srslte_dci_dl_t* dci,
+                              srslte_pdsch_grant_t*  grant)
 {
   bzero(grant, sizeof(srslte_pdsch_grant_t));
 
@@ -665,7 +636,7 @@ int srslte_ra_dl_dci_to_grant(srslte_cell_t*        cell,
   return config_mimo(cell, tm, dci, grant);
 }
 
-uint32_t srslte_ra_dl_approx_nof_re(srslte_cell_t* cell, uint32_t nof_prb, uint32_t nof_ctrl_symbols)
+uint32_t srslte_ra_dl_approx_nof_re(const srslte_cell_t* cell, uint32_t nof_prb, uint32_t nof_ctrl_symbols)
 {
   uint32_t nof_refs = 0;
   uint32_t nof_symb = 2 * SRSLTE_CP_NSYMB(cell->cp) - nof_ctrl_symbols;
@@ -684,7 +655,7 @@ uint32_t srslte_ra_dl_approx_nof_re(srslte_cell_t* cell, uint32_t nof_prb, uint3
 }
 
 /* Computes the number of RE for each PRB in the prb_dist structure */
-uint32_t srslte_ra_dl_grant_nof_re(srslte_cell_t* cell, srslte_dl_sf_cfg_t* sf, srslte_pdsch_grant_t* grant)
+uint32_t srslte_ra_dl_grant_nof_re(const srslte_cell_t* cell, srslte_dl_sf_cfg_t* sf, srslte_pdsch_grant_t* grant)
 {
   uint32_t j, s;
   // Compute number of RE per PRB

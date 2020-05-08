@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -28,6 +28,7 @@ namespace srsenb {
 
 struct mac_metrics_t {
   uint16_t rnti;
+  uint32_t nof_tti;
   int      tx_pkts;
   int      tx_errors;
   int      tx_brate;

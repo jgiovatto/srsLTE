@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -64,12 +64,12 @@ struct rlc_amd_retx_t {
 class rlc_am_lte : public rlc_common
 {
 public:
-  rlc_am_lte(srslte::log*               log_,
+  rlc_am_lte(srslte::log_ref            log_,
              uint32_t                   lcid_,
              srsue::pdcp_interface_rlc* pdcp_,
              srsue::rrc_interface_rlc*  rrc_,
              srslte::timer_handler*     timers_);
-  bool configure(rlc_config_t cfg_);
+  bool configure(const rlc_config_t& cfg_);
   void reestablish();
   void stop();
 
@@ -99,7 +99,7 @@ private:
     rlc_am_lte_tx(rlc_am_lte* parent_);
     ~rlc_am_lte_tx();
 
-    bool configure(rlc_config_t cfg_);
+    bool configure(const rlc_config_t& cfg_);
 
     void empty_queue();
     void reestablish();
@@ -138,7 +138,7 @@ private:
 
     rlc_am_lte*       parent = nullptr;
     byte_buffer_pool* pool   = nullptr;
-    srslte::log*      log    = nullptr;
+    srslte::log_ref   log;
 
     /****************************************************************************
      * Configurable parameters
@@ -225,7 +225,7 @@ private:
 
     rlc_am_lte*       parent = nullptr;
     byte_buffer_pool* pool   = nullptr;
-    srslte::log*      log    = nullptr;
+    srslte::log_ref   log;
 
     /****************************************************************************
      * Configurable parameters
@@ -270,8 +270,8 @@ private:
   };
 
   // Common variables needed/provided by parent class
-  srsue::rrc_interface_rlc*  rrc    = nullptr;
-  srslte::log*               log    = nullptr;
+  srsue::rrc_interface_rlc*  rrc = nullptr;
+  srslte::log_ref            log;
   srsue::pdcp_interface_rlc* pdcp   = nullptr;
   srslte::timer_handler*     timers = nullptr;
   uint32_t                   lcid   = 0;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -22,7 +22,7 @@
 #include <iostream>
 #include <srslte/common/threads.h>
 
-class thread_test : public thread
+class thread_test : public srslte::thread
 {
 public:
   thread_test() : thread("Thread Test") {}

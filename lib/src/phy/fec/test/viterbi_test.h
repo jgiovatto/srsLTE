@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -38,6 +38,11 @@ static expected_errors_t expected_errors[] = {{1000, 1, 40, true, 0.0, 7282},
                                               {1000, 1, 40, true, 3.0, 176},
                                               {1000, 1, 40, true, 4.5, 24},
 
+                                              {1000, 1, 56, true, 0.0, 7282},
+                                              {1000, 1, 56, true, 2.0, 725},
+                                              {1000, 1, 56, true, 3.0, 176},
+                                              {1000, 1, 56, true, 4.5, 24},
+
                                               {100, 1, 1000, true, 0.0, 13208},
                                               {100, 1, 1000, true, 2.0, 939},
                                               {100, 1, 1000, true, 3.0, 110},
@@ -51,6 +56,11 @@ static expected_errors_t expected_errors[] = {{1000, 1, 40, true, 0.0, 7282},
                                               {1000, 1, 40, true, 2.0, 725},
                                               {1000, 1, 40, true, 3.0, 176},
                                               {1000, 1, 40, true, 4.5, 24},
+
+                                              {1000, 1, 56, true, 0.0, 7282},
+                                              {1000, 1, 56, true, 2.0, 725},
+                                              {1000, 1, 56, true, 3.0, 176},
+                                              {1000, 1, 56, true, 4.5, 24},
 
                                               {100, 1, 1000, true, 0.0, 13208},
                                               {100, 1, 1000, true, 2.0, 939},

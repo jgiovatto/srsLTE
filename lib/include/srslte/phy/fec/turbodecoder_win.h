@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -52,8 +52,6 @@
 
 #define normalize_period 2
 #define win_overlap_len 40
-
-#define divide_output 1
 
 #define INF 10000
 
@@ -398,8 +396,6 @@ inline static uint8x16_t v_load_s8(int i15,
 
 #define normalize_period 2
 #define win_overlap_len 40
-
-#define divide_output 1
 
 #define INF 10000
 

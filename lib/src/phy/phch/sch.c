@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -39,21 +39,57 @@
 #endif /* LV_HAVE_SSE */
 
 /* 36.213 Table 8.6.3-1: Mapping of HARQ-ACK offset values and the index signalled by higher layers */
-float beta_harq_offset[16] =
-    {2.0, 2.5, 3.125, 4.0, 5.0, 6.250, 8.0, 10.0, 12.625, 15.875, 20.0, 31.0, 50.0, 80.0, 126.0, -1.0};
+static inline float get_beta_harq_offset(uint32_t idx)
+{
+  const float beta_harq_offset[16] = {
+      2.0, 2.5, 3.125, 4.0, 5.0, 6.250, 8.0, 10.0, 12.625, 15.875, 20.0, 31.0, 50.0, 80.0, 126.0, -1.0};
+  float ret = beta_harq_offset[0];
+
+  if (idx < 15) {
+    ret = beta_harq_offset[idx];
+  } else {
+    ERROR("Invalid input %d (min: %d, max: %d)\n", idx, 0, 14);
+  }
+
+  return ret;
+}
 
 /* 36.213 Table 8.6.3-2: Mapping of RI offset values and the index signalled by higher layers */
-float beta_ri_offset[16] =
-    {1.25, 1.625, 2.0, 2.5, 3.125, 4.0, 5.0, 6.25, 8.0, 10.0, 12.625, 15.875, 20.0, -1.0, -1.0, -1.0};
+static inline float get_beta_ri_offset(uint32_t idx)
+{
+  const float beta_ri_offset[16] = {
+      1.25, 1.625, 2.0, 2.5, 3.125, 4.0, 5.0, 6.25, 8.0, 10.0, 12.625, 15.875, 20.0, -1.0, -1.0, -1.0};
+  float ret = beta_ri_offset[0];
+
+  if (idx < 13) {
+    ret = beta_ri_offset[idx];
+  } else {
+    ERROR("Invalid input %d (min: %d, max: %d)\n", idx, 0, 12);
+  }
+
+  return ret;
+}
 
 /* 36.213 Table 8.6.3-3: Mapping of CQI offset values and the index signalled by higher layers */
-float beta_cqi_offset[16] =
-    {-1.0, -1.0, 1.125, 1.25, 1.375, 1.625, 1.750, 2.0, 2.25, 2.5, 2.875, 3.125, 3.5, 4.0, 5.0, 6.25};
+static inline float get_beta_cqi_offset(uint32_t idx)
+{
+  const float beta_cqi_offset[16] = {
+      -1.0, -1.0, 1.125, 1.25, 1.375, 1.625, 1.750, 2.0, 2.25, 2.5, 2.875, 3.125, 3.5, 4.0, 5.0, 6.25};
+  float ret = beta_cqi_offset[2];
+
+  if (idx > 1 && idx < 16) {
+    ret = beta_cqi_offset[idx];
+  } else {
+    ERROR("Invalid input %d (min: %d, max: %d)\n", idx, 2, 15);
+  }
+
+  return ret;
+}
 
 float srslte_sch_beta_cqi(uint32_t I_cqi)
 {
   if (I_cqi < 16) {
-    return beta_cqi_offset[I_cqi];
+    return get_beta_cqi_offset(I_cqi);
   } else {
     return 0;
   }
@@ -62,7 +98,7 @@ float srslte_sch_beta_cqi(uint32_t I_cqi)
 uint32_t srslte_sch_find_Ioffset_ack(float beta)
 {
   for (int i = 0; i < 16; i++) {
-    if (beta_harq_offset[i] >= beta) {
+    if (get_beta_harq_offset(i) >= beta) {
       return i;
     }
   }
@@ -72,7 +108,7 @@ uint32_t srslte_sch_find_Ioffset_ack(float beta)
 uint32_t srslte_sch_find_Ioffset_ri(float beta)
 {
   for (int i = 0; i < 16; i++) {
-    if (beta_ri_offset[i] >= beta) {
+    if (get_beta_ri_offset(i) >= beta) {
       return i;
     }
   }
@@ -82,12 +118,14 @@ uint32_t srslte_sch_find_Ioffset_ri(float beta)
 uint32_t srslte_sch_find_Ioffset_cqi(float beta)
 {
   for (int i = 0; i < 16; i++) {
-    if (beta_cqi_offset[i] >= beta) {
+    if (get_beta_cqi_offset(i) >= beta) {
       return i;
     }
   }
   return 0;
 }
+
+#define SCH_MAX_G_BITS (SRSLTE_MAX_PRB * 12 * 12 * 12)
 
 int srslte_sch_init(srslte_sch_t* q)
 {
@@ -119,21 +157,21 @@ int srslte_sch_init(srslte_sch_t* q)
     srslte_rm_turbo_gentables();
 
     // Allocate int16 for reception (LLRs)
-    q->cb_in = srslte_vec_malloc(sizeof(uint8_t) * (SRSLTE_TCOD_MAX_LEN_CB + 8) / 8);
+    q->cb_in = srslte_vec_u8_malloc((SRSLTE_TCOD_MAX_LEN_CB + 8) / 8);
     if (!q->cb_in) {
       goto clean;
     }
 
-    q->parity_bits = srslte_vec_malloc(sizeof(uint8_t) * (3 * SRSLTE_TCOD_MAX_LEN_CB + 16) / 8);
+    q->parity_bits = srslte_vec_u8_malloc((3 * SRSLTE_TCOD_MAX_LEN_CB + 16) / 8);
     if (!q->parity_bits) {
       goto clean;
     }
-    q->temp_g_bits = srslte_vec_malloc(sizeof(uint8_t) * SRSLTE_MAX_PRB * 12 * 12 * 12);
+    q->temp_g_bits = srslte_vec_u8_malloc(SCH_MAX_G_BITS);
     if (!q->temp_g_bits) {
       goto clean;
     }
     bzero(q->temp_g_bits, SRSLTE_MAX_PRB * 12 * 12 * 12);
-    q->ul_interleaver = srslte_vec_malloc(sizeof(uint32_t) * SRSLTE_MAX_PRB * 12 * 12 * 12);
+    q->ul_interleaver = srslte_vec_u32_malloc(SCH_MAX_G_BITS);
     if (!q->ul_interleaver) {
       goto clean;
     }
@@ -620,7 +658,7 @@ static void ulsch_interleave_gen(uint32_t  H_prime_total,
   for (uint32_t j = 0; j < rows; j++) {
     for (uint32_t i = 0; i < cols; i++) {
       for (uint32_t k = 0; k < Qm; k++) {
-        if (ri_present[j * Qm + i * rows * Qm + k]) {
+        if (ri_present && ri_present[j * Qm + i * rows * Qm + k]) {
           interleaver_lut[j * Qm + i * rows * Qm + k] = 0;
         } else {
           interleaver_lut[j * Qm + i * rows * Qm + k] = idx;
@@ -818,7 +856,7 @@ static void ulsch_interleave_qm6(const uint8_t* g_bits,
           q_bits[write_byte_idx + 1] |= w << 4;
           break;
         default:
-          /* Do nothing */;
+            /* Do nothing */;
       }
 
       bit_read_idx += 6;
@@ -871,7 +909,7 @@ static void ulsch_interleave_qm6(const uint8_t* g_bits,
             q_bits[write_byte_idx + 1] |= w << 4;
             break;
           default:
-            /* Do nothing */;
+              /* Do nothing */;
         }
 
         bit_read_idx += 6;
@@ -890,6 +928,14 @@ static void ulsch_interleave(uint8_t*          g_bits,
                              uint32_t          nof_ri_bits,
                              uint8_t*          ri_present)
 {
+  if (N_pusch_symbs == 0 || Qm == 0 || H_prime_total == 0 || H_prime_total < N_pusch_symbs) {
+    ERROR("Invalid input: N_pusch_symbs=%d, Qm=%d, H_prime_total=%d, N_pusch_symbs=%d\n",
+          N_pusch_symbs,
+          Qm,
+          H_prime_total,
+          N_pusch_symbs);
+    return;
+  }
 
   const uint32_t nof_bits   = H_prime_total * Qm;
   uint32_t       rows       = H_prime_total / N_pusch_symbs;
@@ -979,7 +1025,7 @@ static int uci_decode_ri_ack(srslte_sch_t*       q,
 
   // If there is RI and CQI, assume RI = 1 for the purpose of RI/ACK decoding (3GPP 36.212 Clause 5.2.4.1. )
   if (cfg->uci_cfg.cqi.data_enable) {
-    if (cfg->uci_cfg.cqi.type == SRSLTE_CQI_TYPE_SUBBAND_HL && cfg->uci_cfg.cqi.ri_present) {
+    if (cfg->uci_cfg.cqi.type == SRSLTE_CQI_TYPE_SUBBAND_HL && cfg->uci_cfg.cqi.ri_len) {
       cfg->uci_cfg.cqi.rank_is_not_one = false;
     }
   }
@@ -988,9 +1034,9 @@ static int uci_decode_ri_ack(srslte_sch_t*       q,
 
   // Deinterleave and decode HARQ bits
   if (srslte_uci_cfg_total_ack(&cfg->uci_cfg) > 0) {
-    float beta = beta_harq_offset[cfg->uci_offset.I_offset_ack];
+    float beta = get_beta_harq_offset(cfg->uci_offset.I_offset_ack);
     if (cfg->grant.tb.tbs == 0) {
-      beta /= beta_cqi_offset[cfg->uci_offset.I_offset_cqi];
+      beta /= get_beta_cqi_offset(cfg->uci_offset.I_offset_cqi);
     }
     ret = srslte_uci_decode_ack_ri(cfg,
                                    q_bits,
@@ -1015,9 +1061,9 @@ static int uci_decode_ri_ack(srslte_sch_t*       q,
 
   // Deinterleave and decode RI bits
   if (cfg->uci_cfg.cqi.ri_len > 0) {
-    float beta = beta_ri_offset[cfg->uci_offset.I_offset_ri];
+    float beta = get_beta_ri_offset(cfg->uci_offset.I_offset_ri);
     if (cfg->grant.tb.tbs == 0) {
-      beta /= beta_cqi_offset[cfg->uci_offset.I_offset_cqi];
+      beta /= get_beta_cqi_offset(cfg->uci_offset.I_offset_cqi);
     }
     ret = srslte_uci_decode_ack_ri(
         cfg, q_bits, c_seq, beta, nb_q / Qm, cqi_len, q->ack_ri_bits, &uci_data->ri, cfg->uci_cfg.cqi.ri_len, true);
@@ -1029,7 +1075,7 @@ static int uci_decode_ri_ack(srslte_sch_t*       q,
 
   // Now set correct RI
   if (cfg->uci_cfg.cqi.data_enable) {
-    if (cfg->uci_cfg.cqi.type == SRSLTE_CQI_TYPE_SUBBAND_HL && cfg->uci_cfg.cqi.ri_present) {
+    if (cfg->uci_cfg.cqi.type == SRSLTE_CQI_TYPE_SUBBAND_HL && cfg->uci_cfg.cqi.ri_len) {
       cfg->uci_cfg.cqi.rank_is_not_one = uci_data->ri > 0;
     }
   }
@@ -1092,7 +1138,7 @@ int srslte_ulsch_decode(srslte_sch_t*       q,
     ret = srslte_uci_decode_cqi_pusch(&q->uci_cqi,
                                       cfg,
                                       g_bits,
-                                      beta_cqi_offset[cfg->uci_offset.I_offset_cqi],
+                                      get_beta_cqi_offset(cfg->uci_offset.I_offset_cqi),
                                       Q_prime_ri,
                                       cqi_len,
                                       cqi_buff,
@@ -1132,6 +1178,12 @@ int srslte_ulsch_encode(srslte_sch_t*       q,
   uint32_t Qm   = srslte_mod_bits_x_symbol(cfg->grant.tb.mod);
 
   if (Qm == 0) {
+    ERROR("Invalid input\n");
+    return SRSLTE_ERROR_INVALID_INPUTS;
+  }
+
+  if (cfg->grant.nof_symb == 0) {
+    ERROR("Invalid input\n");
     return SRSLTE_ERROR_INVALID_INPUTS;
   }
 
@@ -1157,9 +1209,9 @@ int srslte_ulsch_encode(srslte_sch_t*       q,
   }
 
   if (cfg->uci_cfg.cqi.ri_len > 0) {
-    float beta = beta_ri_offset[cfg->uci_offset.I_offset_ri];
+    float beta = get_beta_ri_offset(cfg->uci_offset.I_offset_ri);
     if (cb_segm.tbs == 0) {
-      beta /= beta_cqi_offset[cfg->uci_offset.I_offset_cqi];
+      beta /= get_beta_cqi_offset(cfg->uci_offset.I_offset_cqi);
     }
     uint8_t ri[2] = {uci_data->ri, 0};
     ret           = srslte_uci_encode_ack_ri(cfg,
@@ -1183,7 +1235,7 @@ int srslte_ulsch_encode(srslte_sch_t*       q,
                                       cfg,
                                       cqi_buff,
                                       (uint32_t)uci_cqi_len,
-                                      beta_cqi_offset[cfg->uci_offset.I_offset_cqi],
+                                      get_beta_cqi_offset(cfg->uci_offset.I_offset_cqi),
                                       Q_prime_ri,
                                       q->temp_g_bits);
     if (ret < 0) {
@@ -1199,7 +1251,7 @@ int srslte_ulsch_encode(srslte_sch_t*       q,
 
     srslte_bit_pack_vector(q->temp_g_bits, g_bits, Q_prime_cqi * Qm);
     // Reset the buffer because will be reused in ulsch_interleave
-    bzero(q->temp_g_bits, Q_prime_cqi * Qm);
+    srslte_vec_u8_zero(q->temp_g_bits, Q_prime_cqi * Qm);
   }
 
   e_offset += Q_prime_cqi * Qm;
@@ -1219,9 +1271,9 @@ int srslte_ulsch_encode(srslte_sch_t*       q,
 
   // Encode (and interleave) ACK
   if (srslte_uci_cfg_total_ack(&cfg->uci_cfg) > 0) {
-    float beta = beta_harq_offset[cfg->uci_offset.I_offset_ack];
+    float beta = get_beta_harq_offset(cfg->uci_offset.I_offset_ack);
     if (cb_segm.tbs == 0) {
-      beta /= beta_cqi_offset[cfg->uci_offset.I_offset_cqi];
+      beta /= get_beta_cqi_offset(cfg->uci_offset.I_offset_cqi);
     }
     ret = srslte_uci_encode_ack_ri(cfg,
                                    uci_data->ack.ack_value,
@@ -1244,9 +1296,9 @@ int srslte_ulsch_encode(srslte_sch_t*       q,
     uint32_t p = q->ack_ri_bits[i].position;
     if (p < nb_q) {
       if (q->ack_ri_bits[i].type == UCI_BIT_1) {
-        q_bits[p / 8] |= (1 << (7 - p % 8));
+        q_bits[p / 8] |= (1U << (7 - p % 8));
       } else {
-        q_bits[p / 8] &= ~(1 << (7 - p % 8));
+        q_bits[p / 8] &= ~(1U << (7 - p % 8));
       }
     } else {
       ERROR("Invalid RI/ACK bit %d/%d, position %d. Max bits=%d, Qm=%d\n", i, nof_ri_ack_bits, p, nb_q, Qm);
@@ -1256,4 +1308,23 @@ int srslte_ulsch_encode(srslte_sch_t*       q,
   INFO("Q_prime_ack=%d, Q_prime_cqi=%d, Q_prime_ri=%d\n", Q_prime_ack, Q_prime_cqi, Q_prime_ri);
 
   return nof_ri_ack_bits;
+}
+
+void srslte_sl_ulsch_interleave(uint8_t* g_bits,
+                                uint32_t Qm,
+                                uint32_t H_prime_total,
+                                uint32_t N_pusch_symbs,
+                                uint8_t* q_bits)
+{
+  ulsch_interleave(g_bits, Qm, H_prime_total, N_pusch_symbs, q_bits, NULL, 0, false);
+}
+
+void srslte_sl_ulsch_deinterleave(int16_t*  q_bits,
+                                  uint32_t  Qm,
+                                  uint32_t  H_prime_total,
+                                  uint32_t  N_pusch_symbs,
+                                  int16_t*  g_bits,
+                                  uint32_t* inteleaver_lut)
+{
+  ulsch_deinterleave(q_bits, Qm, H_prime_total, N_pusch_symbs, g_bits, NULL, 0, NULL, inteleaver_lut);
 }

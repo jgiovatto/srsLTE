@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -28,6 +28,7 @@
 #ifndef SRSLTE_MULTIQUEUE_H
 #define SRSLTE_MULTIQUEUE_H
 
+#include "move_callback.h"
 #include <algorithm>
 #include <condition_variable>
 #include <functional>
@@ -40,25 +41,72 @@ namespace srslte {
 template <typename myobj>
 class multiqueue_handler
 {
-  // NOTE: needed to create a queue wrapper to make its move ctor noexcept.
-  // otherwise we couldnt use the resize method of std::vector<queue<myobj>> if myobj is move-only
-  class queue_wrapper : private std::queue<myobj>
+  class circular_buffer
   {
   public:
-    queue_wrapper() = default;
-    queue_wrapper(queue_wrapper&& other) noexcept : std::queue<myobj>(std::move(other)) {}
-    using std::queue<myobj>::push;
-    using std::queue<myobj>::pop;
-    using std::queue<myobj>::size;
-    using std::queue<myobj>::empty;
-    using std::queue<myobj>::front;
+    circular_buffer(uint32_t cap) : buffer(cap + 1) {}
+    circular_buffer(circular_buffer&& other) noexcept
+    {
+      active       = other.active;
+      other.active = false;
+      widx         = other.widx;
+      ridx         = other.ridx;
+      buffer       = std::move(other.buffer);
+    }
 
     std::condition_variable cv_full;
     bool                    active = true;
+
+    bool   empty() const { return widx == ridx; }
+    size_t size() const { return widx >= ridx ? widx - ridx : widx + (buffer.size() - ridx); }
+    bool   full() const { return (ridx > 0) ? widx == ridx - 1 : widx == buffer.size() - 1; }
+    size_t capacity() const { return buffer.size() - 1; }
+
+    template <typename T>
+    void push(T&& o) noexcept
+    {
+      buffer[widx++] = std::forward<T>(o);
+      if (widx >= buffer.size()) {
+        widx = 0;
+      }
+    }
+
+    void pop() noexcept
+    {
+      ridx++;
+      if (ridx >= buffer.size()) {
+        ridx = 0;
+      }
+    }
+
+    myobj&       front() noexcept { return buffer[ridx]; }
+    const myobj& front() const noexcept { return buffer[ridx]; }
+
+  private:
+    std::vector<myobj> buffer;
+    size_t             widx = 0, ridx = 0;
   };
 
 public:
-  explicit multiqueue_handler(uint32_t capacity_ = std::numeric_limits<uint32_t>::max()) : capacity(capacity_) {}
+  class queue_handler
+  {
+  public:
+    queue_handler() = default;
+    queue_handler(multiqueue_handler<myobj>* parent_, int id) : parent(parent_), queue_id(id) {}
+    template <typename FwdRef>
+    void push(FwdRef&& value)
+    {
+      parent->push(queue_id, std::forward<FwdRef>(value));
+    }
+    bool                   try_push(const myobj& value) { return parent->try_push(queue_id, value); }
+    std::pair<bool, myobj> try_push(myobj&& value) { return parent->try_push(queue_id, std::move(value)); }
+
+  private:
+    multiqueue_handler<myobj>* parent   = nullptr;
+    int                        queue_id = -1;
+  };
+
+  explicit multiqueue_handler(uint32_t capacity_ = 8192) : capacity(capacity_) {}
   ~multiqueue_handler() { reset(); }
 
   void reset()
@@ -90,7 +138,7 @@ public:
       ;
     if (qidx == queues.size()) {
       // create new queue
-      queues.emplace_back();
+      queues.emplace_back(capacity);
     } else {
       queues[qidx].active = true;
     }
@@ -112,7 +160,7 @@ public:
   {
     {
       std::unique_lock<std::mutex> lock(mutex);
-      while (is_queue_active_(q_idx) and queues[q_idx].size() >= capacity) {
+      while (is_queue_active_(q_idx) and queues[q_idx].full()) {
         nof_threads_waiting++;
         queues[q_idx].cv_full.wait(lock);
         nof_threads_waiting--;
@@ -130,7 +178,7 @@ public:
   {
     {
       std::lock_guard<std::mutex> lock(mutex);
-      if (not is_queue_active_(q_idx) or queues[q_idx].size() >= capacity) {
+      if (not is_queue_active_(q_idx) or queues[q_idx].full()) {
         return false;
       }
       queues[q_idx].push(value);
@@ -143,7 +191,7 @@ public:
   {
     {
       std::lock_guard<std::mutex> lck(mutex);
-      if (not is_queue_active_(q_idx) or queues[q_idx].size() >= capacity) {
+      if (not is_queue_active_(q_idx) or queues[q_idx].full()) {
         return {false, std::move(value)};
       }
       queues[q_idx].push(std::move(value));
@@ -156,24 +204,34 @@ public:
   {
     std::unique_lock<std::mutex> lock(mutex);
     while (running) {
-      // Round-robin for all queues
-      for (const queue_wrapper& q : queues) {
-        spin_idx = (spin_idx + 1) % queues.size();
-        if (is_queue_active_(spin_idx) and not queues[spin_idx].empty()) {
-          if (value) {
-            *value = std::move(queues[spin_idx].front());
-          }
-          queues[spin_idx].pop();
-          if (nof_threads_waiting > 0) {
-            lock.unlock();
-            queues[spin_idx].cv_full.notify_one();
-          }
-          return spin_idx;
+      if (round_robin_pop_(value)) {
+        if (nof_threads_waiting > 0) {
+          lock.unlock();
+          queues[spin_idx].cv_full.notify_one();
         }
+        return spin_idx;
       }
       nof_threads_waiting++;
       cv_empty.wait(lock);
       nof_threads_waiting--;
+    }
+    cv_exit.notify_one();
+    return -1;
+  }
+
+  int try_pop(myobj* value)
+  {
+    std::unique_lock<std::mutex> lock(mutex);
+    if (running) {
+      if (round_robin_pop_(value)) {
+        if (nof_threads_waiting > 0) {
+          lock.unlock();
+          queues[spin_idx].cv_full.notify_one();
+        }
+        return spin_idx;
+      }
+      // didn't find any task
+      return -1;
     }
     cv_exit.notify_one();
     return -1;
@@ -214,50 +272,38 @@ public:
     return is_queue_active_(qidx);
   }
 
+  queue_handler get_queue_handler() { return {this, add_queue()}; }
+
 private:
   bool is_queue_active_(int qidx) const { return running and queues[qidx].active; }
 
-  std::mutex                 mutex;
-  std::condition_variable    cv_empty, cv_exit;
-  uint32_t                   spin_idx = 0;
-  bool                       running  = true;
-  std::vector<queue_wrapper> queues;
-  uint32_t                   capacity            = 0;
-  uint32_t                   nof_threads_waiting = 0;
-};
-
-/***********************************************************
- * Specialization for tasks with content that is move-only
- **********************************************************/
-
-class move_task_t
-{
-public:
-  move_task_t() = default;
-  template <typename Func>
-  move_task_t(Func&& f) : task_ptr(new derived_task<Func>(std::forward<Func>(f)))
+  bool round_robin_pop_(myobj* value)
   {
+    // Round-robin for all queues
+    for (const circular_buffer& q : queues) {
+      spin_idx = (spin_idx + 1) % queues.size();
+      if (is_queue_active_(spin_idx) and not queues[spin_idx].empty()) {
+        if (value) {
+          *value = std::move(queues[spin_idx].front());
+        }
+        queues[spin_idx].pop();
+        return true;
+      }
+    }
+    return false;
   }
-  void operator()() { (*task_ptr)(); }
 
-private:
-  struct base_task {
-    virtual ~base_task() {}
-    virtual void operator()() = 0;
-  };
-  template <typename Func>
-  struct derived_task : public base_task {
-    derived_task(Func&& f_) : f(std::forward<Func>(f_)) {}
-    void operator()() final { f(); }
-
-  private:
-    Func f;
-  };
-
-  std::unique_ptr<base_task> task_ptr;
+  std::mutex                   mutex;
+  std::condition_variable      cv_empty, cv_exit;
+  uint32_t                     spin_idx = 0;
+  bool                         running  = true;
+  std::vector<circular_buffer> queues;
+  uint32_t                     capacity            = 0;
+  uint32_t                     nof_threads_waiting = 0;
 };
 
-using multiqueue_task_handler = multiqueue_handler<move_task_t>;
+//! Specialization for tasks
+using task_multiqueue = multiqueue_handler<move_task_t>;
 
 } // namespace srslte
 

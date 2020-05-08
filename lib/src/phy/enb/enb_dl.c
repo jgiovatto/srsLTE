@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -44,21 +44,31 @@ int srslte_enb_dl_init(srslte_enb_dl_t* q, cf_t* out_buffer[SRSLTE_MAX_PORTS], u
     bzero(q, sizeof(srslte_enb_dl_t));
 
     for (int i = 0; i < SRSLTE_MAX_PORTS; i++) {
-      q->sf_symbols[i] = srslte_vec_malloc(SRSLTE_SF_LEN_RE(max_prb, SRSLTE_CP_NORM) * sizeof(cf_t));
+      q->sf_symbols[i] = srslte_vec_cf_malloc(SRSLTE_SF_LEN_RE(max_prb, SRSLTE_CP_NORM));
       if (!q->sf_symbols[i]) {
         perror("malloc");
         goto clean_exit;
       }
     }
 
+    srslte_ofdm_cfg_t ofdm_cfg = {};
+    ofdm_cfg.nof_prb           = max_prb;
+    ofdm_cfg.cp                = SRSLTE_CP_NORM;
+    ofdm_cfg.normalize         = false;
     for (int i = 0; i < SRSLTE_MAX_PORTS; i++) {
-      if (srslte_ofdm_tx_init(&q->ifft[i], SRSLTE_CP_NORM, q->sf_symbols[i], out_buffer[i], max_prb)) {
+      ofdm_cfg.in_buffer  = q->sf_symbols[i];
+      ofdm_cfg.out_buffer = out_buffer[i];
+      ofdm_cfg.sf_type    = SRSLTE_SF_NORM;
+      if (srslte_ofdm_tx_init_cfg(&q->ifft[i], &ofdm_cfg)) {
         ERROR("Error initiating FFT (%d)\n", i);
         goto clean_exit;
       }
     }
 
-    if (srslte_ofdm_tx_init_mbsfn(&q->ifft_mbsfn, SRSLTE_CP_EXT, q->sf_symbols[0], out_buffer[0], max_prb)) {
+    ofdm_cfg.in_buffer  = q->sf_symbols[0];
+    ofdm_cfg.out_buffer = out_buffer[0];
+    ofdm_cfg.sf_type    = SRSLTE_SF_MBSFN;
+    if (srslte_ofdm_tx_init_cfg(&q->ifft_mbsfn, &ofdm_cfg)) {
       ERROR("Error initiating FFT \n");
       goto clean_exit;
     }
@@ -288,7 +298,7 @@ void srslte_enb_dl_prepare_power_allocation(srslte_enb_dl_t* q)
 static void clear_sf(srslte_enb_dl_t* q)
 {
   for (int i = 0; i < q->cell.nof_ports; i++) {
-    bzero(q->sf_symbols[i], CURRENT_SFLEN_RE * sizeof(cf_t));
+    srslte_vec_cf_zero(q->sf_symbols[i], CURRENT_SFLEN_RE);
   }
 }
 
@@ -402,32 +412,36 @@ void srslte_enb_dl_gen_signal(srslte_enb_dl_t* q)
 
   if (q->dl_sf.sf_type == SRSLTE_SF_MBSFN) {
     srslte_ofdm_tx_sf(&q->ifft_mbsfn);
-    srslte_vec_sc_prod_cfc(
-        q->ifft_mbsfn.out_buffer, norm_factor, q->ifft_mbsfn.out_buffer, (uint32_t)SRSLTE_SF_LEN_PRB(q->cell.nof_prb));
+    srslte_vec_sc_prod_cfc(q->ifft_mbsfn.cfg.out_buffer,
+                           norm_factor,
+                           q->ifft_mbsfn.cfg.out_buffer,
+                           (uint32_t)SRSLTE_SF_LEN_PRB(q->cell.nof_prb));
   } else {
     for (int i = 0; i < q->cell.nof_ports; i++) {
       srslte_ofdm_tx_sf(&q->ifft[i]);
-      srslte_vec_sc_prod_cfc(
-          q->ifft[i].out_buffer, norm_factor, q->ifft[i].out_buffer, (uint32_t)SRSLTE_SF_LEN_PRB(q->cell.nof_prb));
+      srslte_vec_sc_prod_cfc(q->ifft[i].cfg.out_buffer,
+                             norm_factor,
+                             q->ifft[i].cfg.out_buffer,
+                             (uint32_t)SRSLTE_SF_LEN_PRB(q->cell.nof_prb));
     }
   }
 }
 
-bool srslte_enb_dl_gen_cqi_periodic(srslte_cell_t*    cell,
-                                    srslte_dl_cfg_t*  dl_cfg,
-                                    uint32_t          tti,
-                                    uint32_t          ri,
-                                    srslte_cqi_cfg_t* cqi_cfg)
+bool srslte_enb_dl_gen_cqi_periodic(const srslte_cell_t*   cell,
+                                    const srslte_dl_cfg_t* dl_cfg,
+                                    uint32_t               tti,
+                                    uint32_t               last_ri,
+                                    srslte_cqi_cfg_t*      cqi_cfg)
 {
   bool cqi_enabled = false;
   if (srslte_cqi_periodic_ri_send(&dl_cfg->cqi_report, tti, cell->frame_type)) {
-    cqi_cfg->ri_len = 1; /* Asumes only 1 bit for RI */
+    cqi_cfg->ri_len = srslte_ri_nof_bits(cell);
     cqi_enabled     = true;
   } else if (srslte_cqi_periodic_send(&dl_cfg->cqi_report, tti, cell->frame_type)) {
     cqi_cfg->type = SRSLTE_CQI_TYPE_WIDEBAND;
     if (dl_cfg->tm == SRSLTE_TM4) {
       cqi_cfg->pmi_present     = true;
-      cqi_cfg->rank_is_not_one = ri > 0;
+      cqi_cfg->rank_is_not_one = last_ri > 0;
     }
     cqi_enabled          = true;
     cqi_cfg->data_enable = cqi_enabled;
@@ -435,17 +449,17 @@ bool srslte_enb_dl_gen_cqi_periodic(srslte_cell_t*    cell,
   return cqi_enabled;
 }
 
-bool srslte_enb_dl_gen_cqi_aperiodic(srslte_cell_t*    cell,
-                                     srslte_dl_cfg_t*  dl_cfg,
-                                     uint32_t          ri,
-                                     srslte_cqi_cfg_t* cqi_cfg)
+bool srslte_enb_dl_gen_cqi_aperiodic(const srslte_cell_t*   cell,
+                                     const srslte_dl_cfg_t* dl_cfg,
+                                     uint32_t               ri,
+                                     srslte_cqi_cfg_t*      cqi_cfg)
 {
-  bool                     cqi_enabled    = false;
-  srslte_cqi_report_cfg_t* cqi_report_cfg = &dl_cfg->cqi_report;
+  bool                           cqi_enabled    = false;
+  const srslte_cqi_report_cfg_t* cqi_report_cfg = &dl_cfg->cqi_report;
 
   cqi_cfg->type = SRSLTE_CQI_TYPE_SUBBAND_HL;
   if (dl_cfg->tm == SRSLTE_TM3 || dl_cfg->tm == SRSLTE_TM4) {
-    cqi_cfg->ri_present = true;
+    cqi_cfg->ri_len = srslte_ri_nof_bits(cell);
   }
   cqi_cfg->N                  = (cell->nof_prb > 7) ? srslte_cqi_hl_get_no_subbands(cell->nof_prb) : 0;
   cqi_cfg->four_antenna_ports = (cell->nof_ports == 4);
@@ -475,4 +489,153 @@ void srslte_enb_dl_save_signal(srslte_enb_dl_t* q)
 
   // printf("Saved files for tti=%d, sf=%d, cfi=%d, mcs=%d, tbs=%d, rv=%d, rnti=0x%x\n", tti, tti%10, cfi,
   //       q->dci.mcs[0].idx, q->dci.mcs[0].tbs, rv_idx, rnti);
+}
+
+void srslte_enb_dl_gen_ack(const srslte_cell_t*      cell,
+                           const srslte_dl_sf_cfg_t* sf,
+                           const srslte_pdsch_ack_t* ack_info,
+                           srslte_uci_cfg_t*         uci_cfg)
+{
+  srslte_uci_data_t uci_data = {};
+
+  // Copy UCI configuration
+  uci_data.cfg = *uci_cfg;
+
+  srslte_ue_dl_gen_ack(cell, sf, ack_info, &uci_data);
+
+  // Copy back the result of uci configuration
+  *uci_cfg = uci_data.cfg;
+}
+
+static void enb_dl_get_ack_fdd_all_spatial_bundling(const srslte_uci_value_t* uci_value,
+                                                    srslte_pdsch_ack_t*       pdsch_ack,
+                                                    uint32_t                  nof_tb)
+{
+  for (uint32_t cc_idx = 0; cc_idx < pdsch_ack->nof_cc; cc_idx++) {
+    if (pdsch_ack->cc[cc_idx].m[0].present) {
+      if (uci_value->ack.ack_value[cc_idx] == 1) {
+        for (uint32_t tb = 0; tb < nof_tb; tb++) {
+          // Check that TB was transmitted
+          if (pdsch_ack->cc[cc_idx].m[0].value[tb] != 2) {
+            pdsch_ack->cc[cc_idx].m[0].value[tb] = uci_value->ack.ack_value[cc_idx];
+          }
+        }
+      }
+    }
+  }
+}
+
+static void
+enb_dl_get_ack_fdd_pcell_skip_drx(const srslte_uci_value_t* uci_value, srslte_pdsch_ack_t* pdsch_ack, uint32_t nof_tb)
+{
+  if (pdsch_ack->cc[0].m[0].present) {
+    if (uci_value->ack.ack_value[0] == 1) {
+      for (uint32_t tb = 0; tb < nof_tb; tb++) {
+        // Check that TB was transmitted
+        if (pdsch_ack->cc[0].m[0].value[tb] != 2) {
+          pdsch_ack->cc[0].m[0].value[tb] = uci_value->ack.ack_value[0];
+        }
+      }
+    }
+  }
+}
+
+static void
+enb_dl_get_ack_fdd_all_keep_drx(const srslte_uci_value_t* uci_value, srslte_pdsch_ack_t* pdsch_ack, uint32_t nof_tb)
+{
+  for (uint32_t cc_idx = 0; cc_idx < pdsch_ack->nof_cc; cc_idx++) {
+    if (pdsch_ack->cc[cc_idx].m[0].present) {
+      if (uci_value->ack.ack_value[cc_idx] == 1) {
+        for (uint32_t tb = 0; tb < nof_tb; tb++) {
+          // Check that TB was transmitted
+          if (pdsch_ack->cc[cc_idx].m[0].value[tb] != 2) {
+            pdsch_ack->cc[cc_idx].m[0].value[tb] = uci_value->ack.ack_value[cc_idx * nof_tb + tb];
+          }
+        }
+      }
+    }
+  }
+}
+
+static void
+get_ack_fdd(const srslte_uci_cfg_t* uci_cfg, const srslte_uci_value_t* uci_value, srslte_pdsch_ack_t* pdsch_ack)
+{
+  // Number of transport blocks for the current Transmission Mode
+  uint32_t nof_tb = 1;
+  if (pdsch_ack->transmission_mode > SRSLTE_TM2) {
+    nof_tb = SRSLTE_MAX_CODEWORDS;
+  }
+
+  // Count number of transmissions
+  uint32_t tb_count     = 0; // All transmissions
+  uint32_t tb_count_cc0 = 0; // Transmissions on PCell
+  for (uint32_t cc_idx = 0; cc_idx < pdsch_ack->nof_cc; cc_idx++) {
+    for (uint32_t tb = 0; tb < nof_tb; tb++) {
+      if (pdsch_ack->cc[cc_idx].m[0].present && pdsch_ack->cc[cc_idx].m[0].value[tb] != 2) {
+        tb_count++;
+      }
+
+      // Save primary cell number of TB
+      if (cc_idx == 0) {
+        tb_count_cc0 = tb_count;
+      }
+    }
+  }
+
+  // Does CSI report need to be transmitted?
+  bool csi_report = uci_cfg->cqi.data_enable || uci_cfg->cqi.ri_len;
+
+  switch (pdsch_ack->ack_nack_feedback_mode) {
+
+    case SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_NORMAL:
+      // Get ACK from PCell only, skipping DRX
+      enb_dl_get_ack_fdd_pcell_skip_drx(uci_value, pdsch_ack, nof_tb);
+      break;
+    case SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_CS:
+      if (pdsch_ack->nof_cc == 1) {
+        enb_dl_get_ack_fdd_pcell_skip_drx(uci_value, pdsch_ack, nof_tb);
+      } else if (pdsch_ack->is_pusch_available) {
+        enb_dl_get_ack_fdd_all_keep_drx(uci_value, pdsch_ack, nof_tb);
+      } else if (uci_value->scheduling_request) {
+        // For FDD with PUCCH format 1b with channel selection, when both HARQ-ACK and SR are transmitted in the same
+        // sub-frame a UE shall transmit the HARQ-ACK on its assigned HARQ-ACK PUCCH resource with channel selection as
+        // defined in subclause 10.1.2.2.1 for a negative SR transmission and transmit one HARQ-ACK bit per serving cell
+        // on its assigned SR PUCCH resource for a positive SR transmission according to the following:
+        // − if only one transport block or a PDCCH indicating downlink SPS release is detected on a serving cell, the
+        //   HARQ-ACK bit for the serving cell is the HARQ-ACK bit corresponding to the transport block or the PDCCH
+        //   indicating downlink SPS release;
+        // − if two transport blocks are received on a serving cell, the HARQ-ACK bit for the serving cell is generated
+        //   by spatially bundling the HARQ-ACK bits corresponding to the transport blocks;
+        // − if neither PDSCH transmission for which HARQ-ACK response shall be provided nor PDCCH indicating
+        //   downlink SPS release is detected for a serving cell, the HARQ-ACK bit for the serving cell is set to NACK;
+        enb_dl_get_ack_fdd_all_spatial_bundling(uci_value, pdsch_ack, nof_tb);
+      } else if (csi_report) {
+        enb_dl_get_ack_fdd_pcell_skip_drx(uci_value, pdsch_ack, nof_tb);
+      } else {
+        enb_dl_get_ack_fdd_all_keep_drx(uci_value, pdsch_ack, nof_tb);
+      }
+      break;
+    case SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_PUCCH3:
+      if (tb_count == tb_count_cc0) {
+        enb_dl_get_ack_fdd_pcell_skip_drx(uci_value, pdsch_ack, nof_tb);
+      } else {
+        enb_dl_get_ack_fdd_all_keep_drx(uci_value, pdsch_ack, nof_tb);
+      }
+      break;
+    case SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_ERROR:
+    default:; // Do nothing
+      break;
+  }
+}
+
+void srslte_enb_dl_get_ack(const srslte_cell_t*      cell,
+                           const srslte_uci_cfg_t*   uci_cfg,
+                           const srslte_uci_value_t* uci_value,
+                           srslte_pdsch_ack_t*       pdsch_ack)
+{
+  if (cell->frame_type == SRSLTE_FDD) {
+    get_ack_fdd(uci_cfg, uci_value, pdsch_ack);
+  } else {
+    ERROR("Not implemented for TDD\n");
+  }
 }

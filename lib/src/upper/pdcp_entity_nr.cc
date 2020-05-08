@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -20,17 +20,16 @@
  */
 
 #include "srslte/upper/pdcp_entity_nr.h"
-#include "srslte/common/int_helpers.h"
 #include "srslte/common/security.h"
 
 namespace srslte {
 
-pdcp_entity_nr::pdcp_entity_nr(srsue::rlc_interface_pdcp* rlc_,
-                               srsue::rrc_interface_pdcp* rrc_,
-                               srsue::gw_interface_pdcp*  gw_,
-                               srslte::timer_handler*     timers_,
-                               srslte::log*               log_) :
-  pdcp_entity_base(timers_, log_),
+pdcp_entity_nr::pdcp_entity_nr(srsue::rlc_interface_pdcp*      rlc_,
+                               srsue::rrc_interface_pdcp*      rrc_,
+                               srsue::gw_interface_pdcp*       gw_,
+                               srslte::task_handler_interface* task_executor_,
+                               srslte::log_ref                 log_) :
+  pdcp_entity_base(task_executor_, log_),
   rlc(rlc_),
   rrc(rrc_),
   gw(gw_),
@@ -42,16 +41,16 @@ pdcp_entity_nr::~pdcp_entity_nr() {}
 
 void pdcp_entity_nr::init(uint32_t lcid_, pdcp_config_t cfg_)
 {
-  lcid          = lcid_;
-  cfg           = cfg_;
-  active        = true;
-  do_integrity  = false;
-  do_encryption = false;
+  lcid                 = lcid_;
+  cfg                  = cfg_;
+  active               = true;
+  integrity_direction  = DIRECTION_NONE;
+  encryption_direction = DIRECTION_NONE;
 
   window_size = 1 << (cfg.sn_len - 1);
 
   // Timers
-  reordering_timer = timers->get_unique_timer();
+  reordering_timer = task_executor->get_unique_timer();
 
   // configure timer
   if (static_cast<uint32_t>(cfg.t_reordering) > 0) {
@@ -73,9 +72,7 @@ void pdcp_entity_nr::reestablish()
 void pdcp_entity_nr::reset()
 {
   active = false;
-  if (log != nullptr) {
-    log->debug("Reset %s\n", rrc->get_rb_name(lcid).c_str());
-  }
+  log->debug("Reset %s\n", rrc->get_rb_name(lcid).c_str());
 }
 
 // SDAP/RRC interface
@@ -89,10 +86,10 @@ void pdcp_entity_nr::write_sdu(unique_byte_buffer_t sdu, bool blocking)
   // Log SDU
   log->info_hex(sdu->msg,
                 sdu->N_bytes,
-                "TX %s SDU, do_integrity = %s, do_encryption = %s",
+                "TX %s SDU, integrity=%s, encryption=%s",
                 rrc->get_rb_name(lcid).c_str(),
-                (do_integrity) ? "true" : "false",
-                (do_encryption) ? "true" : "false");
+                srslte_direction_text[integrity_direction],
+                srslte_direction_text[encryption_direction]);
 
   // Check for COUNT overflow
   if (tx_overflow) {
@@ -105,7 +102,7 @@ void pdcp_entity_nr::write_sdu(unique_byte_buffer_t sdu, bool blocking)
 
   // Start discard timer
   if (cfg.discard_timer != pdcp_discard_timer_t::infinity) {
-    timer_handler::unique_timer discard_timer = timers->get_unique_timer();
+    timer_handler::unique_timer discard_timer = task_executor->get_unique_timer();
     discard_callback            discard_fnc(this, tx_next);
     discard_timer.set(static_cast<uint32_t>(cfg.discard_timer), discard_fnc);
     discard_timer.run();
@@ -147,11 +144,11 @@ void pdcp_entity_nr::write_pdu(unique_byte_buffer_t pdu)
   // Log PDU
   log->info_hex(pdu->msg,
                 pdu->N_bytes,
-                "RX %s PDU (%d B), do_integrity = %s, do_encryption = %s",
+                "RX %s PDU (%d B), integrity=%s, encryption=%s",
                 rrc->get_rb_name(lcid).c_str(),
                 pdu->N_bytes,
-                (do_integrity) ? "true" : "false",
-                (do_encryption) ? "true" : "false");
+                srslte_direction_text[integrity_direction],
+                srslte_direction_text[encryption_direction]);
 
   // Sanity check
   if (pdu->N_bytes <= cfg.hdr_len_bytes) {
@@ -160,6 +157,7 @@ void pdcp_entity_nr::write_pdu(unique_byte_buffer_t pdu)
 
   // Extract RCVD_SN from header
   uint32_t rcvd_sn = read_data_header(pdu);
+  discard_data_header(pdu); // FIXME Check wheather the header is part of integrity check.
 
   // Extract MAC
   uint8_t mac[4];
@@ -228,88 +226,6 @@ void pdcp_entity_nr::write_pdu(unique_byte_buffer_t pdu)
 /*
  * Packing / Unpacking Helpers
  */
-uint32_t pdcp_entity_nr::read_data_header(const unique_byte_buffer_t& pdu)
-{
-  // Check PDU is long enough to extract header
-  if (pdu->N_bytes <= cfg.hdr_len_bytes) {
-    log->error("PDU too small to extract header\n");
-    return 0;
-  }
-
-  // Extract RCVD_SN
-  uint16_t rcvd_sn_16 = 0;
-  uint32_t rcvd_sn_32 = 0;
-  switch (cfg.sn_len) {
-    case PDCP_SN_LEN_12:
-      srslte::uint8_to_uint16(pdu->msg, &rcvd_sn_16);
-      rcvd_sn_32 = SN(rcvd_sn_16);
-      break;
-    case PDCP_SN_LEN_18:
-      srslte::uint8_to_uint24(pdu->msg, &rcvd_sn_32);
-      rcvd_sn_32 = SN(rcvd_sn_32);
-      break;
-    default:
-      log->error("Cannot extract RCVD_SN, invalid SN length configured: %d\n", cfg.sn_len);
-  }
-
-  // Discard header
-  pdu->msg += cfg.hdr_len_bytes;
-  pdu->N_bytes -= cfg.hdr_len_bytes;
-  return rcvd_sn_32;
-}
-
-void pdcp_entity_nr::write_data_header(const srslte::unique_byte_buffer_t& sdu, uint32_t count)
-{
-  // Add room for header
-  if (cfg.hdr_len_bytes > sdu->get_headroom()) {
-    log->error("Not enough space to add header\n");
-    return;
-  }
-  sdu->msg -= cfg.hdr_len_bytes;
-  sdu->N_bytes += cfg.hdr_len_bytes;
-
-  // Add SN
-  switch (cfg.sn_len) {
-    case PDCP_SN_LEN_12:
-      srslte::uint16_to_uint8(SN(count), sdu->msg);
-      if (is_drb()) {
-        sdu->msg[0] |= 0x80; // On Data PDUs for DRBs we must set the D flag.
-      }
-      break;
-    case PDCP_SN_LEN_18:
-      srslte::uint24_to_uint8(SN(count), sdu->msg);
-      sdu->msg[0] |= 0x80; // Data PDU and SN LEN 18 implies DRB, D flag must be present
-      break;
-    default:
-      log->error("Invalid SN length configuration: %d bits\n", cfg.sn_len);
-  }
-}
-
-void pdcp_entity_nr::extract_mac(const unique_byte_buffer_t& pdu, uint8_t* mac)
-{
-  // Check enough space for MAC
-  if (pdu->N_bytes < 4) {
-    log->error("PDU too small to extract MAC-I\n");
-    return;
-  }
-
-  // Extract MAC
-  memcpy(mac, &pdu->msg[pdu->N_bytes - 4], 4);
-  pdu->N_bytes -= 4;
-}
-
-void pdcp_entity_nr::append_mac(const unique_byte_buffer_t& sdu, uint8_t* mac)
-{
-  // Check enough space for MAC
-  if (sdu->N_bytes + 4 > sdu->get_tailroom()) {
-    log->error("Not enough space to add MAC-I\n");
-    return;
-  }
-
-  // Append MAC
-  memcpy(&sdu->msg[sdu->N_bytes], mac, 4);
-  sdu->N_bytes += 4;
-}
 
 // Deliver all consecutivly associated COUNTs.
 // Update RX_NEXT after submitting to higher layers

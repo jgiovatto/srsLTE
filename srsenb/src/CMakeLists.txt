@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -18,7 +18,6 @@
 # and at http://www.gnu.org/licenses/.
 #
 
-add_subdirectory(radio)
 add_subdirectory(phy)
 add_subdirectory(stack)
 
@@ -36,17 +35,18 @@ endif (RPATH)
 add_library(enb_cfg_parser parser.cc enb_cfg_parser.cc)
 
 add_executable(srsenb main.cc enb.cc metrics_stdout.cc metrics_csv.cc)
-target_link_libraries(srsenb  srsenb_radio
-                              srsenb_phy
+target_link_libraries(srsenb  srsenb_phy
                               srsenb_stack
                               srsenb_upper
                               srsenb_mac
                               srsenb_rrc
                               srslte_common
+                              srslte_mac
                               srslte_phy
                               srslte_upper
                               srslte_radio
                               rrc_asn1
+                              s1ap_asn1
                               enb_cfg_parser
                               ${CMAKE_THREAD_LIBS_INIT}
                               ${Boost_LIBRARIES} 

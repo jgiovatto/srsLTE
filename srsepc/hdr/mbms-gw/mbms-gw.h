@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -30,9 +30,9 @@
 
 #include "srslte/asn1/gtpc.h"
 #include "srslte/common/buffer_pool.h"
-#include "srslte/common/log.h"
 #include "srslte/common/log_filter.h"
 #include "srslte/common/logger_file.h"
+#include "srslte/common/logmap.h"
 #include "srslte/common/threads.h"
 #include "srslte/srslte.h"
 #include <cstddef>
@@ -59,12 +59,12 @@ struct pseudo_hdr {
   uint16_t udp_len;
 };
 
-class mbms_gw : public thread
+class mbms_gw : public srslte::thread
 {
 public:
   static mbms_gw* get_instance(void);
   static void     cleanup(void);
-  int             init(mbms_gw_args_t* args, srslte::log_filter* mbms_gw_log);
+  int             init(mbms_gw_args_t* args, srslte::log_ref mbms_gw_log);
   void            stop();
   void            run_thread();
 
@@ -82,7 +82,7 @@ private:
   /* Members */
   bool                      m_running;
   srslte::byte_buffer_pool* m_pool;
-  srslte::log_filter*       m_mbms_gw_log;
+  srslte::log_ref           m_mbms_gw_log;
 
   bool m_sgi_mb_up;
   int  m_sgi_mb_if;

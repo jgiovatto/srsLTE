@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -43,11 +43,19 @@ class ttcn3_helpers
 {
 public:
   typedef struct {
-    bool     rb_is_srb;
+    bool     now; ///< If set to false, the TTI field contains a valid TTI
+    uint32_t tti;
+  } timing_info_t;
+
+  typedef struct {
     uint8_t  rb_id;
-    uint32_t ul_value;
-    uint32_t dl_value;
+    bool     rb_is_srb;
+    bool     ul_value_valid;
+    uint16_t ul_value;
+    bool     dl_value_valid;
+    uint16_t dl_value;
   } pdcp_count_t;
+  typedef std::vector<ttcn3_helpers::pdcp_count_t> pdcp_count_map_t;
 
   static std::string get_ctrl_cnf(const std::string protocol_, const std::string version_, const std::string addr_)
   {
@@ -65,7 +73,6 @@ public:
     conn_id.AddMember("Protocol", protocol, resp.GetAllocator());
 
     // Version
-
     Value ipAddr(kObjectType);
     Value version(version_.c_str(), resp.GetAllocator());
     Value addr(addr_.c_str(), resp.GetAllocator());
@@ -351,6 +358,47 @@ public:
     assert(b.HasMember("CnfFlag"));
 
     const Value& config_flag = b["CnfFlag"];
+    assert(config_flag.IsBool());
+
+    return config_flag.GetBool();
+  }
+
+  static timing_info_t get_timing_info(Document& document)
+  {
+    timing_info_t timing = {};
+
+    // check for Now flag
+    if (document.HasMember("Common") && document["Common"].HasMember("TimingInfo") &&
+        document["Common"]["TimingInfo"].HasMember("Now")) {
+      timing.now = true;
+    }
+
+    if (document.HasMember("Common") && document["Common"].HasMember("TimingInfo") &&
+        document["Common"]["TimingInfo"].HasMember("SubFrame") &&
+        document["Common"]["TimingInfo"]["SubFrame"].HasMember("SFN") &&
+        document["Common"]["TimingInfo"]["SubFrame"]["SFN"].HasMember("Number")) {
+
+      timing.tti = document["Common"]["TimingInfo"]["SubFrame"]["SFN"]["Number"].GetInt() * 10;
+
+      // check SF index only
+      if (document["Common"]["TimingInfo"]["SubFrame"].HasMember("Subframe") &&
+          document["Common"]["TimingInfo"]["SubFrame"]["Subframe"].HasMember("Number")) {
+        timing.tti += document["Common"]["TimingInfo"]["SubFrame"]["Subframe"]["Number"].GetInt();
+      }
+    }
+    return timing;
+  }
+
+  static bool get_follow_on_flag(Document& document)
+  {
+    const Value& a = document["Common"];
+
+    // check cnf flag
+    assert(a.HasMember("ControlInfo"));
+    const Value& b = a["ControlInfo"];
+    assert(b.HasMember("FollowOnFlag"));
+
+    const Value& config_flag = b["FollowOnFlag"];
     assert(config_flag.IsBool());
 
     return config_flag.GetBool();

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -49,8 +49,6 @@
 
 #define SRSLTE_NSSS_CORR_FILTER_LEN 1508
 #define SRSLTE_NSSS_CORR_OFFSET 412
-
-#define SRSLTE_NUM_PCI 504
 
 #define SRSLTE_NSSS_PERIOD 2
 #define SRSLTE_NSSS_NUM_SF_DETECT (SRSLTE_NSSS_PERIOD)

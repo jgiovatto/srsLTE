@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -26,6 +26,3 @@ set(SOURCES enb_stack_lte.cc)
 
 add_library(srsenb_stack STATIC ${SOURCES})
 target_link_libraries(srsenb_stack)
-
-install(TARGETS srsenb_stack DESTINATION ${LIBRARY_DIR})
-

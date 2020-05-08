@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -22,6 +22,7 @@
 #include <complex.h>
 #include <inttypes.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,7 +85,7 @@ int srslte_vec_dot_prod_sss_simd(const int16_t* x, const int16_t* y, const int l
       simd_dotProdVal = srslte_simd_s_add(simd_dotProdVal, z);
     }
   }
-  __attribute__((aligned(SRSLTE_SIMD_S_SIZE * 2))) short dotProdVector[SRSLTE_SIMD_S_SIZE];
+  srslte_simd_aligned short dotProdVector[SRSLTE_SIMD_S_SIZE];
   srslte_simd_s_store(dotProdVector, simd_dotProdVal);
   for (int k = 0; k < SRSLTE_SIMD_S_SIZE; k++) {
     result += dotProdVector[k];
@@ -284,9 +285,11 @@ void srslte_vec_neg_bbb_simd(const int8_t* x, const int8_t* y, int8_t* z, const 
 }
 
 #define SAVE_OUTPUT_16_SSE(j)                                                                                          \
-  x    = (int16_t)_mm_extract_epi16(xVal, j);                                                                          \
-  l    = (uint16_t)_mm_extract_epi16(lutVal, j);                                                                       \
-  y[l] = (short)x;
+  do {                                                                                                                 \
+    int16_t  temp = (int16_t)_mm_extract_epi16(xVal, j);                                                               \
+    uint16_t l    = (uint16_t)_mm_extract_epi16(lutVal, j);                                                            \
+    y[l]          = temp;                                                                                              \
+  } while (false)
 
 /* No improvement with AVX */
 void srslte_vec_lut_sss_simd(const short* x, const unsigned short* lut, short* y, const int len)
@@ -297,9 +300,6 @@ void srslte_vec_lut_sss_simd(const short* x, const unsigned short* lut, short* y
     for (; i < len - 7; i += 8) {
       __m128i xVal   = _mm_load_si128((__m128i*)&x[i]);
       __m128i lutVal = _mm_load_si128((__m128i*)&lut[i]);
-
-      int16_t  x;
-      uint16_t l;
 
       SAVE_OUTPUT_16_SSE(0);
       SAVE_OUTPUT_16_SSE(1);
@@ -314,9 +314,6 @@ void srslte_vec_lut_sss_simd(const short* x, const unsigned short* lut, short* y
     for (; i < len - 7; i += 8) {
       __m128i xVal   = _mm_loadu_si128((__m128i*)&x[i]);
       __m128i lutVal = _mm_loadu_si128((__m128i*)&lut[i]);
-
-      int16_t  x;
-      uint16_t l;
 
       SAVE_OUTPUT_16_SSE(0);
       SAVE_OUTPUT_16_SSE(1);
@@ -336,14 +333,18 @@ void srslte_vec_lut_sss_simd(const short* x, const unsigned short* lut, short* y
 }
 
 #define SAVE_OUTPUT_SSE_8(j)                                                                                           \
-  x    = (int8_t)_mm_extract_epi8(xVal, j);                                                                            \
-  l    = (uint16_t)_mm_extract_epi16(lutVal1, j);                                                                      \
-  y[l] = (char)x;
+  do {                                                                                                                 \
+    int8_t   temp = (int8_t)_mm_extract_epi8(xVal, j);                                                                 \
+    uint16_t idx  = (uint16_t)_mm_extract_epi16(lutVal1, j);                                                           \
+    y[idx]        = (char)temp;                                                                                        \
+  } while (false)
 
 #define SAVE_OUTPUT_SSE_8_2(j)                                                                                         \
-  x    = (int8_t)_mm_extract_epi8(xVal, j + 8);                                                                        \
-  l    = (uint16_t)_mm_extract_epi16(lutVal2, j);                                                                      \
-  y[l] = (char)x;
+  do {                                                                                                                 \
+    int8_t   temp = (int8_t)_mm_extract_epi8(xVal, j + 8);                                                             \
+    uint16_t idx  = (uint16_t)_mm_extract_epi16(lutVal2, j);                                                           \
+    y[idx]        = (char)temp;                                                                                        \
+  } while (false)
 
 void srslte_vec_lut_bbb_simd(const int8_t* x, const unsigned short* lut, int8_t* y, const int len)
 {
@@ -354,9 +355,6 @@ void srslte_vec_lut_bbb_simd(const int8_t* x, const unsigned short* lut, int8_t*
       __m128i xVal    = _mm_load_si128((__m128i*)&x[i]);
       __m128i lutVal1 = _mm_load_si128((__m128i*)&lut[i]);
       __m128i lutVal2 = _mm_load_si128((__m128i*)&lut[i + 8]);
-
-      int8_t   x;
-      uint16_t l;
 
       SAVE_OUTPUT_SSE_8(0);
       SAVE_OUTPUT_SSE_8(1);
@@ -381,9 +379,6 @@ void srslte_vec_lut_bbb_simd(const int8_t* x, const unsigned short* lut, int8_t*
       __m128i xVal    = _mm_loadu_si128((__m128i*)&x[i]);
       __m128i lutVal1 = _mm_loadu_si128((__m128i*)&lut[i]);
       __m128i lutVal2 = _mm_loadu_si128((__m128i*)&lut[i + 8]);
-
-      int8_t   x;
-      uint16_t l;
 
       SAVE_OUTPUT_SSE_8(0);
       SAVE_OUTPUT_SSE_8(1);
@@ -571,7 +566,7 @@ float srslte_vec_acc_ff_simd(const float* x, const int len)
     }
   }
 
-  __attribute__((aligned(SRSLTE_SIMD_F_SIZE * 4))) float sum[SRSLTE_SIMD_F_SIZE];
+  srslte_simd_aligned float sum[SRSLTE_SIMD_F_SIZE];
   srslte_simd_f_store(sum, simd_sum);
   for (int k = 0; k < SRSLTE_SIMD_F_SIZE; k++) {
     acc_sum += sum[k];
@@ -688,30 +683,35 @@ cf_t srslte_vec_dot_prod_ccc_simd(const cf_t* x, const cf_t* y, const int len)
   cf_t result = 0;
 
 #if SRSLTE_SIMD_CF_SIZE
-  __attribute__((aligned(64))) cf_t simd_dotProdVector[SRSLTE_SIMD_CF_SIZE];
+  if (len >= SRSLTE_SIMD_CF_SIZE) {
+    simd_cf_t avx_result = srslte_simd_cf_zero();
+    if (SRSLTE_IS_ALIGNED(x) && SRSLTE_IS_ALIGNED(y)) {
+      for (; i < len - SRSLTE_SIMD_CF_SIZE + 1; i += SRSLTE_SIMD_CF_SIZE) {
+        simd_cf_t xVal = srslte_simd_cfi_load(&x[i]);
+        simd_cf_t yVal = srslte_simd_cfi_load(&y[i]);
 
-  simd_cf_t avx_result = srslte_simd_cf_zero();
-  if (SRSLTE_IS_ALIGNED(x) && SRSLTE_IS_ALIGNED(y)) {
-    for (; i < len - SRSLTE_SIMD_CF_SIZE + 1; i += SRSLTE_SIMD_CF_SIZE) {
-      simd_cf_t xVal = srslte_simd_cfi_load(&x[i]);
-      simd_cf_t yVal = srslte_simd_cfi_load(&y[i]);
+        avx_result = srslte_simd_cf_add(srslte_simd_cf_prod(xVal, yVal), avx_result);
+      }
+    } else {
+      for (; i < len - SRSLTE_SIMD_CF_SIZE + 1; i += SRSLTE_SIMD_CF_SIZE) {
+        simd_cf_t xVal = srslte_simd_cfi_loadu(&x[i]);
+        simd_cf_t yVal = srslte_simd_cfi_loadu(&y[i]);
 
-      avx_result = srslte_simd_cf_add(srslte_simd_cf_prod(xVal, yVal), avx_result);
-      srslte_simd_cfi_store(simd_dotProdVector, avx_result);
+        avx_result = srslte_simd_cf_add(srslte_simd_cf_prod(xVal, yVal), avx_result);
+      }
     }
-  } else {
-    for (; i < len - SRSLTE_SIMD_CF_SIZE + 1; i += SRSLTE_SIMD_CF_SIZE) {
-      simd_cf_t xVal = srslte_simd_cfi_loadu(&x[i]);
-      simd_cf_t yVal = srslte_simd_cfi_loadu(&y[i]);
 
-      avx_result = srslte_simd_cf_add(srslte_simd_cf_prod(xVal, yVal), avx_result);
-      srslte_simd_cfi_storeu(simd_dotProdVector, avx_result);
+    __attribute__((aligned(64))) float simd_dotProdVector[SRSLTE_SIMD_CF_SIZE];
+    simd_f_t                           acc_re = srslte_simd_cf_re(avx_result);
+    simd_f_t                           acc_im = srslte_simd_cf_im(avx_result);
+
+    simd_f_t acc = srslte_simd_f_hadd(acc_re, acc_im);
+    for (int j = 2; j < SRSLTE_SIMD_F_SIZE; j *= 2) {
+      acc = srslte_simd_f_hadd(acc, acc);
     }
-  }
-
-  srslte_simd_cfi_store(simd_dotProdVector, avx_result);
-  for (int k = 0; k < SRSLTE_SIMD_CF_SIZE; k++) {
-    result += simd_dotProdVector[k];
+    srslte_simd_f_store(simd_dotProdVector, acc);
+    __real__ result = simd_dotProdVector[0];
+    __imag__ result = simd_dotProdVector[1];
   }
 #endif
 
@@ -759,28 +759,35 @@ cf_t srslte_vec_dot_prod_conj_ccc_simd(const cf_t* x, const cf_t* y, const int l
   cf_t result = 0;
 
 #if SRSLTE_SIMD_CF_SIZE
-  __attribute__((aligned(256))) cf_t simd_dotProdVector[SRSLTE_SIMD_CF_SIZE];
+  if (len >= SRSLTE_SIMD_CF_SIZE) {
+    simd_cf_t avx_result = srslte_simd_cf_zero();
+    if (SRSLTE_IS_ALIGNED(x) && SRSLTE_IS_ALIGNED(y)) {
+      for (; i < len - SRSLTE_SIMD_CF_SIZE + 1; i += SRSLTE_SIMD_CF_SIZE) {
+        simd_cf_t xVal = srslte_simd_cfi_load(&x[i]);
+        simd_cf_t yVal = srslte_simd_cfi_load(&y[i]);
 
-  simd_cf_t simd_result = srslte_simd_cf_zero();
-  if (SRSLTE_IS_ALIGNED(x) && SRSLTE_IS_ALIGNED(y)) {
-    for (; i < len - SRSLTE_SIMD_CF_SIZE + 1; i += SRSLTE_SIMD_CF_SIZE) {
-      simd_cf_t xVal = srslte_simd_cfi_load(&x[i]);
-      simd_cf_t yVal = srslte_simd_cfi_load(&y[i]);
+        avx_result = srslte_simd_cf_add(srslte_simd_cf_conjprod(xVal, yVal), avx_result);
+      }
+    } else {
+      for (; i < len - SRSLTE_SIMD_CF_SIZE + 1; i += SRSLTE_SIMD_CF_SIZE) {
+        simd_cf_t xVal = srslte_simd_cfi_loadu(&x[i]);
+        simd_cf_t yVal = srslte_simd_cfi_loadu(&y[i]);
 
-      simd_result = srslte_simd_cf_add(srslte_simd_cf_conjprod(xVal, yVal), simd_result);
+        avx_result = srslte_simd_cf_add(srslte_simd_cf_conjprod(xVal, yVal), avx_result);
+      }
     }
-  } else {
-    for (; i < len - SRSLTE_SIMD_CF_SIZE + 1; i += SRSLTE_SIMD_CF_SIZE) {
-      simd_cf_t xVal = srslte_simd_cfi_loadu(&x[i]);
-      simd_cf_t yVal = srslte_simd_cfi_loadu(&y[i]);
 
-      simd_result = srslte_simd_cf_add(srslte_simd_cf_conjprod(xVal, yVal), simd_result);
+    __attribute__((aligned(64))) float simd_dotProdVector[SRSLTE_SIMD_CF_SIZE];
+    simd_f_t                           acc_re = srslte_simd_cf_re(avx_result);
+    simd_f_t                           acc_im = srslte_simd_cf_im(avx_result);
+
+    simd_f_t acc = srslte_simd_f_hadd(acc_re, acc_im);
+    for (int j = 2; j < SRSLTE_SIMD_F_SIZE; j *= 2) {
+      acc = srslte_simd_f_hadd(acc, acc);
     }
-  }
-
-  srslte_simd_cfi_store(simd_dotProdVector, simd_result);
-  for (int k = 0; k < SRSLTE_SIMD_CF_SIZE; k++) {
-    result += simd_dotProdVector[k];
+    srslte_simd_f_store(simd_dotProdVector, acc);
+    __real__ result = simd_dotProdVector[0];
+    __imag__ result = simd_dotProdVector[1];
   }
 #endif
 
@@ -1289,31 +1296,6 @@ void srslte_vec_sc_prod_cfc_simd(const cf_t* x, const float h, cf_t* z, const in
   }
 }
 
-void srslte_vec_cp_simd(const cf_t* src, cf_t* dst, const int len)
-{
-  uint32_t i = 0;
-
-#if SRSLTE_SIMD_F_SIZE
-  if (SRSLTE_IS_ALIGNED(src) && SRSLTE_IS_ALIGNED(dst)) {
-    for (; i < len - SRSLTE_SIMD_F_SIZE / 2 + 1; i += SRSLTE_SIMD_F_SIZE / 2) {
-      simd_f_t temp = srslte_simd_f_load((float*)&src[i]);
-
-      srslte_simd_f_store((float*)&dst[i], temp);
-    }
-  } else {
-    for (; i < len - SRSLTE_SIMD_F_SIZE / 2 + 1; i += SRSLTE_SIMD_F_SIZE / 2) {
-      simd_f_t temp = srslte_simd_f_loadu((float*)&src[i]);
-
-      srslte_simd_f_storeu((float*)&dst[i], temp);
-    }
-  }
-#endif
-
-  for (; i < len; i++) {
-    dst[i] = src[i];
-  }
-}
-
 uint32_t srslte_vec_max_fi_simd(const float* x, const int len)
 {
   int i = 0;
@@ -1322,8 +1304,8 @@ uint32_t srslte_vec_max_fi_simd(const float* x, const int len)
   uint32_t max_index = 0;
 
 #if SRSLTE_SIMD_I_SIZE
-  __attribute__((aligned(SRSLTE_SIMD_I_SIZE * sizeof(int)))) int     indexes_buffer[SRSLTE_SIMD_I_SIZE] = {0};
-  __attribute__((aligned(SRSLTE_SIMD_I_SIZE * sizeof(float)))) float values_buffer[SRSLTE_SIMD_I_SIZE]  = {0};
+  srslte_simd_aligned int   indexes_buffer[SRSLTE_SIMD_I_SIZE] = {0};
+  srslte_simd_aligned float values_buffer[SRSLTE_SIMD_I_SIZE]  = {0};
 
   for (int k = 0; k < SRSLTE_SIMD_I_SIZE; k++)
     indexes_buffer[k] = k;
@@ -1380,8 +1362,8 @@ uint32_t srslte_vec_max_abs_fi_simd(const float* x, const int len)
   uint32_t max_index = 0;
 
 #if SRSLTE_SIMD_I_SIZE
-  __attribute__((aligned(SRSLTE_SIMD_I_SIZE * sizeof(int)))) int     indexes_buffer[SRSLTE_SIMD_I_SIZE] = {0};
-  __attribute__((aligned(SRSLTE_SIMD_I_SIZE * sizeof(float)))) float values_buffer[SRSLTE_SIMD_I_SIZE]  = {0};
+  srslte_simd_aligned int   indexes_buffer[SRSLTE_SIMD_I_SIZE] = {0};
+  srslte_simd_aligned float values_buffer[SRSLTE_SIMD_I_SIZE]  = {0};
 
   for (int k = 0; k < SRSLTE_SIMD_I_SIZE; k++)
     indexes_buffer[k] = k;
@@ -1439,8 +1421,8 @@ uint32_t srslte_vec_max_ci_simd(const cf_t* x, const int len)
   uint32_t max_index = 0;
 
 #if SRSLTE_SIMD_I_SIZE
-  __attribute__((aligned(SRSLTE_SIMD_I_SIZE * sizeof(int)))) int     indexes_buffer[SRSLTE_SIMD_I_SIZE] = {0};
-  __attribute__((aligned(SRSLTE_SIMD_I_SIZE * sizeof(float)))) float values_buffer[SRSLTE_SIMD_I_SIZE]  = {0};
+  srslte_simd_aligned int   indexes_buffer[SRSLTE_SIMD_I_SIZE] = {0};
+  srslte_simd_aligned float values_buffer[SRSLTE_SIMD_I_SIZE]  = {0};
 
   for (int k = 0; k < SRSLTE_SIMD_I_SIZE; k++)
     indexes_buffer[k] = k;
@@ -1647,8 +1629,8 @@ void srslte_vec_apply_cfo_simd(const cf_t* x, float cfo, cf_t* z, int len)
   int         i     = 0;
 
 #if SRSLTE_SIMD_CF_SIZE
-  __attribute__((aligned(SRSLTE_SIMD_BIT_ALIGN / 8))) cf_t _osc[SRSLTE_SIMD_CF_SIZE];
-  __attribute__((aligned(SRSLTE_SIMD_BIT_ALIGN / 8))) cf_t _phase[SRSLTE_SIMD_CF_SIZE];
+  srslte_simd_aligned cf_t _osc[SRSLTE_SIMD_CF_SIZE];
+  srslte_simd_aligned cf_t _phase[SRSLTE_SIMD_CF_SIZE];
 
   if (i < len - SRSLTE_SIMD_CF_SIZE + 1) {
     for (int k = 0; k < SRSLTE_SIMD_CF_SIZE; k++) {

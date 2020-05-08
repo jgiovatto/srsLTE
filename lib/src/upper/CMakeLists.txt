@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -35,4 +35,3 @@ endif(ENABLE_5GNR)
 
 add_library(srslte_upper STATIC ${SOURCES})
 target_link_libraries(srslte_upper srslte_common srslte_asn1)
-install(TARGETS srslte_upper DESTINATION ${LIBRARY_DIR})

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -23,12 +23,10 @@
 
 namespace srsue {
 
-#define MIN_IN_SYNC_POWER (-100)
+#define MIN_IN_SYNC_POWER (-120.0)
 #define DEFAULT_RSRQ (-3.0)
 
 lte_ttcn3_phy::lte_ttcn3_phy(srslte::logger* logger_) : logger(logger_) {}
-
-lte_ttcn3_phy::~lte_ttcn3_phy() {}
 
 int lte_ttcn3_phy::init(const phy_args_t& args_, stack_interface_phy_lte* stack_, syssim_interface_phy* syssim_)
 {
@@ -38,7 +36,7 @@ int lte_ttcn3_phy::init(const phy_args_t& args_, stack_interface_phy_lte* stack_
   return init(args_);
 }
 
-int lte_ttcn3_phy::init(const phy_args_t& args_, stack_interface_phy_lte* stack_, radio_interface_phy* radio_)
+int lte_ttcn3_phy::init(const phy_args_t& args_, stack_interface_phy_lte* stack_, srslte::radio_interface_phy* radio_)
 {
 
   return init(args_);
@@ -55,10 +53,6 @@ int lte_ttcn3_phy::init(const phy_args_t& args_)
 
 void lte_ttcn3_phy::stop(){};
 
-void lte_ttcn3_phy::set_earfcn(std::vector<uint32_t> earfcns) {}
-
-void lte_ttcn3_phy::force_freq(float dl_freq, float ul_freq) {}
-
 void lte_ttcn3_phy::wait_initialize() {}
 
 void lte_ttcn3_phy::start_plot() {}
@@ -72,35 +66,7 @@ void lte_ttcn3_phy::set_cell_map(const cell_list_t& cells_)
   cells = cells_;
 }
 
-// The interface for RRC
-void lte_ttcn3_phy::get_current_cell(srslte_cell_t* cell_, uint32_t* earfcn_)
-{
-  std::lock_guard<std::mutex> lock(mutex);
-
-  if (cell_) {
-    memcpy(cell_, &pcell.info, sizeof(srslte_cell_t));
-  }
-  if (earfcn_) {
-    *earfcn_ = pcell.earfcn;
-  }
-}
-
-uint32_t lte_ttcn3_phy::get_current_earfcn()
-{
-  return pcell.earfcn;
-}
-
-uint32_t lte_ttcn3_phy::get_current_pci()
-{
-  return pcell.info.id;
-}
-
 void lte_ttcn3_phy::set_config_tdd(srslte_tdd_config_t& tdd_config) {}
-
-void lte_ttcn3_phy::set_config_scell(asn1::rrc::scell_to_add_mod_r10_s* scell_config)
-{
-  log.debug("%s not implemented.\n", __FUNCTION__);
-}
 
 void lte_ttcn3_phy::enable_pregen_signals(bool enable)
 {
@@ -118,74 +84,74 @@ void lte_ttcn3_phy::set_config(srslte::phy_cfg_t& config, uint32_t cc_idx, uint3
 }
 
 // Measurements interface
-void lte_ttcn3_phy::meas_reset(){};
-
-int lte_ttcn3_phy::meas_start(uint32_t earfcn, int pci)
-{
-  return 0;
-}
-
-int lte_ttcn3_phy::meas_stop(uint32_t earfcn, int pci)
-{
-  return 0;
-};
-
-void lte_ttcn3_phy::select_pcell()
-{
-  // select strongest cell as PCell
-  float max_power = -145;
-  int   max_index = 0;
-  for (uint32_t i = 0; i < cells.size(); ++i) {
-    if (cells[i].power > max_power) {
-      max_power = cells[i].power;
-      max_index = i;
-    }
-  }
-  pcell = cells[max_index];
-  log.info("Setting PCell to EARFCN=%d CellId=%d with RS power=%.2f\n", pcell.earfcn, pcell.info.id, pcell.power);
-}
+void lte_ttcn3_phy::meas_stop(){};
 
 /* Cell search and selection procedures */
 phy_interface_rrc_lte::cell_search_ret_t lte_ttcn3_phy::cell_search(phy_cell_t* found_cell)
 {
   std::lock_guard<std::mutex> lock(mutex);
 
-  select_pcell();
-
   log.info("Running cell search in PHY\n");
-  cell_search_ret_t ret = {};
 
-  // Consider cell found if Pcell power >= -100dBm
-  if (pcell.power >= MIN_IN_SYNC_POWER) {
+  cell_search_ret_t ret = {};
+  ret.found             = cell_search_ret_t::CELL_NOT_FOUND;
+
+  if (not cells.empty() && cell_idx < cells.size()) {
+    log.info("Found Cell: EARFCN=%d CellId=%d\n", cells[cell_idx].earfcn, cells[cell_idx].info.id);
     if (found_cell) {
-      found_cell->earfcn = pcell.earfcn;
-      found_cell->cell   = pcell.info;
+      found_cell->earfcn = cells[cell_idx].earfcn;
+      found_cell->pci    = cells[cell_idx].info.id;
     }
-    ret.found     = cell_search_ret_t::CELL_FOUND;
-    ret.last_freq = cell_search_ret_t::NO_MORE_FREQS;
+    ret.found = cell_search_ret_t::CELL_FOUND;
+
+    // advance index
+    cell_idx++;
+
+    if (cell_idx < cells.size()) {
+      // more cells will be reported
+      ret.last_freq = cell_search_ret_t::MORE_FREQS;
+    } else {
+      // all available cells have been reported, reset cell index
+      ret.last_freq = cell_search_ret_t::NO_MORE_FREQS;
+      cell_idx      = 0;
+    }
   } else {
-    // no suitable cell found
-    ret.found = cell_search_ret_t::CELL_NOT_FOUND;
+    log.warning("No cells configured yet.\n");
   }
+
   return ret;
 };
 
-bool lte_ttcn3_phy::cell_select(phy_cell_t* rrc_cell)
+bool lte_ttcn3_phy::cell_select(const phy_cell_t* rrc_cell)
 {
   // try to find RRC cell in current cell map
   for (auto& cell : cells) {
-    if (cell.info.id == rrc_cell->cell.id) {
-      pcell = cell;
-      return true;
+    if (cell.info.id == rrc_cell->pci) {
+      if (cell.power >= MIN_IN_SYNC_POWER) {
+        pcell     = cell;
+        pcell_set = true;
+        syssim->select_cell(pcell.info);
+        log.info("Select PCell with %.2f on PCI=%d on EARFCN=%d.\n", cell.power, rrc_cell->pci, rrc_cell->earfcn);
+      } else {
+        pcell_set = false;
+        log.error("Power of selected cell too low (%.2f < %.2f)\n", cell.power, MIN_IN_SYNC_POWER);
+      }
+
+      return pcell_set;
     }
   }
 
+  log.error("Couldn't fine RRC cell with PCI=%d on EARFCN=%d in cell map.\n", rrc_cell->pci, rrc_cell->earfcn);
   return false;
 };
 
 bool lte_ttcn3_phy::cell_is_camping()
 {
-  return (pcell.power >= MIN_IN_SYNC_POWER);
+  if (pcell_set) {
+    log.info("pcell.power=%2.f\n", pcell.power);
+    return (pcell.power >= MIN_IN_SYNC_POWER);
+  }
+  return false;
 };
 
 void lte_ttcn3_phy::reset()
@@ -199,7 +165,7 @@ void lte_ttcn3_phy::configure_prach_params()
   log.debug("%s not implemented.\n", __FUNCTION__);
 };
 
-void lte_ttcn3_phy::prach_send(uint32_t preamble_idx, int allowed_subframe, float target_power_dbm)
+void lte_ttcn3_phy::prach_send(uint32_t preamble_idx, int allowed_subframe, float target_power_dbm, float ta_base_sec)
 {
   log.info("Sending PRACH with preamble %d on PCID=%d\n", preamble_idx, pcell.info.id);
   prach_tti_tx = current_tti;
@@ -241,7 +207,6 @@ int lte_ttcn3_phy::sr_last_tx_tti()
 /* Sets a C-RNTI allowing the PHY to pregenerate signals if necessary */
 void lte_ttcn3_phy::set_crnti(uint16_t rnti)
 {
-  current_temp_rnti = rnti;
   log.info("Set Temp-RNTI=%d\n", rnti);
 }
 
@@ -362,21 +327,40 @@ void lte_ttcn3_phy::radio_failure()
 void lte_ttcn3_phy::run_tti()
 {
   // send report for each cell
+  std::vector<rrc_interface_phy_lte::phy_meas_t> phy_meas;
   for (auto& cell : cells) {
-    stack->new_phy_meas(cell.power, DEFAULT_RSRQ, current_tti, cell.earfcn, cell.info.id);
+    rrc_interface_phy_lte::phy_meas_t m = {};
+    m.pci                               = cell.info.id;
+    m.earfcn                            = cell.earfcn;
+    m.rsrp                              = cell.power;
+    m.rsrq                              = DEFAULT_RSRQ;
+
+    // Measurement for PCell needs to have EARFCN set to 0
+    if (pcell_set && m.earfcn == pcell.earfcn) {
+      m.earfcn = 0;
+    }
+
+    log.debug("Create cell measurement for PCI=%d, EARFCN=%d with RSRP=%.2f\n", m.pci, m.earfcn, m.rsrp);
+    phy_meas.push_back(m);
+  }
+
+  if (not phy_meas.empty()) {
+    stack->new_cell_meas(phy_meas);
   }
 
   // check if Pcell is in sync
-  for (auto& cell : cells) {
-    if (cell.info.id == pcell.info.id) {
-      if (cell.power >= MIN_IN_SYNC_POWER) {
-        log.debug("PCell id=%d power=%.2f -> sync\n", pcell.info.id, cell.power);
-        stack->in_sync();
-      } else {
-        log.debug("PCell id=%d power=%.2f -> out of sync\n", pcell.info.id, cell.power);
-        stack->out_of_sync();
+  if (pcell_set) {
+    for (auto& cell : cells) {
+      if (cell.info.id == pcell.info.id) {
+        if (cell.power >= MIN_IN_SYNC_POWER) {
+          log.debug("PCell id=%d power=%.2f -> sync\n", pcell.info.id, cell.power);
+          stack->in_sync();
+        } else {
+          log.debug("PCell id=%d power=%.2f -> out of sync\n", pcell.info.id, cell.power);
+          stack->out_of_sync();
+        }
+        break; // make sure to call stack only once
       }
-      break; // make sure to call stack only once
     }
   }
 
@@ -389,7 +373,9 @@ void lte_ttcn3_phy::run_tti()
     sr_tx_tti  = current_tti;
   }
 
-  stack->run_tti(current_tti);
+  stack->run_tti(current_tti, 1);
 }
+
+void lte_ttcn3_phy::set_cells_to_meas(uint32_t earfcn, const std::set<uint32_t>& pci) {}
 
 } // namespace srsue

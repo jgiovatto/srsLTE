@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -37,7 +37,6 @@
 
 using namespace srslte;
 using namespace srsue;
-using namespace asn1::rrc;
 
 // Helper class to create two pre-configured RLC instances
 class rlc_um_lte_test_context1
@@ -47,14 +46,14 @@ public:
     log1("RLC_UM_1"),
     log2("RLC_UM_2"),
     timers(16),
-    rlc1(&log1, 3, &tester, &tester, &timers),
-    rlc2(&log2, 3, &tester, &tester, &timers)
+    rlc1(log1, 3, &tester, &tester, &timers),
+    rlc2(log2, 3, &tester, &tester, &timers)
   {
     // setup logging
-    log1.set_level(srslte::LOG_LEVEL_DEBUG);
-    log2.set_level(srslte::LOG_LEVEL_DEBUG);
-    log1.set_hex_limit(-1);
-    log2.set_hex_limit(-1);
+    log1->set_level(srslte::LOG_LEVEL_DEBUG);
+    log2->set_level(srslte::LOG_LEVEL_DEBUG);
+    log1->set_hex_limit(-1);
+    log2->set_hex_limit(-1);
 
     // configure RLC entities
     rlc_config_t cnfg = rlc_config_t::default_rlc_um_config(10);
@@ -68,13 +67,13 @@ public:
     tester.set_expected_sdu_len(1);
   }
 
-  srslte::log_filter    log1, log2;
+  srslte::log_ref       log1, log2;
   srslte::timer_handler timers;
   rlc_um_tester         tester;
   rlc_um_lte            rlc1, rlc2;
 };
 
-int basic_test()
+int meas_obj_test()
 {
   rlc_um_lte_test_context1 ctxt;
 
@@ -392,7 +391,7 @@ int reassmble_test2()
 
 int main(int argc, char** argv)
 {
-  if (basic_test()) {
+  if (meas_obj_test()) {
     return -1;
   }
   byte_buffer_pool::get_instance()->cleanup();

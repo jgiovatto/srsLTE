@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -75,35 +75,35 @@ static int pdcch_init(srslte_pdcch_t* q, uint32_t max_prb, uint32_t nof_rx_anten
       goto clean;
     }
 
-    q->e = srslte_vec_malloc(sizeof(uint8_t) * q->max_bits);
+    q->e = srslte_vec_u8_malloc(q->max_bits);
     if (!q->e) {
       goto clean;
     }
 
-    q->llr = srslte_vec_malloc(sizeof(float) * q->max_bits);
+    q->llr = srslte_vec_f_malloc(q->max_bits);
     if (!q->llr) {
       goto clean;
     }
 
-    bzero(q->llr, sizeof(float) * q->max_bits);
+    srslte_vec_f_zero(q->llr, q->max_bits);
 
-    q->d = srslte_vec_malloc(sizeof(cf_t) * q->max_bits / 2);
+    q->d = srslte_vec_cf_malloc(q->max_bits / 2);
     if (!q->d) {
       goto clean;
     }
 
     for (int i = 0; i < SRSLTE_MAX_PORTS; i++) {
-      q->x[i] = srslte_vec_malloc(sizeof(cf_t) * q->max_bits / 2);
+      q->x[i] = srslte_vec_cf_malloc(q->max_bits / 2);
       if (!q->x[i]) {
         goto clean;
       }
-      q->symbols[i] = srslte_vec_malloc(sizeof(cf_t) * q->max_bits / 2);
+      q->symbols[i] = srslte_vec_cf_malloc(q->max_bits / 2);
       if (!q->symbols[i]) {
         goto clean;
       }
       if (q->is_ue) {
         for (int j = 0; j < q->nof_rx_antennas; j++) {
-          q->ce[i][j] = srslte_vec_malloc(sizeof(cf_t) * q->max_bits / 2);
+          q->ce[i][j] = srslte_vec_cf_malloc(q->max_bits / 2);
           if (!q->ce[i][j]) {
             goto clean;
           }
@@ -257,8 +257,20 @@ uint32_t srslte_pdcch_ue_locations_ncce_L(uint32_t               nof_cce,
       for (i = 0; i < nof_candidates[l]; i++) {
         if (nof_cce >= L) {
           ncce = L * ((Yk + i) % (nof_cce / L));
-          // Check if candidate fits in c vector and in CCE region
-          if (k < max_candidates && ncce + L <= nof_cce) {
+
+          // Check candidate fits in array
+          bool valid = (k < max_candidates);
+
+          // Check candidate fits in CCE region
+          valid &= (ncce + L <= nof_cce);
+
+          // Check candidate is not repeated in the list
+          for (uint32_t j = 0; j < k && valid; j++) {
+            valid &= (c[j].L != l || c[j].ncce != ncce);
+          }
+
+          // Append candidate
+          if (valid) {
             c[k].L    = l;
             c[k].ncce = ncce;
 
@@ -331,7 +343,7 @@ int srslte_pdcch_dci_decode(srslte_pdcch_t* q, float* e, uint8_t* data, uint32_t
 
   if (q != NULL) {
     if (data != NULL && E <= q->max_bits && nof_bits <= SRSLTE_DCI_MAX_BITS) {
-      bzero(q->rm_f, sizeof(float) * 3 * (SRSLTE_DCI_MAX_BITS + 16));
+      srslte_vec_f_zero(q->rm_f, 3 * (SRSLTE_DCI_MAX_BITS + 16));
 
       uint32_t coded_len = 3 * (nof_bits + 16);
 
@@ -411,8 +423,6 @@ int srslte_pdcch_decode_msg(srslte_pdcch_t* q, srslte_dl_sf_cfg_t* sf, srslte_dc
   return ret;
 }
 
-int cnt = 0;
-
 /** Performs PDCCH receiver processing to extract LLR for all control region. LLR bits are stored in srslte_pdcch_t
  * object. DCI can be decoded from given locations in successive calls to srslte_pdcch_decode_msg()
  */
@@ -433,7 +443,7 @@ int srslte_pdcch_extract_llr(srslte_pdcch_t*        q,
     uint32_t e_bits = 72 * NOF_CCE(sf->cfi);
     nof_symbols     = e_bits / 2;
     ret             = SRSLTE_ERROR;
-    bzero(q->llr, sizeof(float) * q->max_bits);
+    srslte_vec_f_zero(q->llr, q->max_bits);
 
     DEBUG("Extracting LLRs: E: %d, SF: %d, CFI: %d\n", e_bits, sf->tti % 10, sf->cfi);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -34,7 +34,7 @@
 /** Internal functions */
 static int table_create(srslte_modem_table_t* q)
 {
-  q->symbol_table = srslte_vec_malloc(q->nsymbols * sizeof(cf_t));
+  q->symbol_table = srslte_vec_cf_malloc(q->nsymbols);
   return q->symbol_table == NULL;
 }
 
@@ -55,9 +55,6 @@ void srslte_modem_table_free(srslte_modem_table_t* q)
   }
   if (q->symbol_table_16qam) {
     free(q->symbol_table_16qam);
-  }
-  if (q->symbol_table_256qam) {
-    free(q->symbol_table_256qam);
   }
   bzero(q, sizeof(srslte_modem_table_t));
 }
@@ -125,6 +122,8 @@ int srslte_modem_table_lte(srslte_modem_table_t* q, srslte_mod_t modulation)
       }
       set_256QAMtable(q->symbol_table);
       break;
+    case SRSLTE_MOD_NITEMS:
+    default:; // Do nothing
   }
   return SRSLTE_SUCCESS;
 }

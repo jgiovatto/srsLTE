@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -30,24 +30,6 @@ extern "C" {
 #include <stdint.h>
 #include <stdio.h>
 
-#ifdef LV_HAVE_AVX512
-#define SRSLTE_SIMD_BIT_ALIGN 512
-#define SRSLTE_IS_ALIGNED(PTR) (((size_t)(PTR)&0x3F) == 0)
-#else /* LV_HAVE_AVX512 */
-#ifdef LV_HAVE_AVX
-#define SRSLTE_SIMD_BIT_ALIGN 256
-#define SRSLTE_IS_ALIGNED(PTR) (((size_t)(PTR)&0x1F) == 0)
-#else /* LV_HAVE_AVX */
-#ifdef LV_HAVE_SSE
-#define SRSLTE_SIMD_BIT_ALIGN 128
-#define SRSLTE_IS_ALIGNED(PTR) (((size_t)(PTR)&0x0F) == 0)
-#else /* LV_HAVE_SSE */
-#define SRSLTE_SIMD_BIT_ALIGN 64
-#define SRSLTE_IS_ALIGNED(PTR) (1)
-#endif /* LV_HAVE_SSE */
-#endif /* LV_HAVE_AVX */
-#endif /* LV_HAVE_AVX512 */
-
 /*SIMD Logical operations*/
 SRSLTE_API void srslte_vec_xor_bbb_simd(const int8_t* x, const int8_t* y, int8_t* z, int len);
 
@@ -72,6 +54,8 @@ SRSLTE_API void srslte_vec_sc_prod_cfc_simd(const cf_t* x, const float h, cf_t* 
 SRSLTE_API void srslte_vec_sc_prod_fff_simd(const float* x, const float h, float* z, const int len);
 
 SRSLTE_API void srslte_vec_sc_prod_ccc_simd(const cf_t* x, const cf_t h, cf_t* z, const int len);
+
+SRSLTE_API int srslte_vec_sc_prod_ccc_simd2(const cf_t* x, const cf_t h, cf_t* z, const int len);
 
 /* SIMD Vector Product */
 SRSLTE_API void srslte_vec_prod_ccc_split_simd(const float* a_re,
@@ -137,8 +121,6 @@ SRSLTE_API void srslte_vec_convert_if_simd(const int16_t* x, float* z, const flo
 SRSLTE_API void srslte_vec_convert_fi_simd(const float* x, int16_t* z, const float scale, const int len);
 
 SRSLTE_API void srslte_vec_convert_fb_simd(const float* x, int8_t* z, const float scale, const int len);
-
-SRSLTE_API void srslte_vec_cp_simd(const cf_t* src, cf_t* dst, int len);
 
 SRSLTE_API void srslte_vec_interleave_simd(const cf_t* x, const cf_t* y, cf_t* z, const int len);
 

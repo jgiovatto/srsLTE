@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -37,7 +37,7 @@
 #include "srslte/common/log_filter.h"
 #include "srslte/common/logger_file.h"
 #include "srslte/interfaces/ue_interfaces.h"
-#include "srslte/radio/radio_base.h"
+#include "srslte/radio/radio.h"
 #include "stack/ue_stack_base.h"
 
 #include "ue_metrics_interface.h"
@@ -68,6 +68,8 @@ typedef struct {
 typedef struct {
   float       metrics_period_secs;
   bool        metrics_csv_enable;
+  bool        metrics_csv_append;
+  int         metrics_csv_flush_period_sec;
   std::string metrics_csv_filename;
 } general_args_t;
 
@@ -108,7 +110,7 @@ public:
 private:
   // UE consists of a radio, a PHY and a stack element
   std::unique_ptr<ue_phy_base>        phy;
-  std::unique_ptr<srslte::radio_base> radio;
+  std::unique_ptr<srslte::radio>      radio;
   std::unique_ptr<ue_stack_base>      stack;
   std::unique_ptr<gw>                 gw_inst;
 

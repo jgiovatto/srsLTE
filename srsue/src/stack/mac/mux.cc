@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -32,7 +32,7 @@
 
 namespace srsue {
 
-mux::mux(srslte::log* log_) : pdu_msg(MAX_NOF_SUBHEADERS, log_), log_h(log_)
+mux::mux(srslte::log_ref log_) : pdu_msg(MAX_NOF_SUBHEADERS, log_), log_h(log_)
 {
   msg3_flush();
 }
@@ -56,7 +56,7 @@ void mux::reset()
   pending_crnti_ce = 0;
 }
 
-void mux::step(const uint32_t tti)
+void mux::step()
 {
   std::lock_guard<std::mutex> lock(mutex);
 
@@ -151,16 +151,16 @@ void mux::print_logical_channel_state(const std::string& info)
   log_h->debug("%s\n", logline.c_str());
 }
 
-srslte::sch_subh::cetype bsr_format_convert(bsr_proc::bsr_format_t format)
+srslte::ul_sch_lcid bsr_format_convert(bsr_proc::bsr_format_t format)
 {
   switch (format) {
     case bsr_proc::LONG_BSR:
-      return srslte::sch_subh::LONG_BSR;
+      return srslte::ul_sch_lcid::LONG_BSR;
     case bsr_proc::TRUNC_BSR:
-      return srslte::sch_subh::TRUNC_BSR;
+      return srslte::ul_sch_lcid::TRUNC_BSR;
     case bsr_proc::SHORT_BSR:
     default:
-      return srslte::sch_subh::SHORT_BSR;
+      return srslte::ul_sch_lcid::SHORT_BSR;
   }
 }
 

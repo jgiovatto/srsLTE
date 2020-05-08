@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -21,6 +21,7 @@
 
 #include "srslte/common/common.h"
 #include "srslte/srslte.h"
+#include <vector>
 
 #ifndef SRSLTE_SCHED_INTERFACE_H
 #define SRSLTE_SCHED_INTERFACE_H
@@ -30,7 +31,7 @@ namespace srsenb {
 class sched_interface
 {
 public:
-  virtual ~sched_interface(){};
+  virtual ~sched_interface() = default;
 
   const static uint32_t max_cce = 128;
   const static uint32_t max_prb = 100;
@@ -50,16 +51,17 @@ public:
     uint32_t period_rf;
   } cell_cfg_sib_t;
 
-  typedef struct {
-    int pdsch_mcs;
-    int pdsch_max_mcs;
-    int pusch_mcs;
-    int pusch_max_mcs;
-    int nof_ctrl_symbols;
-    int max_aggr_level;
-  } sched_args_t;
+  struct sched_args_t {
+    int      pdsch_mcs            = -1;
+    int      pdsch_max_mcs        = 28;
+    int      pusch_mcs            = -1;
+    int      pusch_max_mcs        = 28;
+    uint32_t min_nof_ctrl_symbols = 1;
+    uint32_t max_nof_ctrl_symbols = 3;
+    int      max_aggr_level       = 3;
+  };
 
-  typedef struct {
+  struct cell_cfg_t {
 
     // Main cell configuration (used to calculate DCI locations in scheduler)
     srslte_cell_t cell;
@@ -87,30 +89,61 @@ public:
 
     uint32_t nrb_cqi;
     uint32_t ncs_an;
+    uint32_t initial_dl_cqi;
 
     uint32_t srs_subframe_config;
     uint32_t srs_subframe_offset;
     uint32_t srs_bw_config;
 
-  } cell_cfg_t;
+    struct scell_cfg_t {
+      uint32_t enb_cc_idx               = 0;
+      bool     cross_carrier_scheduling = false;
+      bool     ul_allowed               = false;
+    };
+    std::vector<scell_cfg_t> scell_list;
+  };
 
-  typedef struct {
-    int priority;
-    int bsd;
-    int pbr;
-    int group;
-    enum { IDLE = 0, UL, DL, BOTH } direction;
-  } ue_bearer_cfg_t;
+  struct ue_bearer_cfg_t {
+    int priority                              = 0;
+    int bsd                                   = 0;
+    int pbr                                   = 0;
+    int group                                 = 0;
+    enum { IDLE = 0, UL, DL, BOTH } direction = IDLE;
+  };
+
+  struct ant_info_ded_t {
+    enum class tx_mode_t { tm1, tm2, tm3, tm4, tm5, tm6, tm7, tm8_v920, nulltype } tx_mode = tx_mode_t::tm1;
+    enum class codebook_t {
+      n2_tx_ant_tm3,
+      n4_tx_ant_tm3,
+      n2_tx_ant_tm4,
+      n4_tx_ant_tm4,
+      n2_tx_ant_tm5,
+      n4_tx_ant_tm5,
+      n2_tx_ant_tm6,
+      n4_tx_ant_tm6,
+      none
+    } cookbook_subset_type = codebook_t::none;
+    uint64_t codebook_subset_restrict;
+    enum class ue_tx_ant_sel_t { release, closed_loop, open_loop } ue_tx_ant_sel = ue_tx_ant_sel_t::release;
+  };
 
   struct ue_cfg_t {
+    struct cc_cfg_t {
+      bool     active     = false;
+      uint32_t enb_cc_idx = 0; ///< eNB CC index
+    };
     /* ue capabilities, etc */
-    uint32_t                maxharq_tx;
-    bool                    continuous_pusch;
-    srslte_uci_offset_cfg_t uci_offset;
-    srslte_pucch_cfg_t      pucch_cfg;
-    uint32_t                aperiodic_cqi_period; // if 0 is periodic CQI
-    srslte_dl_cfg_t         dl_cfg;
-    ue_bearer_cfg_t         ue_bearers[MAX_LC];
+    uint32_t                            maxharq_tx           = 5;
+    bool                                continuous_pusch     = false;
+    srslte_uci_offset_cfg_t             uci_offset           = {};
+    srslte_pucch_cfg_t                  pucch_cfg            = {};
+    uint32_t                            aperiodic_cqi_period = 0; // if 0 is periodic CQI
+    srslte_dl_cfg_t                     dl_cfg;
+    std::array<ue_bearer_cfg_t, MAX_LC> ue_bearers = {};
+    std::vector<cc_cfg_t>               supported_cc_list; ///< list of UE supported CCs. First index for PCell
+    ant_info_ded_t                      dl_ant_info;
+    bool                                use_tbs_index_alt = false;
   };
 
   typedef struct {
@@ -133,14 +166,14 @@ public:
     uint32_t        current_sf_allocation_num;
   } dl_pdu_mch_t;
 
-  typedef struct {
+  struct dl_sched_data_t {
     srslte_dci_dl_t dci;
     uint32_t        tbs[SRSLTE_MAX_TB];
     bool            mac_ce_ta;
     bool            mac_ce_rnti;
     uint32_t        nof_pdu_elems[SRSLTE_MAX_TB];
     dl_sched_pdu_t  pdu[SRSLTE_MAX_TB][MAX_RLC_PDU_LIST];
-  } dl_sched_data_t;
+  };
 
   typedef struct {
     bool            needs_pdcch;
@@ -205,13 +238,13 @@ public:
   /******************* Scheduler Control ****************************/
 
   /* Provides cell configuration including SIB periodicity, etc. */
-  virtual int cell_cfg(cell_cfg_t* cell_cfg) = 0;
-  virtual int reset()                        = 0;
+  virtual int cell_cfg(const std::vector<cell_cfg_t>& cell_cfg) = 0;
+  virtual int reset()                                           = 0;
 
   /* Manages UE scheduling context */
-  virtual int  ue_cfg(uint16_t rnti, ue_cfg_t* cfg) = 0;
-  virtual int  ue_rem(uint16_t rnti)                = 0;
-  virtual bool ue_exists(uint16_t rnti)             = 0;
+  virtual int  ue_cfg(uint16_t rnti, const ue_cfg_t& cfg) = 0;
+  virtual int  ue_rem(uint16_t rnti)                      = 0;
+  virtual bool ue_exists(uint16_t rnti)                   = 0;
 
   /* Manages UE bearers and associated configuration */
   virtual int bearer_ue_cfg(uint16_t rnti, uint32_t lc_id, ue_bearer_cfg_t* cfg) = 0;
@@ -221,31 +254,50 @@ public:
   virtual uint32_t get_dl_buffer(uint16_t rnti) = 0;
 
   /******************* Scheduling Interface ***********************/
-  /* DL buffer status report */
+
+  /**
+   * Update the current RLC buffer state for a given user and bearer.
+   *
+   * @param rnti user rnti
+   * @param lc_id logical channel id for which the buffer update is concerned
+   * @param tx_queue number of pending bytes for new DL RLC transmissions
+   * @param retx_queue number of pending bytes concerning RLC retransmissions
+   * @return error code
+   */
   virtual int dl_rlc_buffer_state(uint16_t rnti, uint32_t lc_id, uint32_t tx_queue, uint32_t retx_queue) = 0;
-  virtual int dl_mac_buffer_state(uint16_t rnti, uint32_t ce_code)                                       = 0;
+
+  /**
+   * Enqueue MAC CEs for DL transmission
+   *
+   * @param rnti user rnti
+   * @param ce_code lcid of the MAC CE
+   * @param nof_cmds how many repetitions of the same MAC CE should be scheduled
+   * @return error code
+   */
+  virtual int dl_mac_buffer_state(uint16_t rnti, uint32_t ce_code, uint32_t nof_cmds) = 0;
 
   /* DL information */
-  virtual int dl_ack_info(uint32_t tti, uint16_t rnti, uint32_t cc_idx, uint32_t tb_idx, bool ack) = 0;
-  virtual int dl_rach_info(uint32_t cc_idx, dl_sched_rar_info_t rar_info)                          = 0;
-  virtual int dl_ri_info(uint32_t tti, uint16_t rnti, uint32_t cc_idx, uint32_t ri_value)          = 0;
-  virtual int dl_pmi_info(uint32_t tti, uint16_t rnti, uint32_t cc_idx, uint32_t pmi_value)        = 0;
-  virtual int dl_cqi_info(uint32_t tti, uint16_t rnti, uint32_t cc_idx, uint32_t cqi_value)        = 0;
+  virtual int dl_ack_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, uint32_t tb_idx, bool ack) = 0;
+  virtual int dl_rach_info(uint32_t enb_cc_idx, dl_sched_rar_info_t rar_info)                          = 0;
+  virtual int dl_ri_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, uint32_t ri_value)          = 0;
+  virtual int dl_pmi_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, uint32_t pmi_value)        = 0;
+  virtual int dl_cqi_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, uint32_t cqi_value)        = 0;
 
   /* UL information */
-  virtual int ul_crc_info(uint32_t tti, uint16_t rnti, uint32_t cc_idx, bool crc)                          = 0;
-  virtual int ul_sr_info(uint32_t tti, uint16_t rnti)                                                      = 0;
-  virtual int ul_bsr(uint16_t rnti, uint32_t lcid, uint32_t bsr, bool set_value = true)                    = 0;
-  virtual int ul_recv_len(uint16_t rnti, uint32_t lcid, uint32_t len)                                      = 0;
-  virtual int ul_phr(uint16_t rnti, int phr)                                                               = 0;
-  virtual int ul_cqi_info(uint32_t tti, uint16_t rnti, uint32_t cc_idx, uint32_t cqi, uint32_t ul_ch_code) = 0;
+  virtual int ul_crc_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, bool crc)                          = 0;
+  virtual int ul_sr_info(uint32_t tti, uint16_t rnti)                                                          = 0;
+  virtual int ul_bsr(uint16_t rnti, uint32_t lcid, uint32_t bsr, bool set_value = true)                        = 0;
+  virtual int ul_recv_len(uint16_t rnti, uint32_t lcid, uint32_t len)                                          = 0;
+  virtual int ul_phr(uint16_t rnti, int phr)                                                                   = 0;
+  virtual int ul_cqi_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, uint32_t cqi, uint32_t ul_ch_code) = 0;
 
   /* Run Scheduler for this tti */
-  virtual int dl_sched(uint32_t tti, uint32_t cc_idx, dl_sched_res_t& sched_result) = 0;
-  virtual int ul_sched(uint32_t tti, uint32_t cc_idx, ul_sched_res_t& sched_result) = 0;
+  virtual int dl_sched(uint32_t tti, uint32_t enb_cc_idx, dl_sched_res_t& sched_result) = 0;
+  virtual int ul_sched(uint32_t tti, uint32_t enb_cc_idx, ul_sched_res_t& sched_result) = 0;
 
   /* Custom */
-  virtual void set_dl_tti_mask(uint8_t* tti_mask, uint32_t nof_sfs) = 0;
+  virtual void                                 set_dl_tti_mask(uint8_t* tti_mask, uint32_t nof_sfs) = 0;
+  virtual std::array<int, SRSLTE_MAX_CARRIERS> get_enb_ue_cc_map(uint16_t rnti)                     = 0;
 };
 
 } // namespace srsenb

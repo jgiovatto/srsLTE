@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -29,6 +29,7 @@
 #include "srslte/common/log.h"
 #include "srslte/common/security.h"
 #include "srslte/common/threads.h"
+#include "srslte/interfaces/ue_interfaces.h"
 #include <map>
 
 namespace srslte {
@@ -40,11 +41,11 @@ namespace srslte {
 class pdcp_entity_nr : public pdcp_entity_base
 {
 public:
-  pdcp_entity_nr(srsue::rlc_interface_pdcp* rlc_,
-                 srsue::rrc_interface_pdcp* rrc_,
-                 srsue::gw_interface_pdcp*  gw_,
-                 srslte::timer_handler*     timers_,
-                 srslte::log*               log_);
+  pdcp_entity_nr(srsue::rlc_interface_pdcp*      rlc_,
+                 srsue::rrc_interface_pdcp*      rrc_,
+                 srsue::gw_interface_pdcp*       gw_,
+                 srslte::task_handler_interface* task_executor_,
+                 srslte::log_ref                 log_);
   ~pdcp_entity_nr();
   void init(uint32_t lcid_, pdcp_config_t cfg_);
   void reset();
@@ -84,12 +85,6 @@ private:
   // Reordering Queue / Timers
   std::map<uint32_t, unique_byte_buffer_t> reorder_queue;
   timer_handler::unique_timer              reordering_timer;
-
-  // Packing/Unpacking Helper functions
-  uint32_t read_data_header(const unique_byte_buffer_t& sdu);
-  void     write_data_header(const unique_byte_buffer_t& sdu, uint32_t sn);
-  void     extract_mac(const unique_byte_buffer_t& sdu, uint8_t* mac);
-  void     append_mac(const unique_byte_buffer_t& sdu, uint8_t* mac);
 
   // Pass to Upper Layers Helper function
   void deliver_all_consecutive_counts();

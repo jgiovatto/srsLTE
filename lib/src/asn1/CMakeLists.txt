@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -22,37 +22,39 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-switch -Wno-unused-variable -Wno-re
 add_library(srslte_asn1 STATIC
   liblte_common.cc
   liblte_mme.cc
-  liblte_s1ap.cc
   liblte_m2ap.cc
   gtpc.cc
 )
-install(TARGETS srslte_asn1 DESTINATION ${LIBRARY_DIR})
 
-# Install ASN1 utils
+# ASN1 utils
 add_library(asn1_utils STATIC asn1_utils.cc)
-install(TARGETS asn1_utils DESTINATION ${LIBRARY_DIR})
+target_link_libraries(asn1_utils srslte_common)
 
 add_library(rrc_asn1 STATIC
         rrc_asn1.cc
+        rrc_asn1_nbiot.cc
         rrc_asn1_enum.cc
         rrc_asn1_utils.cc
         )
 # Compile RRC ASN1 optimized for size
 target_compile_options(rrc_asn1 PRIVATE "-Os")
-target_link_libraries(rrc_asn1 asn1_utils)
-install(TARGETS rrc_asn1 DESTINATION ${LIBRARY_DIR})
+target_link_libraries(rrc_asn1 asn1_utils srslte_common)
+
+add_library(s1ap_asn1 STATIC
+        s1ap_asn1.cc)
+target_compile_options(s1ap_asn1 PRIVATE "-Os")
+target_link_libraries(s1ap_asn1 asn1_utils srslte_common)
 
 if (ENABLE_5GNR)
-    # Install RRC NR ASN1
+    # RRC NR ASN1
     add_library(rrc_nr_asn1 STATIC rrc_nr_asn1.cc)
     target_compile_options(rrc_nr_asn1 PRIVATE "-Os")
-    target_link_libraries(rrc_nr_asn1 asn1_utils)
-    install(TARGETS rrc_nr_asn1 DESTINATION ${LIBRARY_DIR})
-    # Install NGAP ASN1
+    target_link_libraries(rrc_nr_asn1 asn1_utils srslte_common)
+
+    # NGAP ASN1
     add_library(ngap_nr_asn1 STATIC ngap_nr_asn1.cc)
     target_compile_options(ngap_nr_asn1 PRIVATE "-Os")
-    target_link_libraries(ngap_nr_asn1 asn1_utils)
-    install(TARGETS ngap_nr_asn1 DESTINATION ${LIBRARY_DIR})
+    target_link_libraries(ngap_nr_asn1 asn1_utils srslte_common)
 endif(ENABLE_5GNR)
 
 

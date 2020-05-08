@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -67,7 +67,7 @@ void srslte_filt_decim_cc_init(srslte_filt_cc_t* q, int factor, int order)
   q->factor       = factor;
   q->num_taps     = order + 1;
   q->is_decimator = true;
-  q->taps         = malloc(q->num_taps * sizeof(float));
+  q->taps         = srslte_vec_f_malloc(q->num_taps);
 
   switch (q->factor) {
     case 2:

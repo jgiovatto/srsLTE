@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -24,6 +24,7 @@
 
 #include "srslte/config.h"
 #include "srslte/phy/utils/simd.h"
+#include <inttypes.h>
 
 /* Generic implementation for complex reciprocal */
 SRSLTE_API cf_t srslte_mat_cf_recip_gen(cf_t a);
@@ -74,29 +75,6 @@ SRSLTE_API __m128 srslte_mat_cf_recip_sse(__m128 a);
 /* SSE implementation for 2x2 determinant */
 SRSLTE_API __m128 srslte_mat_2x2_det_sse(__m128 a00, __m128 a01, __m128 a10, __m128 a11);
 
-/* SSE implementation for Zero Forcing (ZF) solver */
-SRSLTE_API void srslte_mat_2x2_zf_sse(__m128  y0,
-                                      __m128  y1,
-                                      __m128  h00,
-                                      __m128  h01,
-                                      __m128  h10,
-                                      __m128  h11,
-                                      __m128* x0,
-                                      __m128* x1,
-                                      float   norm);
-
-/* SSE implementation for Minimum Mean Squared Error (MMSE) solver */
-SRSLTE_API void srslte_mat_2x2_mmse_sse(__m128  y0,
-                                        __m128  y1,
-                                        __m128  h00,
-                                        __m128  h01,
-                                        __m128  h10,
-                                        __m128  h11,
-                                        __m128* x0,
-                                        __m128* x1,
-                                        float   noise_estimate,
-                                        float   norm);
-
 #endif /* LV_HAVE_SSE */
 
 #ifdef LV_HAVE_AVX
@@ -106,29 +84,6 @@ SRSLTE_API __m256 srslte_mat_cf_recip_avx(__m256 a);
 
 /* AVX implementation for 2x2 determinant */
 SRSLTE_API __m256 srslte_mat_2x2_det_avx(__m256 a00, __m256 a01, __m256 a10, __m256 a11);
-
-/* AVX implementation for Zero Forcing (ZF) solver */
-SRSLTE_API void srslte_mat_2x2_zf_avx(__m256  y0,
-                                      __m256  y1,
-                                      __m256  h00,
-                                      __m256  h01,
-                                      __m256  h10,
-                                      __m256  h11,
-                                      __m256* x0,
-                                      __m256* x1,
-                                      float   norm);
-
-/* AVX implementation for Minimum Mean Squared Error (MMSE) solver */
-SRSLTE_API void srslte_mat_2x2_mmse_avx(__m256  y0,
-                                        __m256  y1,
-                                        __m256  h00,
-                                        __m256  h01,
-                                        __m256  h10,
-                                        __m256  h11,
-                                        __m256* x0,
-                                        __m256* x1,
-                                        float   noise_estimate,
-                                        float   norm);
 
 #endif /* LV_HAVE_AVX */
 
@@ -249,4 +204,17 @@ static inline void srslte_mat_2x2_mmse_simd(simd_cf_t  y0,
 }
 
 #endif /* SRSLTE_SIMD_CF_SIZE != 0 */
+
+typedef struct {
+  uint32_t N;
+  cf_t*    row_buffer;
+  cf_t*    matrix;
+} srslte_matrix_NxN_inv_t;
+
+SRSLTE_API int srslte_matrix_NxN_inv_init(srslte_matrix_NxN_inv_t* q, uint32_t N);
+
+SRSLTE_API void srslte_matrix_NxN_inv_run(srslte_matrix_NxN_inv_t* q, cf_t* in, cf_t* out);
+
+SRSLTE_API void srslte_matrix_NxN_inv_free(srslte_matrix_NxN_inv_t* q);
+
 #endif /* SRSLTE_MAT_H */

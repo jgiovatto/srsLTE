@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -35,8 +35,6 @@
 
 #include "modem_table.h"
 #include "srslte/config.h"
-
-typedef _Complex float cf_t;
 
 typedef struct SRSLTE_API {
   srslte_mod_t mod; /* In this implementation, mapping table is hard-coded */

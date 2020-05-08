@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -53,6 +53,7 @@ typedef struct SRSLTE_API {
   float    snr;
   float    snr_db;
   float    cfo;
+  float    ta_us;
 } srslte_chest_ul_res_t;
 
 typedef struct {

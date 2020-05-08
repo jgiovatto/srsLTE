@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -50,24 +50,6 @@ inline bool is_in_tti_interval(uint32_t tti, uint32_t tti1, uint32_t tti2)
 
 } // namespace sched_utils
 
-//! struct to bundle together all the sched arguments, and share them with all the sched sub-components
-class sched_params_t
-{
-public:
-  srslte::log*                                             log_h            = nullptr;
-  sched_interface::cell_cfg_t*                             cfg              = nullptr;
-  sched_interface::sched_args_t                            sched_cfg        = {};
-  srslte_regs_t*                                           regs             = nullptr;
-  std::array<sched_ue::sched_dci_cce_t, 3>                 common_locations = {};
-  std::array<std::array<sched_ue::sched_dci_cce_t, 10>, 3> rar_locations    = {};
-  std::array<uint32_t, 3>                                  nof_cce_table    = {}; ///< map cfix -> nof cces in PDCCH
-  uint32_t                                                 P                = 0;
-  uint32_t                                                 nof_rbgs         = 0;
-
-  sched_params_t();
-  bool set_cfg(srslte::log* log_, sched_interface::cell_cfg_t* cfg_, srslte_regs_t* regs_);
-};
-
 /* Caution: User addition (ue_cfg) and removal (ue_rem) are not thread-safe
  * Rest of operations are thread-safe
  *
@@ -87,17 +69,19 @@ public:
   class metric_dl
   {
   public:
+    virtual ~metric_dl() = default;
     /* Virtual methods for user metric calculation */
-    virtual void set_params(const sched_params_t& sched_params_)                                              = 0;
-    virtual void sched_users(std::map<uint16_t, sched_ue>& ue_db, dl_tti_sched_t* tti_sched, uint32_t cc_idx) = 0;
+    virtual void set_params(const sched_cell_params_t& cell_params_)                          = 0;
+    virtual void sched_users(std::map<uint16_t, sched_ue>& ue_db, dl_sf_sched_itf* tti_sched) = 0;
   };
 
   class metric_ul
   {
   public:
+    virtual ~metric_ul() = default;
     /* Virtual methods for user metric calculation */
-    virtual void set_params(const sched_params_t& sched_params_)                                              = 0;
-    virtual void sched_users(std::map<uint16_t, sched_ue>& ue_db, ul_tti_sched_t* tti_sched, uint32_t cc_idx) = 0;
+    virtual void set_params(const sched_cell_params_t& cell_params_)                          = 0;
+    virtual void sched_users(std::map<uint16_t, sched_ue>& ue_db, ul_sf_sched_itf* tti_sched) = 0;
   };
 
   /*************************************************************
@@ -107,18 +91,16 @@ public:
    ************************************************************/
 
   sched();
-  ~sched();
+  ~sched() override;
 
-  void init(rrc_interface_mac* rrc, srslte::log* log);
-  void set_metric(metric_dl* dl_metric, metric_ul* ul_metric);
-  int  cell_cfg(cell_cfg_t* cell_cfg) final;
+  void init(rrc_interface_mac* rrc);
+  int  cell_cfg(const std::vector<cell_cfg_t>& cell_cfg) override;
   void set_sched_cfg(sched_args_t* sched_cfg);
   int  reset() final;
 
-  int  ue_cfg(uint16_t rnti, ue_cfg_t* ue_cfg) final;
+  int  ue_cfg(uint16_t rnti, const ue_cfg_t& ue_cfg) final;
   int  ue_rem(uint16_t rnti) final;
   bool ue_exists(uint16_t rnti) final;
-  void ue_needs_ta_cmd(uint16_t rnti, uint32_t nof_ta_cmd);
 
   void phy_config_enabled(uint16_t rnti, bool enabled);
 
@@ -129,71 +111,51 @@ public:
   uint32_t get_dl_buffer(uint16_t rnti) final;
 
   int dl_rlc_buffer_state(uint16_t rnti, uint32_t lc_id, uint32_t tx_queue, uint32_t retx_queue) final;
-  int dl_mac_buffer_state(uint16_t rnti, uint32_t ce_code) final;
+  int dl_mac_buffer_state(uint16_t rnti, uint32_t ce_code, uint32_t nof_cmds = 1) final;
 
-  int dl_ant_info(uint16_t rnti, asn1::rrc::phys_cfg_ded_s::ant_info_c_* dedicated);
-  int dl_ack_info(uint32_t tti, uint16_t rnti, uint32_t cc_idx, uint32_t tb_idx, bool ack) final;
-  int dl_rach_info(uint32_t cc_idx, dl_sched_rar_info_t rar_info) final;
-  int dl_ri_info(uint32_t tti, uint16_t rnti, uint32_t cc_idx, uint32_t ri_value) final;
-  int dl_pmi_info(uint32_t tti, uint16_t rnti, uint32_t cc_idx, uint32_t pmi_value) final;
-  int dl_cqi_info(uint32_t tti, uint16_t rnti, uint32_t cc_idx, uint32_t cqi_value) final;
-
-  int ul_crc_info(uint32_t tti, uint16_t rnti, uint32_t cc_idx, bool crc) final;
+  int dl_ack_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, uint32_t tb_idx, bool ack) final;
+  int dl_rach_info(uint32_t enb_cc_idx, dl_sched_rar_info_t rar_info) final;
+  int dl_ri_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, uint32_t ri_value) final;
+  int dl_pmi_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, uint32_t pmi_value) final;
+  int dl_cqi_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, uint32_t cqi_value) final;
+  int ul_crc_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, bool crc) final;
   int ul_sr_info(uint32_t tti, uint16_t rnti) override;
   int ul_bsr(uint16_t rnti, uint32_t lcid, uint32_t bsr, bool set_value = true) final;
   int ul_recv_len(uint16_t rnti, uint32_t lcid, uint32_t len) final;
   int ul_phr(uint16_t rnti, int phr) final;
-  int ul_cqi_info(uint32_t tti, uint16_t rnti, uint32_t cc_idx, uint32_t cqi, uint32_t ul_ch_code) final;
+  int ul_cqi_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, uint32_t cqi, uint32_t ul_ch_code) final;
 
-  int dl_sched(uint32_t tti, uint32_t cc_idx, dl_sched_res_t& sched_result) final;
-  int ul_sched(uint32_t tti, uint32_t cc_idx, ul_sched_res_t& sched_result) final;
+  int dl_sched(uint32_t tti, uint32_t enb_cc_idx, dl_sched_res_t& sched_result) final;
+  int ul_sched(uint32_t tti, uint32_t enb_cc_idx, ul_sched_res_t& sched_result) final;
 
   /* Custom functions
    */
-  void set_dl_tti_mask(uint8_t* tti_mask, uint32_t nof_sfs) final;
-  void tpc_inc(uint16_t rnti);
-  void tpc_dec(uint16_t rnti);
-
-  // Static Methods
-  static uint32_t get_rvidx(uint32_t retx_idx)
-  {
-    const static int rv_idx[4] = {0, 2, 3, 1};
-    return rv_idx[retx_idx % 4];
-  }
-  static void     generate_cce_location(srslte_regs_t*             regs,
-                                        sched_ue::sched_dci_cce_t* location,
-                                        uint32_t                   cfi,
-                                        uint32_t                   sf_idx = 0,
-                                        uint16_t                   rnti   = 0);
-  static uint32_t aggr_level(uint32_t aggr_idx) { return 1u << aggr_idx; }
+  void                                 set_dl_tti_mask(uint8_t* tti_mask, uint32_t nof_sfs) final;
+  void                                 tpc_inc(uint16_t rnti);
+  void                                 tpc_dec(uint16_t rnti);
+  std::array<int, SRSLTE_MAX_CARRIERS> get_enb_ue_cc_map(uint16_t rnti) final;
 
   class carrier_sched;
 
 protected:
-  srslte::log*       log_h;
-  rrc_interface_mac* rrc;
-  sched_params_t     sched_params;
-
-  pthread_rwlock_t rwlock;
-
-  cell_cfg_t cfg;
-
-  // This is for computing DCI locations
-  srslte_regs_t regs;
-
   // Helper methods
   template <typename Func>
-  int ue_db_access(uint16_t rnti, Func);
+  int ue_db_access(uint16_t rnti, Func, const char* func_name = nullptr);
+
+  // args
+  srslte::log_ref                  log_h;
+  rrc_interface_mac*               rrc       = nullptr;
+  sched_args_t                     sched_cfg = {};
+  std::vector<sched_cell_params_t> sched_cell_params;
 
   std::map<uint16_t, sched_ue> ue_db;
 
   // independent schedulers for each carrier
   std::vector<std::unique_ptr<carrier_sched> > carrier_schedulers;
 
-  std::array<uint32_t, 10> pdsch_re;
-  uint32_t                 current_tti;
-
-  bool configured;
+  uint32_t   last_tti = 0;
+  std::mutex sched_mutex;
+  bool       configured = false;
 };
 
 } // namespace srsenb

@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -66,7 +66,7 @@ if(RF_FOUND)
     target_link_libraries(srslte_rf ${ZEROMQ_LIBRARIES})
     add_executable(rf_zmq_test rf_zmq_test.c)
     target_link_libraries(rf_zmq_test srslte_rf)
-    add_test(rf_zmq_test rf_zmq_test )
+    #add_test(rf_zmq_test rf_zmq_test)
   endif (ZEROMQ_FOUND)
 
   if (ENABLE_SHMEMRF)

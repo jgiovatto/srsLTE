@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -83,7 +83,7 @@ SRSLTE_API void srslte_bit_unpack(uint32_t value, uint8_t** bits, int nof_bits);
 
 SRSLTE_API void srslte_bit_fprint(FILE* stream, uint8_t* bits, int nof_bits);
 
-SRSLTE_API uint32_t srslte_bit_diff(uint8_t* x, uint8_t* y, int nbits);
+SRSLTE_API uint32_t srslte_bit_diff(const uint8_t* x, const uint8_t* y, int nbits);
 
 SRSLTE_API uint32_t srslte_bit_count(uint32_t n);
 

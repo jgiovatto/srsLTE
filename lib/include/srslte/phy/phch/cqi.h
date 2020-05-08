@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -55,7 +55,7 @@ typedef enum {
 typedef struct {
   bool                     periodic_configured;
   bool                     aperiodic_configured;
-  uint32_t                 pmi_idx;
+  uint16_t                 pmi_idx;
   uint32_t                 ri_idx;
   bool                     ri_idx_present;
   bool                     format_is_subband;
@@ -120,11 +120,11 @@ typedef enum {
 
 typedef struct SRSLTE_API {
   bool              data_enable;
-  bool              ri_present;
   bool              pmi_present;
-  bool              four_antenna_ports;   // If cell has 4 antenna ports then true otherwise false
-  bool              rank_is_not_one;      // If rank > 1 then true otherwise false
-  bool              subband_label_2_bits; // false, label=1-bit, true label=2-ack_value
+  bool              four_antenna_ports;   ///< If cell has 4 antenna ports then true otherwise false
+  bool              rank_is_not_one;      ///< If rank > 1 then true otherwise false
+  bool              subband_label_2_bits; ///< false, label=1-bit, true label=2-ack_value
+  uint32_t          scell_index;          ///< Indicates the cell/carrier the measurement belongs, use 0 for PCell
   uint32_t          L;
   uint32_t          N;
   srslte_cqi_type_t type;
@@ -152,10 +152,10 @@ SRSLTE_API int
 srslte_cqi_value_tostring(srslte_cqi_cfg_t* cfg, srslte_cqi_value_t* value, char* buff, uint32_t buff_len);
 
 SRSLTE_API bool
-srslte_cqi_periodic_send(srslte_cqi_report_cfg_t* periodic_cfg, uint32_t tti, srslte_frame_type_t frame_type);
+srslte_cqi_periodic_send(const srslte_cqi_report_cfg_t* periodic_cfg, uint32_t tti, srslte_frame_type_t frame_type);
 
 SRSLTE_API bool
-srslte_cqi_periodic_ri_send(srslte_cqi_report_cfg_t* periodic_cfg, uint32_t tti, srslte_frame_type_t frame_type);
+srslte_cqi_periodic_ri_send(const srslte_cqi_report_cfg_t* periodic_cfg, uint32_t tti, srslte_frame_type_t frame_type);
 
 SRSLTE_API int srslte_cqi_hl_get_no_subbands(int nof_prb);
 

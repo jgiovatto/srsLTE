@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -30,9 +30,9 @@
 
 #include "srslte/asn1/gtpc.h"
 #include "srslte/common/buffer_pool.h"
-#include "srslte/common/log.h"
 #include "srslte/common/log_filter.h"
 #include "srslte/common/logger_file.h"
+#include "srslte/common/logmap.h"
 #include "srslte/common/threads.h"
 #include <cstddef>
 #include <queue>
@@ -62,7 +62,7 @@ typedef struct spgw_tunnel_ctx {
   std::queue<srslte::byte_buffer_t*> paging_queue;
 } spgw_tunnel_ctx_t;
 
-class spgw : public thread
+class spgw : public srslte::thread
 {
   class gtpc;
   class gtpu;
@@ -71,7 +71,7 @@ public:
   static spgw* get_instance(void);
   static void  cleanup(void);
   int          init(spgw_args_t*                           args,
-                    srslte::log_filter*                    gtpu_log,
+                    srslte::log_ref                        gtpu_log,
                     srslte::log_filter*                    gtpc_log,
                     srslte::log_filter*                    spgw_log,
                     const std::map<std::string, uint64_t>& ip_to_imsi);

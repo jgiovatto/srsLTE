@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -48,7 +48,6 @@ public:
   log_filter();
   log_filter(std::string layer);
   log_filter(std::string layer, logger* logger_, bool tti = false);
-  ~log_filter();
 
   void init(std::string layer, logger* logger_, bool tti = false);
 

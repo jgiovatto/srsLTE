@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -50,6 +50,7 @@ extern "C" {
 #include "srslte/phy/ch_estimation/chest_ul.h"
 #include "srslte/phy/ch_estimation/refsignal_dl.h"
 #include "srslte/phy/ch_estimation/refsignal_ul.h"
+#include "srslte/phy/ch_estimation/wiener_dl.h"
 
 #include "srslte/phy/resampling/decim.h"
 #include "srslte/phy/resampling/interp.h"
@@ -95,6 +96,7 @@ extern "C" {
 #include "srslte/phy/phch/phich.h"
 #include "srslte/phy/phch/prach.h"
 #include "srslte/phy/phch/pucch.h"
+#include "srslte/phy/phch/pucch_proc.h"
 #include "srslte/phy/phch/pusch.h"
 #include "srslte/phy/phch/ra.h"
 #include "srslte/phy/phch/ra_dl.h"

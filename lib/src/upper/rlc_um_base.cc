@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -22,11 +22,9 @@
 #include "srslte/upper/rlc_um_base.h"
 #include <sstream>
 
-using namespace asn1::rrc;
-
 namespace srslte {
 
-rlc_um_base::rlc_um_base(srslte::log*               log_,
+rlc_um_base::rlc_um_base(srslte::log_ref            log_,
                          uint32_t                   lcid_,
                          srsue::pdcp_interface_rlc* pdcp_,
                          srsue::rrc_interface_rlc*  rrc_,

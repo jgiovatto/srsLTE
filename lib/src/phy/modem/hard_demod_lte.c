@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -18,6 +18,9 @@
  * and at http://www.gnu.org/licenses/.
  *
  */
+
+#ifndef SRSLTE_HARD_DEMOD_LTE_H_
+#define SRSLTE_HARD_DEMOD_LTE_H_
 
 #include <complex.h>
 #include <math.h>
@@ -281,3 +284,5 @@ inline void hard_qam256_demod(const cf_t* in, uint8_t* out, uint32_t N)
     }
   }
 }
+
+#endif /* SRSLTE_HARD_DEMOD_LTE_H_ */

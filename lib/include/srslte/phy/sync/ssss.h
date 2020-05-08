@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -34,7 +34,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "srslte/phy/common/phy_common.h"
+#include "srslte/phy/common/phy_common_sl.h"
 #include "srslte/phy/dft/dft.h"
 
 #define SRSLTE_SSSS_NOF_SEQ 336

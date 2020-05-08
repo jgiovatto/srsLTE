@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -22,8 +22,11 @@
 #ifndef SRSLTE_RRC_ASN1_UTILS_H
 #define SRSLTE_RRC_ASN1_UTILS_H
 
-#include "srslte/common/interfaces_common.h"
+#include "srslte/interfaces/mac_interface_types.h"
+#include "srslte/interfaces/pdcp_interface_types.h"
+#include "srslte/interfaces/rlc_interface_types.h"
 #include "srslte/interfaces/rrc_interface_types.h"
+#include "srslte/interfaces/sched_interface.h"
 
 /************************
  * Forward declarations
@@ -36,10 +39,13 @@ struct s_tmsi_s;
 struct rlc_cfg_c;
 struct pdcp_cfg_s;
 struct srb_to_add_mod_s;
+// mac
 struct sched_request_cfg_c;
 struct mac_main_cfg_s;
 struct rach_cfg_common_s;
 struct time_align_timer_opts;
+struct ant_info_ded_s;
+
 struct phys_cfg_ded_s;
 struct prach_cfg_info_s;
 struct pdsch_cfg_common_s;
@@ -60,6 +66,9 @@ struct meas_obj_to_add_mod_s;
 struct report_cfg_to_add_mod_s;
 struct meas_id_to_add_mod_s;
 struct quant_cfg_s;
+
+// UE Capabilities
+struct ue_eutra_cap_s;
 
 } // namespace rrc
 } // namespace asn1
@@ -98,6 +107,8 @@ void set_mac_cfg_t_main_cfg(mac_cfg_t* cfg, const asn1::rrc::mac_main_cfg_s& asn
 void set_mac_cfg_t_rach_cfg_common(mac_cfg_t* cfg, const asn1::rrc::rach_cfg_common_s& asn1_type);
 void set_mac_cfg_t_time_alignment(mac_cfg_t* cfg, const asn1::rrc::time_align_timer_opts asn1_type);
 
+srsenb::sched_interface::ant_info_ded_t make_ant_info_ded(const asn1::rrc::ant_info_ded_s& asn1_type);
+
 /***************************
  *      PHY Config
  **************************/
@@ -110,6 +121,11 @@ void set_phy_cfg_t_common_srs(phy_cfg_t* cfg, const asn1::rrc::srs_ul_cfg_common
 void set_phy_cfg_t_common_pwr_ctrl(phy_cfg_t* cfg, const asn1::rrc::ul_pwr_ctrl_common_s& asn1_type);
 void set_phy_cfg_t_scell_config(phy_cfg_t* cfg, const asn1::rrc::scell_to_add_mod_r10_s& asn1_type);
 void set_phy_cfg_t_enable_64qam(phy_cfg_t* cfg, const bool enabled);
+
+/***************************
+ *  EUTRA UE Capabilities
+ **************************/
+void set_rrc_ue_capabilities_t(rrc_ue_capabilities_t& ue_cap, const asn1::rrc::ue_eutra_cap_s& eutra_cap_s);
 
 // mbms
 mbms_notif_cfg_t  make_mbms_notif_cfg(const asn1::rrc::mbms_notif_cfg_r9_s& asn1_type);

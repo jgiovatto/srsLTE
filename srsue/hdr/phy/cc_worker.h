@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -38,8 +38,9 @@ public:
   bool set_cell(srslte_cell_t cell);
 
   /* Functions used by main PHY thread */
-  cf_t* get_rx_buffer(uint32_t antenna_idx);
-  cf_t* get_tx_buffer(uint32_t antenna_idx);
+  cf_t*    get_rx_buffer(uint32_t antenna_idx);
+  cf_t*    get_tx_buffer(uint32_t antenna_idx);
+  uint32_t get_buffer_len();
 
   void  set_tti(uint32_t tti);
   void  set_cfo(float cfo);
@@ -47,6 +48,7 @@ public:
 
   void set_tdd_config(srslte_tdd_config_t config);
   void set_config(srslte::phy_cfg_t& phy_cfg);
+  void upd_config_dci(srslte_dci_cfg_t& dci_cfg);
   void set_crnti(uint16_t rnti);
   void enable_pregen_signals(bool enabled);
 
@@ -100,6 +102,7 @@ private:
   bool     cell_initiated                     = false;
   cf_t*    signal_buffer_rx[SRSLTE_MAX_PORTS] = {};
   cf_t*    signal_buffer_tx[SRSLTE_MAX_PORTS] = {};
+  uint32_t signal_buffer_max_samples          = 0;
 
   /* Objects for DL */
   srslte_ue_dl_t     ue_dl     = {};

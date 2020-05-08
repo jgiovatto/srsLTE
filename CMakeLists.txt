@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -67,6 +67,7 @@ option(ENABLE_SRSENB   "Build srsENB application"                 ON)
 option(ENABLE_SRSEPC   "Build srsEPC application"                 ON)
 option(ENABLE_5GNR     "Build with 5G-NR components"              OFF)
 option(DISABLE_SIMD    "disable simd instructions"                OFF)
+option(AUTO_DETECT_ISA "Autodetect supported ISA extensions"      ON)
 
 option(ENABLE_GUI      "Enable GUI (using srsGUI)"                ON)
 option(ENABLE_UHD      "Enable UHD"                               ON)
@@ -76,16 +77,20 @@ option(ENABLE_ZEROMQ   "Enable ZeroMQ"                            ON)
 option(ENABLE_HARDSIM  "Enable support for SIM cards"             ON)
 
 option(ENABLE_TTCN3    "Enable TTCN3 test binaries"               OFF)
+option(ENABLE_ZMQ_TEST "Enable ZMQ based E2E tests"               OFF)
 
 option(BUILD_STATIC    "Attempt to statically link external deps" OFF)
 option(RPATH           "Enable RPATH"                             OFF)
 option(ENABLE_ASAN     "Enable gcc/clang address sanitizer"       OFF)
+option(ENABLE_GCOV     "Enable gcc/clang address sanitizer"       OFF)
 option(ENABLE_MSAN     "Enable clang memory sanitizer"            OFF)
 option(ENABLE_TIDY     "Enable clang tidy"                        OFF)
 
 option(USE_LTE_RATES   "Use standard LTE sampling rates"          OFF)
 option(USE_GLIBC_IPV6  "Use glibc's own ipv6.h"                   ON)
 option(USE_MKL         "Use MKL instead of fftw"                  OFF)
+
+option(ENABLE_TIMEPROF "Enable time profiling"                    ON)
 
 option(FORCE_32BIT     "Add flags to force 32 bit compilation"    OFF)
 
@@ -214,6 +219,11 @@ if(ENABLE_ZEROMQ)
   endif(ZEROMQ_FOUND)
 endif(ENABLE_ZEROMQ)
 
+# TimeProf
+if(ENABLE_TIMEPROF)
+    add_definitions(-DENABLE_TIMEPROF)
+endif(ENABLE_TIMEPROF)
+
 if(BLADERF_FOUND OR UHD_FOUND OR SOAPYSDR_FOUND OR ZEROMQ_FOUND OR ENABLE_SHMEMRF)
   set(RF_FOUND TRUE CACHE INTERNAL "RF frontend found")
 else(BLADERF_FOUND OR UHD_FOUND OR SOAPYSDR_FOUND OR ZEROMQ_FOUND OR ENABLE_SHMEMRF)
@@ -294,6 +304,9 @@ configure_file(
 )
 install(PROGRAMS ${CMAKE_BINARY_DIR}/srslte_install_configs.sh DESTINATION ${RUNTIME_DIR})
 
+# Disables the project to build when calling "make install"
+set(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY TRUE)
+
 ########################################################################
 # Compiler specific setup
 ########################################################################
@@ -319,7 +332,10 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   ADD_C_COMPILER_FLAG_IF_AVAILABLE("-Wno-unused-but-set-variable" HAVE_WNO_UNUSED_BUT_SET_VARIABLE)
   ADD_CXX_COMPILER_FLAG_IF_AVAILABLE("-Wno-unused-but-set-variable" HAVE_WNO_UNUSED_BUT_SET_VARIABLE)
 
-  find_package(SSE)
+  if (AUTO_DETECT_ISA)
+    find_package(SSE)
+  endif (AUTO_DETECT_ISA)
+
   if (HAVE_AVX2)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=${GCC_ARCH} -mfpmath=sse -mavx2 -DLV_HAVE_AVX2 -DLV_HAVE_AVX -DLV_HAVE_SSE")
   else (HAVE_AVX2)
@@ -370,7 +386,9 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_GLIBC_IPV6")
   endif (USE_GLIBC_IPV6)
 
-  find_package(SSE)
+  if (AUTO_DETECT_ISA)
+    find_package(SSE)
+  endif (AUTO_DETECT_ISA)
   if (HAVE_AVX2)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=${GCC_ARCH} -mfpmath=sse -mavx2 -DLV_HAVE_AVX2 -DLV_HAVE_AVX -DLV_HAVE_SSE")
   else (HAVE_AVX2)
@@ -437,6 +455,11 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=memory -fno-omit-frame-pointer -fPIE -pie")
   endif (ENABLE_MSAN AND CMAKE_C_COMPILER_ID MATCHES "Clang")
 
+  if (ENABLE_GCOV)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-arcs -ftest-coverage")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-arcs -ftest-coverage")
+  endif (ENABLE_GCOV)
+
 endif(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang")
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
@@ -492,6 +515,12 @@ configure_file(
 
 add_custom_target(uninstall
     COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
+
+########################################################################
+# Create optional target to build osmo-gsm-tester trial
+########################################################################
+add_custom_target(trial
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/build_trial.sh)
 
 ########################################################################
 # Add -fPIC property to all targets
@@ -552,3 +581,5 @@ if(ENABLE_SRSEPC)
 else(ENABLE_SRSEPC)
   message(STATUS "srsEPC build disabled")
 endif(ENABLE_SRSEPC)
+
+add_subdirectory(test)

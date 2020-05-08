@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -25,6 +25,7 @@
 #include "srslte/phy/phch/cqi.h"
 
 #define SRSLTE_UCI_MAX_ACK_BITS 10
+#define SRSLTE_UCI_MAX_ACK_SR_BITS (SRSLTE_UCI_MAX_ACK_BITS + 1)
 #define SRSLTE_UCI_MAX_M 9
 
 typedef struct SRSLTE_API {
@@ -33,8 +34,8 @@ typedef struct SRSLTE_API {
 } srslte_uci_value_ack_t;
 
 typedef struct SRSLTE_API {
-  bool     pending_tb[SRSLTE_MAX_CODEWORDS];
-  uint32_t nof_acks;
+  bool     pending_tb[SRSLTE_MAX_CODEWORDS]; //< Indicates whether there was a grant that requires an ACK/NACK
+  uint32_t nof_acks;                         //< Number of transport blocks, deduced from transmission mode
   uint32_t ncce[SRSLTE_UCI_MAX_M];
   uint32_t N_bundle;
   uint32_t tdd_ack_M;

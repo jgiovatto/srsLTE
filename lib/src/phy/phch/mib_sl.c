@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -23,7 +23,6 @@
 
 #include "srslte/phy/phch/mib_sl.h"
 #include "srslte/phy/utils/bit.h"
-//#include "srslte/phy/common/phy_sl_common.h"
 
 int srslte_mib_sl_init(srslte_mib_sl_t* q, srslte_sl_tm_t tm)
 {

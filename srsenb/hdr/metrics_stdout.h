@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -41,12 +41,13 @@ public:
   metrics_stdout();
 
   void toggle_print(bool b);
-  void set_metrics(enb_metrics_t& m, const uint32_t period_usec);
+  void set_metrics(const enb_metrics_t& m, const uint32_t period_usec);
   void set_handle(enb_metrics_interface* enb_);
   void stop(){};
 
 private:
-  std::string float_to_string(float f, int digits);
+  std::string float_to_string(float f, int digits, int field_width = 6);
+  std::string int_to_hex_string(int value, int field_width);
   std::string float_to_eng_string(float f, int digits);
 
   bool                   do_print;

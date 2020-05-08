@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <functional>
 #include <limits>
+#include <mutex>
 #include <queue>
 #include <stdint.h>
 #include <stdio.h>
@@ -68,7 +69,7 @@ class timer_handler
 
     bool is_expired() const { return active and not running and timeout > 0 and timeout <= parent->cur_time; }
 
-    uint32_t value() const { return parent->cur_time - (timeout - duration); }
+    uint32_t time_elapsed() const { return std::min(duration, parent->cur_time - (timeout - duration)); }
 
     bool set(uint32_t duration_)
     {
@@ -99,6 +100,7 @@ class timer_handler
 
     void run()
     {
+      std::unique_lock<std::mutex> lock(parent->mutex);
       if (not active) {
         ERROR("Error: calling run() for inactive timer id=%d\n", id());
         return;
@@ -140,7 +142,7 @@ public:
   class unique_timer
   {
   public:
-    unique_timer() : parent(nullptr), timer_id(std::numeric_limits<decltype(timer_id)>::max()) {}
+    unique_timer() : timer_id(std::numeric_limits<decltype(timer_id)>::max()) {}
     explicit unique_timer(timer_handler* parent_, uint32_t timer_id_) : parent(parent_), timer_id(timer_id_) {}
 
     unique_timer(const unique_timer&) = delete;
@@ -152,7 +154,7 @@ public:
 
     ~unique_timer()
     {
-      if (parent) {
+      if (parent != nullptr) {
         // does not call callback
         impl()->clear();
       }
@@ -182,11 +184,13 @@ public:
 
     bool is_expired() const { return impl()->is_expired(); }
 
-    uint32_t value() const { return impl()->value(); }
+    uint32_t time_elapsed() const { return impl()->time_elapsed(); }
 
     void run() { impl()->run(); }
 
     void stop() { impl()->stop(); }
+
+    void clear() { impl()->clear(); }
 
     void release()
     {
@@ -203,7 +207,7 @@ public:
 
     const timer_impl* impl() const { return &parent->timer_list[timer_id]; }
 
-    timer_handler* parent;
+    timer_handler* parent = nullptr;
     uint32_t       timer_id;
   };
 
@@ -219,15 +223,34 @@ public:
 
   void step_all()
   {
+    std::unique_lock<std::mutex> lock(mutex);
     cur_time++;
-    while (not running_timers.empty() and cur_time >= running_timers.top().timeout) {
-      timer_impl* ptr = &timer_list[running_timers.top().timer_id];
+    while (not running_timers.empty()) {
+      uint32_t    next_timeout = running_timers.top().timeout;
+      timer_impl* ptr          = &timer_list[running_timers.top().timer_id];
+      if (not ptr->is_running() or next_timeout != ptr->timeout) {
+        // remove timers that were explicitly stopped, or re-run, to avoid unnecessary priority_queue growth
+        running_timers.pop();
+        continue;
+      }
+      if (cur_time < next_timeout) {
+        break;
+      }
       // if the timer_run and timer_impl timeouts do not match, it means that timer_impl::timeout was overwritten.
       // in such case, do not trigger
-      if (ptr->timeout == running_timers.top().timeout) {
-        ptr->trigger();
-      }
+      uint32_t timeout = running_timers.top().timeout;
       running_timers.pop();
+
+      if (ptr->timeout == timeout) {
+        // unlock mutex, it could be that the callback tries to run a timer too
+        lock.unlock();
+
+        // Call callback
+        ptr->trigger();
+
+        // Lock again to keep protecting the queue
+        lock.lock();
+      }
     }
   }
 
@@ -242,20 +265,7 @@ public:
     }
   }
 
-  unique_timer get_unique_timer()
-  {
-    uint32_t i = 0;
-    for (; i < timer_list.size(); ++i) {
-      if (not timer_list[i].active) {
-        break;
-      }
-    }
-    if (i == timer_list.size()) {
-      timer_list.emplace_back(this);
-    }
-    timer_list[i].active = true;
-    return unique_timer(this, i);
-  }
+  unique_timer get_unique_timer() { return unique_timer(this, alloc_timer()); }
 
   uint32_t get_cur_time() const { return cur_time; }
 
@@ -267,6 +277,19 @@ public:
   uint32_t nof_running_timers() const
   {
     return std::count_if(timer_list.begin(), timer_list.end(), [](const timer_impl& t) { return t.is_running(); });
+  }
+
+  template <typename F>
+  void defer_callback(uint32_t duration, const F& func)
+  {
+    uint32_t                      id = alloc_timer();
+    std::function<void(uint32_t)> c  = [func, this, id](uint32_t tid) {
+      func();
+      // auto-deletes timer
+      timer_list[id].clear();
+    };
+    timer_list[id].set(duration, std::move(c));
+    timer_list[id].run();
   }
 
 private:
@@ -286,9 +309,25 @@ private:
     }
   };
 
+  uint32_t alloc_timer()
+  {
+    uint32_t i = 0;
+    for (; i < timer_list.size(); ++i) {
+      if (not timer_list[i].active) {
+        break;
+      }
+    }
+    if (i == timer_list.size()) {
+      timer_list.emplace_back(this);
+    }
+    timer_list[i].active = true;
+    return i;
+  }
+
   std::vector<timer_impl>        timer_list;
   std::priority_queue<timer_run> running_timers;
   uint32_t                       cur_time = 0;
+  std::mutex                     mutex; // Protect priority queue
 };
 
 } // namespace srslte

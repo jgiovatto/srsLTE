@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -21,6 +21,10 @@
 
 #include <complex.h>
 #include <math.h>
+#include <memory.h>
+#include <srslte/phy/utils/vector.h>
+#include <srslte/phy/utils/vector_simd.h>
+#include <stdlib.h>
 
 #include "srslte/phy/utils/mat.h"
 
@@ -122,25 +126,32 @@ void srslte_mat_2x2_mmse_gen(cf_t  y0,
 
 inline float srslte_mat_2x2_cn(cf_t h00, cf_t h01, cf_t h10, cf_t h11)
 {
-  /* 1. A = H * H' (A = A') */
+  // 1. A = H * H' (A = A')
   float a00 =
       crealf(h00) * crealf(h00) + crealf(h01) * crealf(h01) + cimagf(h00) * cimagf(h00) + cimagf(h01) * cimagf(h01);
-  cf_t a01 = h00 * conjf(h10) + h01 * conjf(h11);
-  // cf_t a10 = h10*conjf(h00) + h11*conjf(h01) = conjf(a01);
+  cf_t  a01 = h00 * conjf(h10) + h01 * conjf(h11);
   float a11 =
       crealf(h10) * crealf(h10) + crealf(h11) * crealf(h11) + cimagf(h10) * cimagf(h10) + cimagf(h11) * cimagf(h11);
 
-  /* 2. |H * H' - {λ0, λ1}| = 0 -> aλ² + bλ + c = 0 */
+  // 2. |H * H' - {λ0, λ1}| = 0 -> aλ² + bλ + c = 0
   float b = a00 + a11;
   float c = a00 * a11 - (crealf(a01) * crealf(a01) + cimagf(a01) * cimagf(a01));
 
-  /* 3. λ = (-b ± sqrt(b² - 4 * c))/2 */
+  // 3. λ = (-b ± sqrt(b² - 4 * c))/2
   float sqr  = sqrtf(b * b - 4.0f * c);
   float xmax = b + sqr;
   float xmin = b - sqr;
 
-  /* 4. κ = sqrt(λ_max / λ_min) */
-  return 10 * log10f(xmax / xmin);
+  // 4. Bound xmin and xmax
+  if (!isnormal(xmin) || xmin < 1e-9) {
+    xmin = 1e-9;
+  }
+  if (!isnormal(xmax) || xmax > 1e+9) {
+    xmax = 1e+9;
+  }
+
+  // 5. κ = sqrt(λ_max / λ_min)
+  return 10.0f * log10f(xmax / xmin);
 }
 
 #ifdef LV_HAVE_SSE
@@ -234,6 +245,7 @@ inline void srslte_mat_2x2_mmse_sse(__m128  y0,
 
 #ifdef LV_HAVE_AVX
 #include <immintrin.h>
+#include <srslte/phy/utils/vector.h>
 
 /* AVX implementation for complex reciprocal */
 inline __m256 srslte_mat_cf_recip_avx(__m256 a)
@@ -347,3 +359,246 @@ inline void srslte_mat_2x2_mmse_avx(__m256  y0,
 }
 
 #endif /* LV_HAVE_AVX */
+
+int srslte_matrix_NxN_inv_init(srslte_matrix_NxN_inv_t* q, uint32_t N)
+{
+  int ret = SRSLTE_SUCCESS;
+
+  if (q && N) {
+    // Set all to zero
+    bzero(q, sizeof(srslte_matrix_NxN_inv_t));
+
+    q->N = N;
+
+    q->row_buffer = srslte_vec_cf_malloc(N * 2);
+    if (!q->row_buffer) {
+      perror("malloc");
+      ret = SRSLTE_ERROR;
+    }
+
+    if (!ret) {
+      q->matrix = srslte_vec_cf_malloc(N * N * 2);
+      if (!q->matrix) {
+        perror("malloc");
+        ret = SRSLTE_ERROR;
+      }
+    }
+  }
+
+  return ret;
+}
+
+static inline void srslte_vec_sc_prod_ccc_simd_inline(const cf_t* x, const cf_t h, cf_t* z, const int len)
+{
+  int i = 0;
+
+#if SRSLTE_SIMD_F_SIZE
+
+#ifdef HAVE_NEON
+  i = srslte_vec_sc_prod_ccc_simd2(x, h, z, len);
+#else
+  const simd_f_t hre = srslte_simd_f_set1(__real__ h);
+  const simd_f_t him = srslte_simd_f_set1(__imag__ h);
+
+  for (; i < len - SRSLTE_SIMD_F_SIZE / 2 + 1; i += SRSLTE_SIMD_F_SIZE / 2) {
+    simd_f_t temp = srslte_simd_f_load((float*)&x[i]);
+
+    simd_f_t m1 = srslte_simd_f_mul(hre, temp);
+    simd_f_t sw = srslte_simd_f_swap(temp);
+    simd_f_t m2 = srslte_simd_f_mul(him, sw);
+    simd_f_t r  = srslte_simd_f_addsub(m1, m2);
+    srslte_simd_f_store((float*)&z[i], r);
+  }
+
+#endif
+#endif
+  for (; i < len; i++) {
+    __real__ z[i] = __real__ x[i] * __real__ h - __imag__ x[i] * __imag__ h;
+    __imag__ z[i] = __real__ x[i] * __imag__ h + __imag__ x[i] * __real__ h;
+  }
+}
+
+static inline void srslte_vec_sub_fff_simd_inline(const float* x, const float* y, float* z, const int len)
+{
+  int i = 0;
+
+#if SRSLTE_SIMD_F_SIZE
+
+  for (; i < len - SRSLTE_SIMD_F_SIZE + 1; i += SRSLTE_SIMD_F_SIZE) {
+    simd_f_t a = srslte_simd_f_loadu(&x[i]);
+    simd_f_t b = srslte_simd_f_loadu(&y[i]);
+
+    simd_f_t r = srslte_simd_f_sub(a, b);
+
+    srslte_simd_f_storeu(&z[i], r);
+  }
+#endif
+
+  for (; i < len; i++) {
+    z[i] = x[i] - y[i];
+  }
+}
+
+static inline void srslte_vec_sub_ccc_simd_inline(const cf_t* x, const cf_t* y, cf_t* z, const int len)
+{
+  srslte_vec_sub_fff_simd_inline((float*)x, (float*)y, (float*)z, 2 * len);
+}
+
+static inline cf_t reciprocal(cf_t x)
+{
+  cf_t y = 0.0f;
+
+  float mod  = __real__ x * __real__ x + __imag__ x * __imag__ x;
+
+  if (isnormal(mod)) {
+    __real__ y = (__real__ x) / mod;
+    __imag__ y = -(__imag__ x) / mod;
+  }
+
+  return y;
+}
+
+static inline float _cabs2(cf_t x)
+{
+  return __real__ x * __real__ x + __imag__ x * __imag__ x;
+}
+
+void srslte_matrix_NxN_inv_run(srslte_matrix_NxN_inv_t* q, cf_t* in, cf_t* out)
+{
+  if (q && in && out) {
+    int   N = q->N;
+    cf_t* tmp_src_ptr;
+    cf_t* tmp_dst_ptr;
+
+    // 0) Copy the input vector in the matrix
+    tmp_src_ptr = in;
+    tmp_dst_ptr = q->matrix;
+    for (int i = 0; i < N; i++) {
+      // Populate first half with input matrix
+      memcpy(tmp_dst_ptr, tmp_src_ptr, sizeof(cf_t) * N);
+      tmp_src_ptr += N;
+      tmp_dst_ptr += N;
+
+      // Populate second half with identity matrix
+      bzero(tmp_dst_ptr, sizeof(cf_t) * N);
+      tmp_dst_ptr[i] = 1.0f;
+      tmp_dst_ptr += N;
+    }
+
+    // 1) Forward elimination
+    for (int i = 0; i < N - 1; i++) {
+      uint32_t row_i = N - i - 1;
+      uint32_t col_i = N - i - 1;
+      float    max_v = 0.0f;
+      uint32_t max_i = 0;
+
+      // Find Row with highest value in the column to reduce
+      for (int j = 0; j < N - i; j++) {
+        float v = _cabs2(q->matrix[(j + 1) * 2 * N - 1 - i]);
+        if (v > max_v) {
+          max_i = j;
+          max_v = v;
+        }
+      }
+
+      // Swap rows
+      if (max_i != row_i) {
+        memcpy(q->row_buffer, &q->matrix[row_i * N * 2], sizeof(cf_t) * N * 2);
+        memcpy(&q->matrix[row_i * N * 2], &q->matrix[max_i * N * 2], sizeof(cf_t) * N * 2);
+        memcpy(&q->matrix[max_i * N * 2], q->row_buffer, sizeof(cf_t) * N * 2);
+      }
+
+      tmp_src_ptr = &q->matrix[N * 2 * row_i]; // Select row
+      cf_t b      = tmp_src_ptr[col_i];
+      srslte_vec_sc_prod_ccc_simd_inline(tmp_src_ptr, reciprocal(b), tmp_src_ptr, 2 * N);
+
+      for (int j = 0; j < N - i - 1; j++) {
+        cf_t a = q->matrix[N * (2 * j + 1) - 1 - i];
+
+        if (a != 0.0f && b != 0.0f) {
+          tmp_dst_ptr = &q->matrix[N * 2 * j];
+          srslte_vec_sc_prod_ccc_simd_inline(tmp_dst_ptr, reciprocal(a), tmp_dst_ptr, 2 * N);
+          srslte_vec_sub_ccc_simd_inline(tmp_dst_ptr, tmp_src_ptr, tmp_dst_ptr, 2 * N);
+        }
+      }
+    }
+    srslte_vec_sc_prod_ccc_simd_inline(q->matrix, reciprocal(q->matrix[0]), q->matrix, 2 * N);
+
+    // 2) Backward elimination
+    for (int i = 0; i < N - 1; i++) {
+      tmp_src_ptr = &q->matrix[N * 2 * i];
+      cf_t b      = tmp_src_ptr[i];
+      srslte_vec_sc_prod_ccc_simd_inline(tmp_src_ptr, reciprocal(b), tmp_src_ptr, 2 * N);
+
+      for (int j = N - 1; j > i; j--) {
+        cf_t a = q->matrix[N * 2 * j + i];
+
+        tmp_dst_ptr = &q->matrix[N * 2 * j];
+        srslte_vec_sc_prod_ccc_simd_inline(tmp_dst_ptr, reciprocal(a), tmp_dst_ptr, 2 * N);
+        srslte_vec_sub_ccc_simd_inline(tmp_dst_ptr, tmp_src_ptr, tmp_dst_ptr, 2 * N);
+      }
+    }
+    srslte_vec_sc_prod_ccc_simd_inline(&q->matrix[2 * N * (N - 1)],
+                                       reciprocal(q->matrix[2 * N * (N - 1) + N - 1]),
+                                       &q->matrix[2 * N * (N - 1)],
+                                       2 * N);
+
+    // 4) Copy result
+    tmp_src_ptr = &q->matrix[N];
+    tmp_dst_ptr = out;
+    for (int i = 0; i < N; i++) {
+      memcpy(tmp_dst_ptr, tmp_src_ptr, sizeof(cf_t) * N);
+      tmp_src_ptr += 2 * N;
+      tmp_dst_ptr += N;
+    }
+
+#if 0
+    printf("tmp = [...\n");
+    for (int i = 0; i < N; i++) {
+      printf("\t");
+      for (int j = 0; j < 2 * N; j++) {
+        printf("%c %+.3f%+.3fi", j ==0 ?  ' ' : ',', __real__ q->matrix[2 * N * i  + j], __imag__ q->matrix[2 * N  * i + j]);
+      }
+      printf("; ...\n");
+    }
+    printf("];\n");
+
+    printf("in = [...\n");
+    for (int i = 0; i < N; i++) {
+      printf("\t");
+      for (int j = 0; j < N; j++) {
+        printf("%c %+.3f%+.3fi", j ==0 ?  ' ' : ',', __real__ in[N * i  + j], __imag__ in[N  * i + j]);
+      }
+      printf("; ...\n");
+    }
+    printf("];\n");
+
+    printf("out = [...\n");
+    for (int i = 0; i < N; i++) {
+      printf("\t");
+      for (int j = 0; j < N; j++) {
+        printf("%c %+.3f%+.3fi", j ==0 ?  ' ' : ',', __real__ out[N * i  + j], __imag__ out[N  * i + j]);
+      }
+      printf("; ...\n");
+    }
+    printf("];\n");
+#endif
+  }
+}
+
+void srslte_matrix_NxN_inv_free(srslte_matrix_NxN_inv_t* q)
+{
+  if (q) {
+
+    if (q->matrix) {
+      free(q->matrix);
+    }
+
+    if (q->row_buffer) {
+      free(q->row_buffer);
+    }
+
+    // Default all to zero
+    bzero(q, sizeof(srslte_matrix_NxN_inv_t));
+  }
+}

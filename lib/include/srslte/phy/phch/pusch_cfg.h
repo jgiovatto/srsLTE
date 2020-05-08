@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -77,6 +77,10 @@ typedef struct SRSLTE_API {
 
   bool     meas_time_en;
   uint32_t meas_time_value;
+
+  bool meas_epre_en;
+  bool meas_ta_en;
+  bool meas_evm_en;
 
 } srslte_pusch_cfg_t;
 

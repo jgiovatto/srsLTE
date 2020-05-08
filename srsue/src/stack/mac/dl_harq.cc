@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -32,27 +32,13 @@
 
 namespace srsue {
 
-dl_harq_entity::dl_harq_entity() : proc(SRSLTE_MAX_HARQ_PROC)
-{
-  pcap                 = NULL;
-  demux_unit           = NULL;
-  log_h                = NULL;
-  timer_aligment_timer = NULL;
-  si_window_start      = 0;
-  last_temporal_crnti  = 0;
-  average_retx         = 0;
-  nof_pkts             = 0;
-}
+dl_harq_entity::dl_harq_entity(uint8_t cc_idx_) : proc(SRSLTE_MAX_HARQ_PROC), cc_idx(cc_idx_) {}
 
-bool dl_harq_entity::init(srslte::log*                         log_h,
-                          mac_interface_rrc::ue_rnti_t*        rntis,
-                          srslte::timer_handler::unique_timer* timer_aligment_timer_,
-                          demux*                               demux_unit)
+bool dl_harq_entity::init(srslte::log_ref log_h_, mac_interface_rrc::ue_rnti_t* rntis_, demux* demux_unit_)
 {
-  timer_aligment_timer = timer_aligment_timer_;
-  this->demux_unit     = demux_unit;
-  this->log_h          = log_h;
-  this->rntis          = rntis;
+  demux_unit = demux_unit_;
+  log_h      = log_h_;
+  rntis      = rntis_;
 
   for (uint32_t i = 0; i < SRSLTE_MAX_HARQ_PROC; i++) {
     if (!proc[i].init(i, this)) {
@@ -329,12 +315,8 @@ void dl_harq_entity::dl_harq_process::dl_tb_process::new_grant_dl(mac_interface_
     }
   }
 
-  if (is_bcch || harq_entity->timer_aligment_timer->is_expired()) {
-    // Do not generate ACK
-    action->generate_ack = false;
-  } else {
-    action->generate_ack = true;
-  }
+  // Do NOT generate ACK if Broadcast Control Channel
+  action->generate_ack = not is_bcch;
 }
 
 void dl_harq_entity::dl_harq_process::dl_tb_process::tb_decoded(mac_interface_phy_lte::mac_grant_dl_t grant,
@@ -345,14 +327,15 @@ void dl_harq_entity::dl_harq_process::dl_tb_process::tb_decoded(mac_interface_ph
     if (ack) {
       if (is_bcch) {
         if (harq_entity->pcap) {
-          harq_entity->pcap->write_dl_sirnti(payload_buffer_ptr, cur_grant.tb[tid].tbs, ack, cur_grant.tti);
+          harq_entity->pcap->write_dl_sirnti(
+              payload_buffer_ptr, cur_grant.tb[tid].tbs, ack, cur_grant.tti, harq_entity->cc_idx);
         }
         Debug("Delivering PDU=%d bytes to Dissassemble and Demux unit (BCCH)\n", cur_grant.tb[tid].tbs);
         harq_entity->demux_unit->push_pdu_bcch(payload_buffer_ptr, cur_grant.tb[tid].tbs);
       } else {
         if (harq_entity->pcap) {
           harq_entity->pcap->write_dl_crnti(
-              payload_buffer_ptr, cur_grant.tb[tid].tbs, cur_grant.rnti, ack, cur_grant.tti);
+              payload_buffer_ptr, cur_grant.tb[tid].tbs, cur_grant.rnti, ack, cur_grant.tti, harq_entity->cc_idx);
         }
         if (cur_grant.rnti == harq_entity->rntis->temp_rnti) {
           Debug("Delivering PDU=%d bytes to Dissassemble and Demux unit (Temporal C-RNTI)\n", cur_grant.tb[tid].tbs);

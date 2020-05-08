@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -18,6 +18,9 @@
  * and at http://www.gnu.org/licenses/.
  *
  */
+
+#ifndef SRSLTE_VITERBI37_H_
+#define SRSLTE_VITERBI37_H_
 
 #include <stdbool.h>
 
@@ -78,3 +81,5 @@ int chainback_viterbi37_avx2_16bit(void* p, uint8_t* data, uint32_t nbits, uint3
 void delete_viterbi37_avx2_16bit(void* p);
 
 int update_viterbi37_blk_avx2_16bit(void* p, uint16_t* syms, uint32_t nbits, uint32_t* best_state);
+
+#endif /* SRSLTE_VITERBI37_H_ */

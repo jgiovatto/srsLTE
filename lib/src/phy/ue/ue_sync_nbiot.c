@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -130,11 +130,9 @@ int srslte_ue_sync_nbiot_start_agc(srslte_nbiot_ue_sync_t* q,
                                    SRSLTE_AGC_CALLBACK(set_gain_callback),
                                    float init_gain_value)
 {
-  uint32_t nframes;
+  uint32_t nframes = 0;
   if (q->nof_recv_sf == 1) {
     nframes = 10;
-  } else {
-    nframes = 0;
   }
   int n     = srslte_agc_init_uhd(&q->agc, SRSLTE_AGC_MODE_PEAK_AMPLITUDE, nframes, set_gain_callback, q->stream);
   q->do_agc = n == 0 ? true : false;
@@ -484,6 +482,9 @@ static int receive_samples(srslte_nbiot_ue_sync_t* q, cf_t* input_buffer[SRSLTE_
   for (int i = 0; i < q->nof_rx_antennas; i++) {
     ptr[i] = &input_buffer[i][q->next_rf_sample_offset];
   }
+
+  // assure  next_rf_sample_offset isn't larger than frame_len
+  q->next_rf_sample_offset = SRSLTE_MIN(q->next_rf_sample_offset, q->frame_len);
 
   if (q->recv_callback(q->stream, ptr, q->frame_len - q->next_rf_sample_offset, &q->last_timestamp) < 0) {
     return SRSLTE_ERROR;

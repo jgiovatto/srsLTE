@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -35,6 +35,10 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "srslte/config.h"
 
 #define SRSLTE_NOF_SF_X_FRAME 10
@@ -45,9 +49,13 @@
 
 #define SRSLTE_PC_MAX 23 // Maximum TX power for Category 1 UE (in dBm)
 
-#define SRSLTE_MAX_RADIOS 3   // Maximum number of supported RF devices
+#define SRSLTE_NOF_NID_1 (168)
+#define SRSLTE_NOF_NID_2 (3)
+#define SRSLTE_NUM_PCI (SRSLTE_NOF_NID_1 * SRSLTE_NOF_NID_2)
+
 #define SRSLTE_MAX_CARRIERS 5 // Maximum number of supported simultaneous carriers
 #define SRSLTE_MAX_PORTS 4
+#define SRSLTE_MAX_CHANNELS (SRSLTE_MAX_CARRIERS * SRSLTE_MAX_PORTS)
 #define SRSLTE_MAX_LAYERS 4
 #define SRSLTE_MAX_CODEWORDS 2
 #define SRSLTE_MAX_TB SRSLTE_MAX_CODEWORDS
@@ -67,6 +75,7 @@
 typedef enum { SRSLTE_CP_NORM = 0, SRSLTE_CP_EXT } srslte_cp_t;
 typedef enum { SRSLTE_SF_NORM = 0, SRSLTE_SF_MBSFN } srslte_sf_t;
 
+#define SRSLTE_INVALID_RNTI 0x0 // TS 36.321 - Table 7.1-1 RNTI 0x0 isn't a valid DL RNTI
 #define SRSLTE_CRNTI_START 0x000B
 #define SRSLTE_CRNTI_END 0xFFF3
 #define SRSLTE_RARNTI_START 0x0001
@@ -118,7 +127,7 @@ typedef enum { SRSLTE_SF_NORM = 0, SRSLTE_SF_MBSFN } srslte_sf_t;
 #define SRSLTE_SF_LEN_MAX (SRSLTE_SF_LEN(SRSLTE_SYMBOL_SZ_MAX))
 
 #define SRSLTE_SLOT_LEN_PRB(nof_prb) (SRSLTE_SLOT_LEN(srslte_symbol_sz(nof_prb)))
-#define SRSLTE_SF_LEN_PRB(nof_prb) (SRSLTE_SF_LEN(srslte_symbol_sz(nof_prb)))
+#define SRSLTE_SF_LEN_PRB(nof_prb) ((uint32_t)SRSLTE_SF_LEN(srslte_symbol_sz(nof_prb)))
 
 #define SRSLTE_SLOT_LEN_RE(nof_prb, cp) (nof_prb * SRSLTE_NRE * SRSLTE_CP_NSYMB(cp))
 #define SRSLTE_SF_LEN_RE(nof_prb, cp) (2 * SRSLTE_SLOT_LEN_RE(nof_prb, cp))
@@ -126,7 +135,7 @@ typedef enum { SRSLTE_SF_NORM = 0, SRSLTE_SF_MBSFN } srslte_sf_t;
 
 #define SRSLTE_TA_OFFSET (10e-6)
 
-#define SRSLTE_LTE_TS 1.0 / (15000.0 * 2048)
+#define SRSLTE_LTE_TS (1.0f / (15000.0f * 2048.0f))
 
 #define SRSLTE_SLOT_IDX_CPNORM(symbol_idx, symbol_sz)                                                                  \
   (symbol_idx == 0 ? 0                                                                                                 \
@@ -151,7 +160,7 @@ typedef enum { SRSLTE_SF_NORM = 0, SRSLTE_SF_MBSFN } srslte_sf_t;
        ? (SRSLTE_CP_LEN_EXT(symbol_sz) - SRSLTE_CP_LEN_NORM(0, symbol_sz))                                             \
        : (2 * SRSLTE_CP_LEN_EXT(symbol_sz) - SRSLTE_CP_LEN_NORM(0, symbol_sz) - SRSLTE_CP_LEN_NORM(1, symbol_sz)))
 
-#define SRSLTE_FDD_NOF_HARQ (TX_DELAY + FDD_HARQ_DELAY_MS)
+#define SRSLTE_FDD_NOF_HARQ (FDD_HARQ_DELAY_DL_MS + FDD_HARQ_DELAY_UL_MS)
 #define SRSLTE_MAX_HARQ_PROC 15
 
 #define SRSLTE_NOF_LTE_BANDS 58
@@ -246,6 +255,7 @@ typedef enum SRSLTE_API {
   SRSLTE_MOD_16QAM,
   SRSLTE_MOD_64QAM,
   SRSLTE_MOD_256QAM,
+  SRSLTE_MOD_NITEMS
 } srslte_mod_t;
 
 typedef enum {
@@ -263,6 +273,7 @@ typedef enum {
   SRSLTE_DCI_FORMATN0,
   SRSLTE_DCI_FORMATN1,
   SRSLTE_DCI_FORMATN2,
+  SRSLTE_DCI_FORMAT_RAR, // Not a real LTE format. Used internally to indicate RAR grant
   SRSLTE_DCI_NOF_FORMATS
 } srslte_dci_format_t;
 
@@ -329,45 +340,7 @@ typedef struct SRSLTE_API {
 #define SRSLTE_NBIOT_NPBCH_NOF_BITS_SF                                                                                 \
   (SRSLTE_NBIOT_NPBCH_NOF_TOTAL_BITS / 8) ///< The NPBCH is transmitted in 8 blocks (See 36.211 Sec 10.2.4.4)
 
-///< Sidelink
-typedef enum SRSLTE_API {
-  SRSLTE_SIDELINK_TM1 = 0,
-  SRSLTE_SIDELINK_TM2,
-  SRSLTE_SIDELINK_TM3,
-  SRSLTE_SIDELINK_TM4
-} srslte_sl_tm_t;
-
-typedef enum SRSLTE_API {
-  SRSLTE_SIDELINK_PSBCH = 0,
-  SRSLTE_SIDELINK_PSCCH,
-  SRSLTE_SIDELINK_PSSCH,
-  SRSLTE_SIDELINK_PSDCH
-} srslte_sl_channels_t;
-
-typedef enum SRSLTE_API {
-  SRSLTE_SIDELINK_DATA_SYMBOL = 0,
-  SRSLTE_SIDELINK_SYNC_SYMBOL,
-  SRSLTE_SIDELINK_DMRS_SYMBOL,
-  SRSLTE_SIDELINK_GUARD_SYMBOL
-} srslte_sl_symbol_t;
-
-#define SRSLTE_PSBCH_NOF_PRB (6)
-#define SRSLTE_PSCCH_TM34_NOF_PRB (2)
-
-#define SRSLTE_MIB_SL_LEN (40)     // TM1/2: 40 bits
-#define SRSLTE_MIB_SL_V2X_LEN (48) // TM3/4: 48 bits
-#define SRSLTE_MIB_SL_MAX_LEN (SRSLTE_MIB_SL_V2X_LEN)
-
-#define SRSLTE_SL_TM12_DEFAULT_NUM_DMRS_SYMBOLS (2)
-#define SRSLTE_SL_TM34_DEFAULT_NUM_DMRS_SYMBOLS (4) ///< In TM3/4, all channels have 4 DMRS by default
-
-#define SRSLTE_PSBCH_TM12_NUM_DATA_SYMBOLS (7) ///< SL-BCH is in 7 OFDM symbols
-#define SRSLTE_PSBCH_TM12_NUM_DMRS_SYMBOLS (2) ///< PSBCH has 2 DMRS symbols
-#define SRSLTE_PSBCH_TM12_NUM_SYNC_SYMBOLS (4) ///< Two symbols PSSS and two SSSS
-
-#define SRSLTE_PSBCH_TM34_NUM_DATA_SYMBOLS (6) ///< SL-BCH is in 7 OFDM symbols
-#define SRSLTE_PSBCH_TM34_NUM_DMRS_SYMBOLS (3) ///< PSBCH has 3 DMRS symbols in TM3 and TM4
-#define SRSLTE_PSBCH_TM34_NUM_SYNC_SYMBOLS (4) ///< Two symbols PSSS and two SSSS
+#define SRSLTE_MAX_DL_BITS_CAT_NB1 (680) ///< TS 36.306 v15.4.0 Table 4.1C-1
 
 ///< PHY common function declarations
 
@@ -407,6 +380,8 @@ SRSLTE_API int srslte_symbol_sz_power2(uint32_t nof_prb);
 
 SRSLTE_API int srslte_nof_prb(uint32_t symbol_sz);
 
+SRSLTE_API uint32_t srslte_max_cce(uint32_t nof_prb);
+
 SRSLTE_API int srslte_sampling_freq_hz(uint32_t nof_prb);
 
 SRSLTE_API void srslte_use_standard_symbol_size(bool enabled);
@@ -435,9 +410,9 @@ SRSLTE_API uint8_t srslte_band_get_band(uint32_t dl_earfcn);
 
 SRSLTE_API bool srslte_band_is_tdd(uint32_t band);
 
-SRSLTE_API float srslte_band_fd(uint32_t dl_earfcn);
+SRSLTE_API double srslte_band_fd(uint32_t dl_earfcn);
 
-SRSLTE_API float srslte_band_fu(uint32_t ul_earfcn);
+SRSLTE_API double srslte_band_fu(uint32_t ul_earfcn);
 
 SRSLTE_API uint32_t srslte_band_ul_earfcn(uint32_t dl_earfcn);
 
@@ -464,6 +439,31 @@ SRSLTE_API float srslte_band_fu_nbiot(uint32_t ul_earfcn, const float m_ul);
 
 SRSLTE_API char* srslte_nbiot_mode_string(srslte_nbiot_mode_t mode);
 
-bool srslte_psbch_is_symbol(srslte_sl_symbol_t type, srslte_sl_tm_t tm, uint32_t i);
+/**
+ * Returns a constant string pointer with the ACK/NACK feedback mode
+ *
+ * @param ack_nack_feedback_mode Mode
+ * @return Returns constant pointer with the text of the mode if succesful, `error` otherwise
+ */
+SRSLTE_API const char* srslte_ack_nack_feedback_mode_string(srslte_ack_nack_feedback_mode_t ack_nack_feedback_mode);
+
+/**
+ * Returns a constant string pointer with the ACK/NACK feedback mode
+ *
+ * @param ack_nack_feedback_mode Mode
+ * @return Returns constant pointer with the text of the mode if succesful, `error` otherwise
+ */
+SRSLTE_API srslte_ack_nack_feedback_mode_t srslte_string_ack_nack_feedback_mode(const char* str);
+
+/**
+ * Returns the number of bits for Rank Indicador reporting depending on the cell
+ *
+ * @param cell
+ */
+SRSLTE_API uint32_t srslte_ri_nof_bits(const srslte_cell_t* cell);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // SRSLTE_PHY_COMMON_H

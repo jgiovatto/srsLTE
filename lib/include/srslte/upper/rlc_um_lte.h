@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -43,13 +43,13 @@ typedef struct {
 class rlc_um_lte : public rlc_um_base
 {
 public:
-  rlc_um_lte(srslte::log*               log_,
+  rlc_um_lte(srslte::log_ref            log_,
              uint32_t                   lcid_,
              srsue::pdcp_interface_rlc* pdcp_,
              srsue::rrc_interface_rlc*  rrc_,
              srslte::timer_handler*     timers_);
   ~rlc_um_lte();
-  bool configure(rlc_config_t cnfg);
+  bool configure(const rlc_config_t& cnfg);
 
 private:
   // Transmitter sub-class for LTE
@@ -58,7 +58,7 @@ private:
   public:
     rlc_um_lte_tx(rlc_um_base* parent_);
 
-    bool     configure(rlc_config_t cfg, std::string rb_name);
+    bool     configure(const rlc_config_t& cfg, std::string rb_name);
     int      build_data_pdu(unique_byte_buffer_t pdu, uint8_t* payload, uint32_t nof_bytes);
     uint32_t get_buffer_state();
 

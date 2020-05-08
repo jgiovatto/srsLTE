@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -38,19 +38,19 @@
 #ifndef DISABLE_RF
 #include "srslte/phy/common/phy_common.h"
 #include "srslte/phy/rf/rf.h"
-srslte_rf_t rf;
+srslte_rf_t radio;
 #else
 #pragma message "Compiling pdsch_ue with no RF support"
 #endif
 
-char* output_file_name = NULL;
+static char* output_file_name = NULL;
 
 #define LEFT_KEY 68
 #define RIGHT_KEY 67
 #define UP_KEY 65
 #define DOWN_KEY 66
 
-srslte_cell_t cell = {
+static srslte_cell_t cell = {
     25,                // nof_prb
     1,                 // nof_ports
     0,                 // cell_id
@@ -61,65 +61,59 @@ srslte_cell_t cell = {
 
 };
 
-uint16_t c = -1;
+static int      net_port = -1; // -1 generates random dataThat means there is some problem sending samples to the device
+static uint32_t cfi      = 2;
+static uint32_t mcs_idx = 1, last_mcs_idx = 1;
+static int      nof_frames              = -1;
+static srslte_tm_t transmission_mode    = SRSLTE_TM1;
+static uint32_t    nof_tb               = 1;
+static uint32_t    multiplex_pmi        = 0;
+static uint32_t    multiplex_nof_layers = 1;
+static uint8_t     mbsfn_sf_mask        = 32;
+static int         mbsfn_area_id        = -1;
+static char*       rf_args              = "";
+static char*       rf_dev               = "";
+static float       rf_amp = 0.8, rf_gain = 60.0, rf_freq = 2400000000;
+static bool        enable_256qam   = false;
+static float       output_file_snr = +INFINITY;
 
-int net_port = -1; // -1 generates random dataThat means there is some problem sending samples to the device
+static bool                    null_file_sink = false;
+static srslte_filesink_t       fsink;
+static srslte_ofdm_t           ifft[SRSLTE_MAX_PORTS];
+static srslte_ofdm_t           ifft_mbsfn;
+static srslte_pbch_t           pbch;
+static srslte_pcfich_t         pcfich;
+static srslte_pdcch_t          pdcch;
+static srslte_pdsch_t          pdsch;
+static srslte_pdsch_cfg_t      pdsch_cfg;
+static srslte_pmch_t           pmch;
+static srslte_pmch_cfg_t       pmch_cfg;
+static srslte_softbuffer_tx_t* softbuffers[SRSLTE_MAX_CODEWORDS];
+static srslte_regs_t           regs;
+static srslte_dci_dl_t         dci_dl;
+static int                     rvidx[SRSLTE_MAX_CODEWORDS] = {0, 0};
 
-uint32_t cfi     = 2;
-uint32_t mcs_idx = 1, last_mcs_idx = 1;
-int      nof_frames = -1;
+static cf_t *   sf_buffer[SRSLTE_MAX_PORTS] = {NULL}, *output_buffer[SRSLTE_MAX_PORTS] = {NULL};
+static uint32_t sf_n_re, sf_n_samples;
 
-srslte_tm_t transmission_mode    = SRSLTE_TM1;
-uint32_t    nof_tb               = 1;
-uint32_t    multiplex_pmi        = 0;
-uint32_t    multiplex_nof_layers = 1;
-uint8_t     mbsfn_sf_mask        = 32;
-int         mbsfn_area_id        = -1;
-char*       rf_args              = "";
-char*       rf_dev               = "";
-float       rf_amp = 0.8, rf_gain = 60.0, rf_freq = 2400000000;
-static bool enable_256qam = false;
+static pthread_t          net_thread;
+static void*              net_thread_fnc(void* arg);
+static sem_t              net_sem;
+static bool               net_packet_ready = false;
+static srslte_netsource_t net_source;
+static srslte_netsink_t   net_sink;
 
-float output_file_snr = +INFINITY;
-
-bool                    null_file_sink = false;
-srslte_filesink_t       fsink;
-srslte_ofdm_t           ifft[SRSLTE_MAX_PORTS];
-srslte_ofdm_t           ifft_mbsfn;
-srslte_pbch_t           pbch;
-srslte_pcfich_t         pcfich;
-srslte_pdcch_t          pdcch;
-srslte_pdsch_t          pdsch;
-srslte_pdsch_cfg_t      pdsch_cfg;
-srslte_pmch_t           pmch;
-srslte_pmch_cfg_t       pmch_cfg;
-srslte_softbuffer_tx_t* softbuffers[SRSLTE_MAX_CODEWORDS];
-srslte_regs_t           regs;
-srslte_dci_dl_t         dci_dl;
-int                     rvidx[SRSLTE_MAX_CODEWORDS] = {0, 0};
-
-cf_t *sf_buffer[SRSLTE_MAX_PORTS] = {NULL}, *output_buffer[SRSLTE_MAX_PORTS] = {NULL};
-
-int sf_n_re, sf_n_samples;
-
-pthread_t          net_thread;
-void*              net_thread_fnc(void* arg);
-sem_t              net_sem;
-bool               net_packet_ready = false;
-srslte_netsource_t net_source;
-srslte_netsink_t   net_sink;
-
-int prbset_num = 1, last_prbset_num = 1;
-int prbset_orig = 0;
+static int prbset_num = 1, last_prbset_num = 1;
+static int prbset_orig = 0;
 //#define DATA_BUFF_SZ    1024*128
 // uint8_t data[8*DATA_BUFF_SZ], data2[DATA_BUFF_SZ];
 // uint8_t data_tmp[DATA_BUFF_SZ];
 
 #define DATA_BUFF_SZ 1024 * 1024
-uint8_t *data_mbms, *data[2], data2[DATA_BUFF_SZ];
-uint8_t  data_tmp[DATA_BUFF_SZ];
+static uint8_t *data_mbms, *data[2], data2[DATA_BUFF_SZ];
+static uint8_t  data_tmp[DATA_BUFF_SZ];
 
-void usage(char* prog)
+static void usage(char* prog)
 {
   printf("Usage: %s [Iagmfoncvpuxb]\n", prog);
 #ifndef DISABLE_RF
@@ -150,7 +144,7 @@ void usage(char* prog)
   printf("\t*: See 3GPP 36.212 Table  5.3.3.1.5-4 for more information\n");
 }
 
-void parse_args(int argc, char** argv)
+static void parse_args(int argc, char** argv)
 {
   int opt;
   while ((opt = getopt(argc, argv, "IadglfmoncpqvutxbwMsB")) != -1) {
@@ -226,7 +220,7 @@ void parse_args(int argc, char** argv)
 #endif
 }
 
-void base_init()
+static void base_init()
 {
   int i;
 
@@ -247,18 +241,18 @@ void base_init()
 
   /* Allocate memory */
   for (i = 0; i < SRSLTE_MAX_CODEWORDS; i++) {
-    data[i] = srslte_vec_malloc(sizeof(uint8_t) * SOFTBUFFER_SIZE);
+    data[i] = srslte_vec_u8_malloc(SOFTBUFFER_SIZE);
     if (!data[i]) {
       perror("malloc");
       exit(-1);
     }
     bzero(data[i], sizeof(uint8_t) * SOFTBUFFER_SIZE);
   }
-  data_mbms = srslte_vec_malloc(sizeof(uint8_t) * SOFTBUFFER_SIZE);
+  data_mbms = srslte_vec_u8_malloc(SOFTBUFFER_SIZE);
 
   /* init memory */
   for (i = 0; i < SRSLTE_MAX_PORTS; i++) {
-    sf_buffer[i] = srslte_vec_malloc(sizeof(cf_t) * sf_n_re);
+    sf_buffer[i] = srslte_vec_cf_malloc(sf_n_re);
     if (!sf_buffer[i]) {
       perror("malloc");
       exit(-1);
@@ -266,12 +260,12 @@ void base_init()
   }
 
   for (i = 0; i < SRSLTE_MAX_PORTS; i++) {
-    output_buffer[i] = srslte_vec_malloc(sizeof(cf_t) * sf_n_samples);
+    output_buffer[i] = srslte_vec_cf_malloc(sf_n_samples);
     if (!output_buffer[i]) {
       perror("malloc");
       exit(-1);
     }
-    bzero(output_buffer[i], sizeof(cf_t) * sf_n_samples);
+    srslte_vec_cf_zero(output_buffer[i], sf_n_samples);
   }
 
   /* open file or USRP */
@@ -288,7 +282,7 @@ void base_init()
   } else {
 #ifndef DISABLE_RF
     printf("Opening RF device...\n");
-    if (srslte_rf_open_devname(&rf, rf_dev, rf_args, cell.nof_ports)) {
+    if (srslte_rf_open_devname(&radio, rf_dev, rf_args, cell.nof_ports)) {
       fprintf(stderr, "Error opening rf\n");
       exit(-1);
     }
@@ -395,7 +389,7 @@ void base_init()
   }
 }
 
-void base_free()
+static void base_free()
 {
   int i;
   for (i = 0; i < SRSLTE_MAX_CODEWORDS; i++) {
@@ -437,7 +431,7 @@ void base_free()
     }
   } else {
 #ifndef DISABLE_RF
-    srslte_rf_close(&rf);
+    srslte_rf_close(&radio);
 #endif
   }
 
@@ -448,15 +442,17 @@ void base_free()
 }
 
 bool go_exit = false;
-void sig_int_handler(int signo)
+#ifndef DISABLE_RF
+static void sig_int_handler(int signo)
 {
   printf("SIGINT received. Exiting...\n");
   if (signo == SIGINT) {
     go_exit = true;
   }
 }
+#endif /* DISABLE_RF */
 
-unsigned int reverse(register unsigned int x)
+static unsigned int reverse(register unsigned int x)
 {
   x = (((x & 0xaaaaaaaa) >> 1) | ((x & 0x55555555) << 1));
   x = (((x & 0xcccccccc) >> 2) | ((x & 0x33333333) << 2));
@@ -465,7 +461,7 @@ unsigned int reverse(register unsigned int x)
   return ((x >> 16) | (x << 16));
 }
 
-uint32_t prbset_to_bitmask()
+static uint32_t prbset_to_bitmask()
 {
   uint32_t mask = 0;
   int      nb   = (int)ceilf((float)cell.nof_prb / srslte_ra_type0_P(cell.nof_prb));
@@ -477,7 +473,7 @@ uint32_t prbset_to_bitmask()
   return reverse(mask) >> (32 - nb);
 }
 
-int update_radl()
+static int update_radl()
 {
 
   ZERO_OBJECT(dci_dl);
@@ -544,7 +540,7 @@ int update_radl()
 }
 
 /* Read new MCS from stdin */
-int update_control()
+static int update_control()
 {
   char input[128];
 
@@ -642,7 +638,7 @@ int update_control()
 }
 
 /** Function run in a separate thread to receive UDP data */
-void* net_thread_fnc(void* arg)
+static void* net_thread_fnc(void* arg)
 {
   int n;
   int rpm = 0, wpm = 0;
@@ -774,7 +770,7 @@ int main(int argc, char** argv)
     int srate = srslte_sampling_freq_hz(cell.nof_prb);
     if (srate != -1) {
       printf("Setting sampling rate %.2f MHz\n", (float)srate / 1000000);
-      float srate_rf = srslte_rf_set_tx_srate(&rf, (double)srate);
+      float srate_rf = srslte_rf_set_tx_srate(&radio, (double)srate);
       if (srate_rf != srate) {
         ERROR("Could not set sampling rate\n");
         exit(-1);
@@ -783,8 +779,8 @@ int main(int argc, char** argv)
       ERROR("Invalid number of PRB %d\n", cell.nof_prb);
       exit(-1);
     }
-    printf("Set TX gain: %.1f dB\n", srslte_rf_set_tx_gain(&rf, rf_gain));
-    printf("Set TX freq: %.2f MHz\n", srslte_rf_set_tx_freq(&rf, cell.nof_ports, rf_freq) / 1000000);
+    printf("Set TX gain: %.1f dB\n", srslte_rf_set_tx_gain(&radio, rf_gain));
+    printf("Set TX freq: %.2f MHz\n", srslte_rf_set_tx_freq(&radio, cell.nof_ports, rf_freq) / 1000000);
   }
 #endif
 
@@ -832,7 +828,7 @@ int main(int argc, char** argv)
   while ((nf < nof_frames || nof_frames == -1) && !go_exit) {
     for (sf_idx = 0; sf_idx < SRSLTE_NOF_SF_X_FRAME && (nf < nof_frames || nof_frames == -1) && !go_exit; sf_idx++) {
       /* Set Antenna port resource elements to zero */
-      bzero(sf_symbols[0], sizeof(cf_t) * sf_n_re);
+      srslte_vec_cf_zero(sf_symbols[0], sf_n_re);
 
       if (sf_idx == 0 || sf_idx == 5) {
         srslte_pss_put_slot(pss_signal, sf_symbols[0], cell.nof_prb, SRSLTE_CP_NORM);
@@ -998,7 +994,7 @@ int main(int argc, char** argv)
           srslte_vec_sc_prod_cfc(
               output_buffer[i], rf_amp * norm_factor, output_buffer[i], SRSLTE_SF_LEN_PRB(cell.nof_prb));
         }
-        srslte_rf_send_multi(&rf, (void**)output_buffer, sf_n_samples, true, start_of_burst, false);
+        srslte_rf_send_multi(&radio, (void**)output_buffer, sf_n_samples, true, start_of_burst, false);
         start_of_burst = false;
 #endif
       }

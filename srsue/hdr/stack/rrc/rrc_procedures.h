@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -29,6 +29,20 @@
 
 namespace srsue {
 
+/********************************
+ *           Events
+ *******************************/
+
+// background workers use this event to signal the result of a cell select phy procedure
+struct cell_select_event_t {
+  cell_select_event_t(bool c_) : cs_ret(c_) {}
+  bool cs_ret;
+};
+
+/********************************
+ *         Procedures
+ *******************************/
+
 class rrc::cell_search_proc
 {
 public:
@@ -36,12 +50,15 @@ public:
     phy_interface_rrc_lte::cell_search_ret_t cs_ret;
     phy_interface_rrc_lte::phy_cell_t        found_cell;
   };
-  enum class state_t { phy_cell_search, si_acquire };
+  enum class state_t { phy_cell_search, si_acquire, wait_measurement, phy_cell_select };
 
   explicit cell_search_proc(rrc* parent_);
   srslte::proc_outcome_t init();
   srslte::proc_outcome_t step();
+  srslte::proc_outcome_t step_si_acquire();
   srslte::proc_outcome_t react(const cell_search_event_t& event);
+  srslte::proc_outcome_t react(const cell_select_event_t& event);
+  srslte::proc_outcome_t step_wait_measurement();
 
   phy_interface_rrc_lte::cell_search_ret_t get_result() const { return search_result.cs_ret; }
   static const char*                       name() { return "Cell Search"; }
@@ -58,28 +75,38 @@ private:
   state_t                     state;
 };
 
+/****************************************************************
+ * TS 36.331 Sec 5.2.3 - Acquisition of an SI message procedure
+ ***************************************************************/
 class rrc::si_acquire_proc
 {
 public:
   const static int SIB_SEARCH_TIMEOUT_MS = 1000;
+  struct si_acq_timer_expired {
+    uint32_t timer_id;
+  };
+  struct sib_received_ev {
+  };
 
   explicit si_acquire_proc(rrc* parent_);
   srslte::proc_outcome_t init(uint32_t sib_index_);
-  srslte::proc_outcome_t step();
+  srslte::proc_outcome_t step() { return srslte::proc_outcome_t::yield; }
   static const char*     name() { return "SI Acquire"; }
+  srslte::proc_outcome_t react(si_acq_timer_expired ev);
+  srslte::proc_outcome_t react(sib_received_ev ev);
+  void                   then(const srslte::proc_state_t& result);
 
 private:
-  static uint32_t sib_start_tti(uint32_t tti, uint32_t period, uint32_t offset, uint32_t sf);
+  void start_si_acquire();
 
   // conts
-  rrc*         rrc_ptr;
-  srslte::log* log_h;
+  rrc*            rrc_ptr;
+  srslte::log_ref log_h;
 
   // state
-  uint32_t period = 0, sched_index = 0;
-  uint32_t start_tti      = 0;
-  uint32_t sib_index      = 0;
-  uint32_t last_win_start = 0;
+  srslte::timer_handler::unique_timer si_acq_timeout, si_acq_retry_timer;
+  uint32_t                            period = 0, sched_index = 0;
+  uint32_t                            sib_index = 0;
 };
 
 class rrc::serving_cell_config_proc
@@ -91,14 +118,15 @@ public:
   static const char*     name() { return "Serving Cell Configuration"; }
 
 private:
-  rrc*         rrc_ptr;
-  srslte::log* log_h;
+  rrc*            rrc_ptr;
+  srslte::log_ref log_h;
+
+  srslte::proc_outcome_t launch_sib_acquire();
 
   // proc args
   std::vector<uint32_t> required_sibs;
 
   // state variables
-  enum class search_state_t { next_sib, si_acquire } search_state;
   uint32_t                    req_idx = 0;
   srslte::proc_future_t<void> si_acquire_fut;
 };
@@ -114,9 +142,12 @@ public:
   void                   then(const srslte::proc_result_t<cs_result_t>& proc_result) const;
   cs_result_t            get_result() const { return cs_result; }
   static const char*     name() { return "Cell Selection"; }
+  srslte::proc_outcome_t react(const cell_select_event_t& event);
 
 private:
-  srslte::proc_outcome_t step_cell_selection();
+  srslte::proc_outcome_t start_cell_selection();
+  srslte::proc_outcome_t step_cell_selection(const cell_select_event_t& event);
+  srslte::proc_outcome_t step_serv_cell_camp(const cell_select_event_t& event);
   srslte::proc_outcome_t step_wait_in_sync();
   srslte::proc_outcome_t step_cell_search();
   srslte::proc_outcome_t step_cell_config();
@@ -125,12 +156,13 @@ private:
   rrc* rrc_ptr;
 
   // state variables
-  enum class search_state_t { cell_selection, wait_in_sync, cell_config, cell_search };
+  enum class search_state_t { cell_selection, serv_cell_camp, wait_in_sync, cell_config, cell_search };
   cs_result_t                                                     cs_result;
   search_state_t                                                  state;
   uint32_t                                                        neigh_index;
   srslte::proc_future_t<phy_interface_rrc_lte::cell_search_ret_t> cell_search_fut;
   srslte::proc_future_t<void>                                     serv_cell_cfg_fut;
+  bool                                                            discard_serving = false;
 };
 
 class rrc::plmn_search_proc
@@ -144,8 +176,8 @@ public:
 
 private:
   // consts
-  rrc*         rrc_ptr;
-  srslte::log* log_h;
+  rrc*            rrc_ptr;
+  srslte::log_ref log_h;
 
   // state variables
   found_plmn_t                                                    found_plmns[MAX_FOUND_PLMNS];
@@ -165,8 +197,8 @@ public:
 
 private:
   // const
-  rrc*         rrc_ptr;
-  srslte::log* log_h;
+  rrc*            rrc_ptr;
+  srslte::log_ref log_h;
   // args
   srslte::establishment_cause_t cause;
   srslte::unique_byte_buffer_t  dedicated_info_nas;
@@ -193,7 +225,7 @@ public:
 private:
   // args
   rrc*                rrc_ptr;
-  srslte::log*        log_h;
+  srslte::log_ref     log_h;
   asn1::rrc::paging_s paging;
 
   // vars
@@ -208,13 +240,14 @@ public:
   explicit go_idle_proc(rrc* rrc_);
   srslte::proc_outcome_t init();
   srslte::proc_outcome_t step();
+  srslte::proc_outcome_t react(bool timeout);
   static const char*     name() { return "Go Idle"; }
 
 private:
-  rrc*                  rrc_ptr;
   static const uint32_t rlc_flush_timeout = 2000;
 
-  uint32_t rlc_flush_counter;
+  rrc*                                rrc_ptr;
+  srslte::timer_handler::unique_timer rlc_flush_timer;
 };
 
 class rrc::cell_reselection_proc
@@ -238,14 +271,16 @@ public:
   srslte::proc_outcome_t init(asn1::rrc::reest_cause_e cause);
   srslte::proc_outcome_t step();
   static const char*     name() { return "Connection re-establishment"; }
+  uint32_t               get_source_earfcn() const { return reest_source_freq; }
 
 private:
   enum class state_t { cell_reselection, cell_configuration } state;
 
-  rrc*                     rrc_ptr          = nullptr;
-  asn1::rrc::reest_cause_e reest_cause      = asn1::rrc::reest_cause_e::nulltype;
-  uint16_t                 reest_rnti       = 0;
-  uint16_t                 reest_source_pci = 0;
+  rrc*                     rrc_ptr           = nullptr;
+  asn1::rrc::reest_cause_e reest_cause       = asn1::rrc::reest_cause_e::nulltype;
+  uint16_t                 reest_rnti        = 0;
+  uint16_t                 reest_source_pci  = 0;
+  uint32_t                 reest_source_freq = 0;
 
   srslte::proc_outcome_t step_cell_reselection();
   srslte::proc_outcome_t step_cell_configuration();

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -24,11 +24,9 @@
 
 #define RX_MOD_BASE(x) (((x)-vr_uh - cfg.um.rx_window_size) % cfg.um.rx_mod)
 
-using namespace asn1::rrc;
-
 namespace srslte {
 
-rlc_um_lte::rlc_um_lte(srslte::log*               log_,
+rlc_um_lte::rlc_um_lte(srslte::log_ref            log_,
                        uint32_t                   lcid_,
                        srsue::pdcp_interface_rlc* pdcp_,
                        srsue::rrc_interface_rlc*  rrc_,
@@ -43,7 +41,7 @@ rlc_um_lte::~rlc_um_lte()
   stop();
 }
 
-bool rlc_um_lte::configure(rlc_config_t cnfg_)
+bool rlc_um_lte::configure(const rlc_config_t& cnfg_)
 {
   // determine bearer name and configure Rx/Tx objects
   rb_name = get_rb_name(rrc, lcid, cnfg_.um.is_mrb);
@@ -104,7 +102,7 @@ uint32_t rlc_um_lte::rlc_um_lte_tx::get_buffer_state()
   return n_bytes;
 }
 
-bool rlc_um_lte::rlc_um_lte_tx::configure(rlc_config_t cnfg_, std::string rb_name_)
+bool rlc_um_lte::rlc_um_lte_tx::configure(const rlc_config_t& cnfg_, std::string rb_name_)
 {
   cfg = cnfg_;
 
@@ -257,13 +255,11 @@ void rlc_um_lte::rlc_um_lte_rx::reestablish()
     timer_expired(reordering_timer.id());
   }
 
-  std::lock_guard<std::mutex> lock(mutex);
   reset();
 }
 
 void rlc_um_lte::rlc_um_lte_rx::stop()
 {
-  std::lock_guard<std::mutex> lock(mutex);
   reset();
 
   reordering_timer.stop();
@@ -284,8 +280,6 @@ void rlc_um_lte::rlc_um_lte_rx::reset()
 
 void rlc_um_lte::rlc_um_lte_rx::handle_data_pdu(uint8_t* payload, uint32_t nof_bytes)
 {
-  std::lock_guard<std::mutex> lock(mutex);
-
   rlc_umd_pdu_header_t header;
   rlc_um_read_data_pdu_header(payload, nof_bytes, cfg.um.rx_sn_field_length, &header);
   log->info_hex(payload, nof_bytes, "RX %s Rx data PDU SN: %d (%d B)", rb_name.c_str(), header.sn, nof_bytes);
@@ -649,7 +643,6 @@ bool rlc_um_lte::rlc_um_lte_rx::inside_reordering_window(uint16_t sn)
 
 void rlc_um_lte::rlc_um_lte_rx::timer_expired(uint32_t timeout_id)
 {
-  std::lock_guard<std::mutex> lock(mutex);
   if (reordering_timer.id() == timeout_id) {
     // 36.322 v10 Section 5.1.2.2.4
     log->info("%s reordering timeout expiry - updating vr_ur and reassembling\n", rb_name.c_str());

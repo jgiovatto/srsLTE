@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -24,5 +24,3 @@ add_library(srsue_phy STATIC ${SOURCES})
 if(ENABLE_GUI AND SRSGUI_FOUND)
   target_link_libraries(srsue_phy ${SRSGUI_LIBRARIES})
 endif(ENABLE_GUI AND SRSGUI_FOUND)
-
-install(TARGETS srsue_phy DESTINATION ${LIBRARY_DIR})

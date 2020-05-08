@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -30,18 +30,17 @@
 
 namespace srsue {
 
-demux::demux(srslte::log* log_) :
-  mac_msg(20, log_),
-  mch_mac_msg(20, log_),
-  pending_mac_msg(20, log_),
+demux::demux(log_ref log_h_) :
+  log_h(log_h_),
+  mac_msg(20, log_h_),
+  mch_mac_msg(20, log_h_),
+  pending_mac_msg(20, log_h_),
   rlc(NULL),
-  log_h(log_),
   is_uecrid_successful(false),
   phy_h(nullptr),
   time_alignment_timer(nullptr),
   mac(nullptr)
-{
-}
+{}
 
 void demux::init(phy_interface_mac_common*            phy_,
                  rlc_interface_mac*                   rlc_,
@@ -97,12 +96,21 @@ void demux::push_pdu_temp_crnti(uint8_t* buff, uint32_t nof_bytes)
     pending_mac_msg.init_rx(nof_bytes);
     pending_mac_msg.parse_packet(buff);
 
-    // Look for Contention Resolution UE ID
+    // Look for Contention Resolution UE ID and TA commands
     is_uecrid_successful = false;
-    while (pending_mac_msg.next() && !is_uecrid_successful) {
-      if (pending_mac_msg.get()->ce_type() == srslte::sch_subh::CON_RES_ID) {
-        Debug("Found Contention Resolution ID CE\n");
-        is_uecrid_successful = mac->contention_resolution_id_rcv(pending_mac_msg.get()->get_con_res_id());
+    while (pending_mac_msg.next()) {
+      switch (pending_mac_msg.get()->dl_sch_ce_type()) {
+        case srslte::dl_sch_lcid::CON_RES_ID:
+          if (!is_uecrid_successful) {
+            Debug("Found Contention Resolution ID CE\n");
+            is_uecrid_successful = mac->contention_resolution_id_rcv(pending_mac_msg.get()->get_con_res_id());
+          }
+          break;
+        case srslte::dl_sch_lcid::TA_CMD:
+          parse_ta_cmd(pending_mac_msg.get());
+          break;
+        default:
+          break;
       }
     }
     pending_mac_msg.reset();
@@ -237,7 +245,7 @@ void demux::process_mch_pdu(srslte::mch_pdu* mch_msg)
   // disgarding headers that have already been processed
   while (mch_msg->next()) {
 
-    if (srslte::sch_subh::MCH_SCHED_INFO == mch_msg->get()->ce_type()) {
+    if (srslte::mch_lcid::MCH_SCHED_INFO == mch_msg->get()->mch_ce_type()) {
       uint16_t stop;
       uint8_t  lcid;
       if (mch_msg->get()->get_next_mch_sched_info(&lcid, &stop)) {
@@ -272,33 +280,38 @@ void demux::mch_start_rx(uint32_t lcid)
 bool demux::process_ce(srslte::sch_subh* subh)
 {
   uint32_t cc_idx = 0;
-  switch (subh->ce_type()) {
-    case srslte::sch_subh::CON_RES_ID:
+  switch (subh->dl_sch_ce_type()) {
+    case srslte::dl_sch_lcid::CON_RES_ID:
       // Do nothing
       break;
-    case srslte::sch_subh::TA_CMD:
-      phy_h->set_timeadv(subh->get_ta_cmd());
-      Info("Received TA=%d (%d/%d) \n",
-           subh->get_ta_cmd(),
-           time_alignment_timer->value(),
-           time_alignment_timer->duration());
-      // Start or restart timeAlignmentTimer only if set
-      if (time_alignment_timer->is_set()) {
-        time_alignment_timer->run();
-      }
+    case srslte::dl_sch_lcid::TA_CMD:
+      parse_ta_cmd(subh);
       break;
-    case srslte::sch_subh::SCELL_ACTIVATION:
+    case srslte::dl_sch_lcid::SCELL_ACTIVATION:
       cc_idx = (uint32_t)subh->get_activation_deactivation_cmd();
       phy_h->set_activation_deactivation_scell(cc_idx);
       mac->reset_harq(cc_idx);
       break;
-    case srslte::sch_subh::PADDING:
+    case srslte::dl_sch_lcid::PADDING:
       break;
     default:
-      Error("MAC CE 0x%x not supported\n", subh->ce_type());
+      Error("MAC CE 0x%x not supported\n", subh->lcid_value());
       break;
   }
   return true;
+}
+
+void demux::parse_ta_cmd(srslte::sch_subh* subh)
+{
+  phy_h->set_timeadv(subh->get_ta_cmd());
+  Info("Received TA=%d (%d/%d) \n",
+       subh->get_ta_cmd(),
+       time_alignment_timer->time_elapsed(),
+       time_alignment_timer->duration());
+  // Start or restart timeAlignmentTimer only if set
+  if (time_alignment_timer->is_set()) {
+    time_alignment_timer->run();
+  }
 }
 
 } // namespace srsue

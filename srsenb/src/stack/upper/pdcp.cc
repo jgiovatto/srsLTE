@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -24,9 +24,9 @@
 
 namespace srsenb {
 
-pdcp::pdcp(srslte::timer_handler* timers_, srslte::log* log_) :
-  timers(timers_),
-  log_h(log_),
+pdcp::pdcp(srslte::task_handler_interface* task_executor_, const char* logname) :
+  task_executor(task_executor_),
+  log_h(logname),
   pool(srslte::byte_buffer_pool::get_instance())
 {
 }
@@ -36,26 +36,20 @@ void pdcp::init(rlc_interface_pdcp* rlc_, rrc_interface_pdcp* rrc_, gtpu_interfa
   rlc  = rlc_;
   rrc  = rrc_;
   gtpu = gtpu_;
-
-  pthread_rwlock_init(&rwlock, NULL);
 }
 
 void pdcp::stop()
 {
-  pthread_rwlock_wrlock(&rwlock);
   for (std::map<uint32_t, user_interface>::iterator iter = users.begin(); iter != users.end(); ++iter) {
     clear_user(&iter->second);
   }
   users.clear();
-  pthread_rwlock_unlock(&rwlock);
-  pthread_rwlock_destroy(&rwlock);
 }
 
 void pdcp::add_user(uint16_t rnti)
 {
-  pthread_rwlock_rdlock(&rwlock);
   if (users.count(rnti) == 0) {
-    srslte::pdcp* obj = new srslte::pdcp(timers, log_h);
+    srslte::pdcp* obj = new srslte::pdcp(task_executor, log_h->get_service_name().c_str());
     obj->init(&users[rnti].rlc_itf, &users[rnti].rrc_itf, &users[rnti].gtpu_itf);
     users[rnti].rlc_itf.rnti  = rnti;
     users[rnti].gtpu_itf.rnti = rnti;
@@ -66,7 +60,6 @@ void pdcp::add_user(uint16_t rnti)
     users[rnti].gtpu_itf.gtpu = gtpu;
     users[rnti].pdcp          = obj;
   }
-  pthread_rwlock_unlock(&rwlock);
 }
 
 // Private unlocked deallocation of user
@@ -79,17 +72,14 @@ void pdcp::clear_user(user_interface* ue)
 
 void pdcp::rem_user(uint16_t rnti)
 {
-  pthread_rwlock_wrlock(&rwlock);
   if (users.count(rnti)) {
     clear_user(&users[rnti]);
     users.erase(rnti);
   }
-  pthread_rwlock_unlock(&rwlock);
 }
 
 void pdcp::add_bearer(uint16_t rnti, uint32_t lcid, srslte::pdcp_config_t cfg)
 {
-  pthread_rwlock_rdlock(&rwlock);
   if (users.count(rnti)) {
     if (rnti != SRSLTE_MRNTI) {
       users[rnti].pdcp->add_bearer(lcid, cfg);
@@ -97,45 +87,30 @@ void pdcp::add_bearer(uint16_t rnti, uint32_t lcid, srslte::pdcp_config_t cfg)
       users[rnti].pdcp->add_bearer_mrb(lcid, cfg);
     }
   }
-  pthread_rwlock_unlock(&rwlock);
 }
 
 void pdcp::reset(uint16_t rnti)
 {
-  pthread_rwlock_rdlock(&rwlock);
   if (users.count(rnti)) {
     users[rnti].pdcp->reset();
   }
-  pthread_rwlock_unlock(&rwlock);
 }
 
-void pdcp::config_security(uint16_t                            rnti,
-                           uint32_t                            lcid,
-                           uint8_t*                            k_rrc_enc_,
-                           uint8_t*                            k_rrc_int_,
-                           uint8_t*                            k_up_enc_,
-                           srslte::CIPHERING_ALGORITHM_ID_ENUM cipher_algo_,
-                           srslte::INTEGRITY_ALGORITHM_ID_ENUM integ_algo_)
+void pdcp::config_security(uint16_t rnti, uint32_t lcid, srslte::as_security_config_t sec_cfg)
 {
-  pthread_rwlock_rdlock(&rwlock);
   if (users.count(rnti)) {
-    users[rnti].pdcp->config_security(lcid, k_rrc_enc_, k_rrc_int_, k_up_enc_, cipher_algo_, integ_algo_);
+    users[rnti].pdcp->config_security(lcid, sec_cfg);
   }
-  pthread_rwlock_unlock(&rwlock);
 }
 
 void pdcp::enable_integrity(uint16_t rnti, uint32_t lcid)
 {
-  pthread_rwlock_rdlock(&rwlock);
-  users[rnti].pdcp->enable_integrity(lcid);
-  pthread_rwlock_unlock(&rwlock);
+  users[rnti].pdcp->enable_integrity(lcid, srslte::DIRECTION_TXRX);
 }
 
 void pdcp::enable_encryption(uint16_t rnti, uint32_t lcid)
 {
-  pthread_rwlock_rdlock(&rwlock);
-  users[rnti].pdcp->enable_encryption(lcid);
-  pthread_rwlock_unlock(&rwlock);
+  users[rnti].pdcp->enable_encryption(lcid, srslte::DIRECTION_TXRX);
 }
 
 bool pdcp::get_bearer_status(uint16_t  rnti,
@@ -153,16 +128,13 @@ bool pdcp::get_bearer_status(uint16_t  rnti,
 
 void pdcp::write_pdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu)
 {
-  pthread_rwlock_rdlock(&rwlock);
   if (users.count(rnti)) {
     users[rnti].pdcp->write_pdu(lcid, std::move(sdu));
   }
-  pthread_rwlock_unlock(&rwlock);
 }
 
 void pdcp::write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu)
 {
-  pthread_rwlock_rdlock(&rwlock);
   if (users.count(rnti)) {
     if (rnti != SRSLTE_MRNTI) {
       // TODO: expose blocking mode as function param
@@ -171,7 +143,6 @@ void pdcp::write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t 
       users[rnti].pdcp->write_sdu_mch(lcid, std::move(sdu));
     }
   }
-  pthread_rwlock_unlock(&rwlock);
 }
 
 void pdcp::user_interface_gtpu::write_pdu(uint32_t lcid, srslte::unique_byte_buffer_t pdu)

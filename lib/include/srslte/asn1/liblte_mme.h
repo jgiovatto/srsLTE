@@ -692,6 +692,7 @@ LIBLTE_ERROR_ENUM liblte_mme_unpack_drx_parameter_ie(uint8** ie_ptr, LIBLTE_MME_
 #define LIBLTE_MME_EMM_CAUSE_SECURITY_MODE_REJECTED_UNSPECIFIED 0x18
 #define LIBLTE_MME_EMM_CAUSE_NOT_AUTHORIZED_FOR_THIS_CSG 0x19
 #define LIBLTE_MME_EMM_CAUSE_NON_EPS_AUTHENTICATION_UNACCEPTABLE 0x1A
+#define LIBLTE_MME_EMM_CAUSE_REQUESTED_SERVICE_OPTION_NOT_AUTHORIZED 0x23
 #define LIBLTE_MME_EMM_CAUSE_CS_SERVICE_TEMPORARILY_NOT_AVAILABLE 0x27
 #define LIBLTE_MME_EMM_CAUSE_NO_EPS_BEARER_CONTEXT_ACTIVATED 0x28
 #define LIBLTE_MME_EMM_CAUSE_SEMANTICALLY_INCORRECT_MESSAGE 0x5F
@@ -1062,6 +1063,7 @@ LIBLTE_ERROR_ENUM liblte_mme_unpack_ms_network_capability_ie(uint8**            
 // Defines
 // Enums
 // Structs
+#define LIBLTE_MME_NAS_KEY_SET_IDENTIFIER_NO_KEY_AVAILABLE (7)
 typedef struct {
   LIBLTE_MME_TYPE_OF_SECURITY_CONTEXT_FLAG_ENUM tsc_flag;
   uint8                                         nas_ksi;
@@ -2384,9 +2386,13 @@ const char* liblte_nas_sec_hdr_type_to_string(int code);
 #define LIBLTE_MME_MSG_TYPE_CS_SERVICE_NOTIFICATION 0x64
 #define LIBLTE_MME_MSG_TYPE_DOWNLINK_GENERIC_NAS_TRANSPORT 0x68
 #define LIBLTE_MME_MSG_TYPE_UPLINK_GENERIC_NAS_TRANSPORT 0x69
+#define LIBLTE_MME_MSG_TYPE_CLOSE_UE_TEST_LOOP 0x80
+#define LIBLTE_MME_MSG_TYPE_CLOSE_UE_TEST_LOOP_COMPLETE 0x81
+#define LIBLTE_MME_MSG_TYPE_OPEN_UE_TEST_LOOP 0x82
+#define LIBLTE_MME_MSG_TYPE_OPEN_UE_TEST_LOOP_COMPLETE 0x83
 #define LIBLTE_MME_MSG_TYPE_ACTIVATE_TEST_MODE 0x84
 #define LIBLTE_MME_MSG_TYPE_ACTIVATE_TEST_MODE_COMPLETE 0x85
-#define LIBLTE_MME_MSG_TYPE_DEACTIVATE_TEST MODE 0x86
+#define LIBLTE_MME_MSG_TYPE_DEACTIVATE_TEST_MODE 0x86
 #define LIBLTE_MME_MSG_TYPE_DEACTIVATE_TEST_MODE_COMPLETE 0x87
 #define LIBLTE_MME_MSG_TYPE_ACTIVATE_DEFAULT_EPS_BEARER_CONTEXT_REQUEST 0xC1
 #define LIBLTE_MME_MSG_TYPE_ACTIVATE_DEFAULT_EPS_BEARER_CONTEXT_ACCEPT 0xC2
@@ -4000,5 +4006,31 @@ liblte_mme_unpack_pdn_disconnect_request_msg(LIBLTE_BYTE_MSG_STRUCT*            
 // Functions
 LIBLTE_ERROR_ENUM
 liblte_mme_pack_activate_test_mode_complete_msg(LIBLTE_BYTE_MSG_STRUCT* msg, uint8 sec_hdr_type, uint32 count);
+
+// UE test mode type
+typedef enum {
+  LIBLTE_MME_UE_TEST_LOOP_MODE_A = 0,
+  LIBLTE_MME_UE_TEST_LOOP_MODE_B,
+  LIBLTE_MME_UE_TEST_LOOP_MODE_C,
+  LIBLTE_MME_UE_TEST_LOOP_MODE_N_ITEMS,
+} LIBLTE_MME_UE_TEST_LOOP_MODE_ENUM;
+static const char liblte_ue_test_loop_mode_text[LIBLTE_MME_UE_TEST_LOOP_MODE_N_ITEMS][20] = {"UE test loop mode A",
+                                                                                             "UE test loop mode B",
+                                                                                             "UE test loop mode C"};
+
+/*********************************************************************
+    Message Name: CLOSE UE TEST LOOP COMPLETE
+
+    Description: Sent by the UE to the network in response to a
+                 CLOSE UE TEST LOOP message.
+
+    Document Reference: 36.509 v8.7.0 Section 6.2
+*********************************************************************/
+// Defines
+// Enums
+// Structs
+// Functions
+LIBLTE_ERROR_ENUM
+liblte_mme_pack_close_ue_test_loop_complete_msg(LIBLTE_BYTE_MSG_STRUCT* msg, uint8 sec_hdr_type, uint32 count);
 
 #endif // SRSLTE_LIBLTE_MME_H

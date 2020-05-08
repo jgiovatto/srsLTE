@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -20,4 +20,3 @@
 
 set(SOURCES demux.cc dl_harq.cc mac.cc mux.cc proc_bsr.cc proc_phr.cc proc_ra.cc proc_sr.cc ul_harq.cc)
 add_library(srsue_mac STATIC ${SOURCES})
-install(TARGETS srsue_mac DESTINATION ${LIBRARY_DIR})

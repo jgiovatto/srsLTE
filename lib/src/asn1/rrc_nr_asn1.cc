@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -29,24 +29,9 @@ using namespace asn1::rrc_nr;
  *                              Logging Utilities
  ******************************************************************************/
 
-srslte::log* asn1::rrc_nr::rrc_nr_log_ptr = nullptr;
-
-void asn1::rrc_nr::rrc_nr_log_register_handler(srslte::log* ctx)
-{
-  rrc_nr_log_ptr = ctx;
-}
-
-void asn1::rrc_nr::rrc_nr_log_print(srslte::LOG_LEVEL_ENUM log_level, const char* format, ...)
-{
-  va_list args;
-  va_start(args, format);
-  vlog_print(rrc_nr_log_ptr, log_level, format, args);
-  va_end(args);
-}
-
 void asn1::rrc_nr::log_invalid_access_choice_id(uint32_t val, uint32_t choice_id)
 {
-  rrc_nr_log_print(LOG_LEVEL_ERROR, "The access choice id is invalid (%d!=%d)\n", val, choice_id);
+  asn1::log_error("The access choice id is invalid (%d!=%d)\n", val, choice_id);
 }
 
 void asn1::rrc_nr::assert_choice_type(uint32_t val, uint32_t choice_id)
@@ -61,41 +46,91 @@ void asn1::rrc_nr::assert_choice_type(const std::string& access_type,
                                       const std::string& choice_type)
 {
   if (access_type != current_type) {
-    rrc_nr_log_print(LOG_LEVEL_ERROR,
-                     "Invalid field access for choice type \"%s\" (\"%s\"!=\"%s\")\n",
-                     choice_type.c_str(),
-                     access_type.c_str(),
-                     current_type.c_str());
+    asn1::log_error("Invalid field access for choice type \"%s\" (\"%s\"!=\"%s\")\n",
+                    choice_type.c_str(),
+                    access_type.c_str(),
+                    current_type.c_str());
   }
 }
 
-const char* convert_enum_idx(const char* array[], uint32_t nof_types, uint32_t enum_val, const char* enum_type)
+const char*
+asn1::rrc_nr::convert_enum_idx(const char* array[], uint32_t nof_types, uint32_t enum_val, const char* enum_type)
 {
   if (enum_val >= nof_types) {
     if (enum_val == nof_types) {
-      rrc_nr_log_print(LOG_LEVEL_ERROR, "The enum of type %s was not initialized.\n", enum_type);
+      asn1::log_error("The enum of type %s was not initialized.\n", enum_type);
     } else {
-      rrc_nr_log_print(LOG_LEVEL_ERROR, "The enum value=%d of type %s is not valid.\n", enum_val, enum_type);
+      asn1::log_error("The enum value=%d of type %s is not valid.\n", enum_val, enum_type);
     }
     return "";
   }
   return array[enum_val];
 }
 
-#define rrc_nr_asn1_warn_assert(cond, file, line)                                                                      \
-  if ((cond)) {                                                                                                        \
-    rrc_nr_log_print(LOG_LEVEL_WARNING, "Assertion in [%s][%d] failed.\n", (file), (line));                            \
+template <class ItemType>
+ItemType asn1::rrc_nr::map_enum_number(ItemType* array, uint32_t nof_types, uint32_t enum_val, const char* enum_type)
+{
+  if (enum_val >= nof_types) {
+    if (enum_val == nof_types) {
+      asn1::log_error("The enum of type %s is not initialized.\n", enum_type);
+    } else {
+      asn1::log_error("The enum value=%d of type %s cannot be converted to a number.\n", enum_val, enum_type);
+    }
+    return 0;
   }
+  return array[enum_val];
+}
+template const uint8_t  asn1::rrc_nr::map_enum_number<const uint8_t>(const uint8_t* array,
+                                                                    uint32_t       nof_types,
+                                                                    uint32_t       enum_val,
+                                                                    const char*    enum_type);
+template const uint16_t asn1::rrc_nr::map_enum_number<const uint16_t>(const uint16_t* array,
+                                                                      uint32_t        nof_types,
+                                                                      uint32_t        enum_val,
+                                                                      const char*     enum_type);
+template const uint32_t asn1::rrc_nr::map_enum_number<const uint32_t>(const uint32_t* array,
+                                                                      uint32_t        nof_types,
+                                                                      uint32_t        enum_val,
+                                                                      const char*     enum_type);
+template const uint64_t asn1::rrc_nr::map_enum_number<const uint64_t>(const uint64_t* array,
+                                                                      uint32_t        nof_types,
+                                                                      uint32_t        enum_val,
+                                                                      const char*     enum_type);
+template const int8_t   asn1::rrc_nr::map_enum_number<const int8_t>(const int8_t* array,
+                                                                  uint32_t      nof_types,
+                                                                  uint32_t      enum_val,
+                                                                  const char*   enum_type);
+template const int16_t  asn1::rrc_nr::map_enum_number<const int16_t>(const int16_t* array,
+                                                                    uint32_t       nof_types,
+                                                                    uint32_t       enum_val,
+                                                                    const char*    enum_type);
+template const int32_t  asn1::rrc_nr::map_enum_number<const int32_t>(const int32_t* array,
+                                                                    uint32_t       nof_types,
+                                                                    uint32_t       enum_val,
+                                                                    const char*    enum_type);
+template const int64_t  asn1::rrc_nr::map_enum_number<const int64_t>(const int64_t* array,
+                                                                    uint32_t       nof_types,
+                                                                    uint32_t       enum_val,
+                                                                    const char*    enum_type);
+template const float    asn1::rrc_nr::map_enum_number<const float>(const float* array,
+                                                                uint32_t     nof_types,
+                                                                uint32_t     enum_val,
+                                                                const char*  enum_type);
 
+void rrc_nr_asn1_warn_assert(bool cond, const char* filename, int lineno)
+{
+  if (cond) {
+    asn1::log_warning("Assertion in [%s][%d] failed.\n", filename, lineno);
+  }
+}
 static void log_invalid_choice_id(uint32_t val, const char* choice_type)
 {
-  rrc_nr_log_print(LOG_LEVEL_ERROR, "Invalid choice id=%d for choice type %s\n", val, choice_type);
+  asn1::log_error("Invalid choice id=%d for choice type %s\n", val, choice_type);
 }
 
 static void invalid_enum_number(int value, const char* name)
 {
-  rrc_nr_log_print(
-      LOG_LEVEL_ERROR, "The provided enum value=%d of type %s cannot be translated into a number\n", value, name);
+  asn1::log_error("The provided enum value=%d of type %s cannot be translated into a number\n", value, name);
 }
 
 /*******************************************************************************
@@ -110,7 +145,7 @@ SRSASN_CODE pdcch_cfg_sib1_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pdcch_cfg_sib1_s::unpack(bit_ref& bref)
+SRSASN_CODE pdcch_cfg_sib1_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(ctrl_res_set_zero, bref, (uint8_t)0u, (uint8_t)15u));
   HANDLE_CODE(unpack_integer(search_space_zero, bref, (uint8_t)0u, (uint8_t)15u));
@@ -139,7 +174,7 @@ SRSASN_CODE mib_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE mib_s::unpack(bit_ref& bref)
+SRSASN_CODE mib_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(sys_frame_num.unpack(bref));
   HANDLE_CODE(sub_carrier_spacing_common.unpack(bref));
@@ -169,35 +204,35 @@ void mib_s::to_json(json_writer& j) const
 
 std::string mib_s::sub_carrier_spacing_common_opts::to_string() const
 {
-  static constexpr const char* options[] = {"scs15or60", "scs30or120"};
+  static const char* options[] = {"scs15or60", "scs30or120"};
   return convert_enum_idx(options, 2, value, "mib_s::sub_carrier_spacing_common_e_");
 }
 uint8_t mib_s::sub_carrier_spacing_common_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {15, 30};
-  return convert_enum_idx(options, 2, value, "mib_s::sub_carrier_spacing_common_e_");
+  static const uint8_t options[] = {15, 30};
+  return map_enum_number(options, 2, value, "mib_s::sub_carrier_spacing_common_e_");
 }
 
 std::string mib_s::dmrs_type_a_position_opts::to_string() const
 {
-  static constexpr const char* options[] = {"pos2", "pos3"};
+  static const char* options[] = {"pos2", "pos3"};
   return convert_enum_idx(options, 2, value, "mib_s::dmrs_type_a_position_e_");
 }
 uint8_t mib_s::dmrs_type_a_position_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 3};
-  return convert_enum_idx(options, 2, value, "mib_s::dmrs_type_a_position_e_");
+  static const uint8_t options[] = {2, 3};
+  return map_enum_number(options, 2, value, "mib_s::dmrs_type_a_position_e_");
 }
 
 std::string mib_s::cell_barred_opts::to_string() const
 {
-  static constexpr const char* options[] = {"barred", "notBarred"};
+  static const char* options[] = {"barred", "notBarred"};
   return convert_enum_idx(options, 2, value, "mib_s::cell_barred_e_");
 }
 
 std::string mib_s::intra_freq_resel_opts::to_string() const
 {
-  static constexpr const char* options[] = {"allowed", "notAllowed"};
+  static const char* options[] = {"allowed", "notAllowed"};
   return convert_enum_idx(options, 2, value, "mib_s::intra_freq_resel_e_");
 }
 
@@ -293,7 +328,7 @@ SRSASN_CODE bcch_bch_msg_type_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE bcch_bch_msg_type_c::unpack(bit_ref& bref)
+SRSASN_CODE bcch_bch_msg_type_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -313,7 +348,7 @@ SRSASN_CODE bcch_bch_msg_type_c::unpack(bit_ref& bref)
 
 std::string bcch_bch_msg_type_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"mib", "messageClassExtension"};
+  static const char* options[] = {"mib", "messageClassExtension"};
   return convert_enum_idx(options, 2, value, "bcch_bch_msg_type_c::types");
 }
 
@@ -326,7 +361,7 @@ SRSASN_CODE bcch_bch_msg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE bcch_bch_msg_s::unpack(bit_ref& bref)
+SRSASN_CODE bcch_bch_msg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(msg.unpack(bref));
 
@@ -361,7 +396,7 @@ SRSASN_CODE eutra_ns_pmax_value_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE eutra_ns_pmax_value_s::unpack(bit_ref& bref)
+SRSASN_CODE eutra_ns_pmax_value_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(add_pmax_present, 1));
   HANDLE_CODE(bref.unpack(add_spec_emission_present, 1));
@@ -399,7 +434,7 @@ SRSASN_CODE nr_ns_pmax_value_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE nr_ns_pmax_value_s::unpack(bit_ref& bref)
+SRSASN_CODE nr_ns_pmax_value_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(add_pmax_present, 1));
 
@@ -423,33 +458,33 @@ void nr_ns_pmax_value_s::to_json(json_writer& j) const
 // EUTRA-Q-OffsetRange ::= ENUMERATED
 std::string eutra_q_offset_range_opts::to_string() const
 {
-  static constexpr const char* options[] = {"dB-24", "dB-22", "dB-20", "dB-18", "dB-16", "dB-14", "dB-12", "dB-10",
-                                            "dB-8",  "dB-6",  "dB-5",  "dB-4",  "dB-3",  "dB-2",  "dB-1",  "dB0",
-                                            "dB1",   "dB2",   "dB3",   "dB4",   "dB5",   "dB6",   "dB8",   "dB10",
-                                            "dB12",  "dB14",  "dB16",  "dB18",  "dB20",  "dB22",  "dB24"};
+  static const char* options[] = {"dB-24", "dB-22", "dB-20", "dB-18", "dB-16", "dB-14", "dB-12", "dB-10",
+                                  "dB-8",  "dB-6",  "dB-5",  "dB-4",  "dB-3",  "dB-2",  "dB-1",  "dB0",
+                                  "dB1",   "dB2",   "dB3",   "dB4",   "dB5",   "dB6",   "dB8",   "dB10",
+                                  "dB12",  "dB14",  "dB16",  "dB18",  "dB20",  "dB22",  "dB24"};
   return convert_enum_idx(options, 31, value, "eutra_q_offset_range_e");
 }
 int8_t eutra_q_offset_range_opts::to_number() const
 {
-  static constexpr int8_t options[] = {-24, -22, -20, -18, -16, -14, -12, -10, -8, -6, -5, -4, -3, -2, -1, 0,
-                                       1,   2,   3,   4,   5,   6,   8,   10,  12, 14, 16, 18, 20, 22, 24};
-  return convert_enum_idx(options, 31, value, "eutra_q_offset_range_e");
+  static const int8_t options[] = {-24, -22, -20, -18, -16, -14, -12, -10, -8, -6, -5, -4, -3, -2, -1, 0,
+                                   1,   2,   3,   4,   5,   6,   8,   10,  12, 14, 16, 18, 20, 22, 24};
+  return map_enum_number(options, 31, value, "eutra_q_offset_range_e");
 }
 
 // Q-OffsetRange ::= ENUMERATED
 std::string q_offset_range_opts::to_string() const
 {
-  static constexpr const char* options[] = {"dB-24", "dB-22", "dB-20", "dB-18", "dB-16", "dB-14", "dB-12", "dB-10",
-                                            "dB-8",  "dB-6",  "dB-5",  "dB-4",  "dB-3",  "dB-2",  "dB-1",  "dB0",
-                                            "dB1",   "dB2",   "dB3",   "dB4",   "dB5",   "dB6",   "dB8",   "dB10",
-                                            "dB12",  "dB14",  "dB16",  "dB18",  "dB20",  "dB22",  "dB24"};
+  static const char* options[] = {"dB-24", "dB-22", "dB-20", "dB-18", "dB-16", "dB-14", "dB-12", "dB-10",
+                                  "dB-8",  "dB-6",  "dB-5",  "dB-4",  "dB-3",  "dB-2",  "dB-1",  "dB0",
+                                  "dB1",   "dB2",   "dB3",   "dB4",   "dB5",   "dB6",   "dB8",   "dB10",
+                                  "dB12",  "dB14",  "dB16",  "dB18",  "dB20",  "dB22",  "dB24"};
   return convert_enum_idx(options, 31, value, "q_offset_range_e");
 }
 int8_t q_offset_range_opts::to_number() const
 {
-  static constexpr int8_t options[] = {-24, -22, -20, -18, -16, -14, -12, -10, -8, -6, -5, -4, -3, -2, -1, 0,
-                                       1,   2,   3,   4,   5,   6,   8,   10,  12, 14, 16, 18, 20, 22, 24};
-  return convert_enum_idx(options, 31, value, "q_offset_range_e");
+  static const int8_t options[] = {-24, -22, -20, -18, -16, -14, -12, -10, -8, -6, -5, -4, -3, -2, -1, 0,
+                                   1,   2,   3,   4,   5,   6,   8,   10,  12, 14, 16, 18, 20, 22, 24};
+  return map_enum_number(options, 31, value, "q_offset_range_e");
 }
 
 // EUTRA-FreqNeighCellInfo ::= SEQUENCE
@@ -469,7 +504,7 @@ SRSASN_CODE eutra_freq_neigh_cell_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE eutra_freq_neigh_cell_info_s::unpack(bit_ref& bref)
+SRSASN_CODE eutra_freq_neigh_cell_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(q_rx_lev_min_offset_cell_present, 1));
   HANDLE_CODE(bref.unpack(q_qual_min_offset_cell_present, 1));
@@ -511,7 +546,7 @@ SRSASN_CODE eutra_multi_band_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE eutra_multi_band_info_s::unpack(bit_ref& bref)
+SRSASN_CODE eutra_multi_band_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(eutra_ns_pmax_list_present, 1));
 
@@ -528,8 +563,8 @@ void eutra_multi_band_info_s::to_json(json_writer& j) const
   j.write_int("eutra-FreqBandIndicator", eutra_freq_band_ind);
   if (eutra_ns_pmax_list_present) {
     j.start_array("eutra-NS-PmaxList");
-    for (uint32_t i1 = 0; i1 < eutra_ns_pmax_list.size(); ++i1) {
-      eutra_ns_pmax_list[i1].to_json(j);
+    for (const auto& e1 : eutra_ns_pmax_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -548,7 +583,7 @@ SRSASN_CODE eutra_pci_range_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE eutra_pci_range_s::unpack(bit_ref& bref)
+SRSASN_CODE eutra_pci_range_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(range_present, 1));
 
@@ -571,28 +606,28 @@ void eutra_pci_range_s::to_json(json_writer& j) const
 
 std::string eutra_pci_range_s::range_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n4",
-                                            "n8",
-                                            "n12",
-                                            "n16",
-                                            "n24",
-                                            "n32",
-                                            "n48",
-                                            "n64",
-                                            "n84",
-                                            "n96",
-                                            "n128",
-                                            "n168",
-                                            "n252",
-                                            "n504",
-                                            "spare2",
-                                            "spare1"};
+  static const char* options[] = {"n4",
+                                  "n8",
+                                  "n12",
+                                  "n16",
+                                  "n24",
+                                  "n32",
+                                  "n48",
+                                  "n64",
+                                  "n84",
+                                  "n96",
+                                  "n128",
+                                  "n168",
+                                  "n252",
+                                  "n504",
+                                  "spare2",
+                                  "spare1"};
   return convert_enum_idx(options, 16, value, "eutra_pci_range_s::range_e_");
 }
 uint16_t eutra_pci_range_s::range_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {4, 8, 12, 16, 24, 32, 48, 64, 84, 96, 128, 168, 252, 504};
-  return convert_enum_idx(options, 14, value, "eutra_pci_range_s::range_e_");
+  static const uint16_t options[] = {4, 8, 12, 16, 24, 32, 48, 64, 84, 96, 128, 168, 252, 504};
+  return map_enum_number(options, 14, value, "eutra_pci_range_s::range_e_");
 }
 
 // InterFreqNeighCellInfo ::= SEQUENCE
@@ -617,7 +652,7 @@ SRSASN_CODE inter_freq_neigh_cell_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE inter_freq_neigh_cell_info_s::unpack(bit_ref& bref)
+SRSASN_CODE inter_freq_neigh_cell_info_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(q_rx_lev_min_offset_cell_present, 1));
@@ -670,7 +705,7 @@ SRSASN_CODE nr_multi_band_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE nr_multi_band_info_s::unpack(bit_ref& bref)
+SRSASN_CODE nr_multi_band_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(freq_band_ind_nr_present, 1));
   HANDLE_CODE(bref.unpack(nr_ns_pmax_list_present, 1));
@@ -692,8 +727,8 @@ void nr_multi_band_info_s::to_json(json_writer& j) const
   }
   if (nr_ns_pmax_list_present) {
     j.start_array("nr-NS-PmaxList");
-    for (uint32_t i1 = 0; i1 < nr_ns_pmax_list.size(); ++i1) {
-      nr_ns_pmax_list[i1].to_json(j);
+    for (const auto& e1 : nr_ns_pmax_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -712,7 +747,7 @@ SRSASN_CODE pci_range_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pci_range_s::unpack(bit_ref& bref)
+SRSASN_CODE pci_range_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(range_present, 1));
 
@@ -735,28 +770,28 @@ void pci_range_s::to_json(json_writer& j) const
 
 std::string pci_range_s::range_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n4",
-                                            "n8",
-                                            "n12",
-                                            "n16",
-                                            "n24",
-                                            "n32",
-                                            "n48",
-                                            "n64",
-                                            "n84",
-                                            "n96",
-                                            "n128",
-                                            "n168",
-                                            "n252",
-                                            "n504",
-                                            "n1008",
-                                            "spare1"};
+  static const char* options[] = {"n4",
+                                  "n8",
+                                  "n12",
+                                  "n16",
+                                  "n24",
+                                  "n32",
+                                  "n48",
+                                  "n64",
+                                  "n84",
+                                  "n96",
+                                  "n128",
+                                  "n168",
+                                  "n252",
+                                  "n504",
+                                  "n1008",
+                                  "spare1"};
   return convert_enum_idx(options, 16, value, "pci_range_s::range_e_");
 }
 uint16_t pci_range_s::range_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {4, 8, 12, 16, 24, 32, 48, 64, 84, 96, 128, 168, 252, 504, 1008};
-  return convert_enum_idx(options, 15, value, "pci_range_s::range_e_");
+  static const uint16_t options[] = {4, 8, 12, 16, 24, 32, 48, 64, 84, 96, 128, 168, 252, 504, 1008};
+  return map_enum_number(options, 15, value, "pci_range_s::range_e_");
 }
 
 // PDSCH-TimeDomainResourceAllocation ::= SEQUENCE
@@ -772,7 +807,7 @@ SRSASN_CODE pdsch_time_domain_res_alloc_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pdsch_time_domain_res_alloc_s::unpack(bit_ref& bref)
+SRSASN_CODE pdsch_time_domain_res_alloc_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(k0_present, 1));
 
@@ -797,7 +832,7 @@ void pdsch_time_domain_res_alloc_s::to_json(json_writer& j) const
 
 std::string pdsch_time_domain_res_alloc_s::map_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"typeA", "typeB"};
+  static const char* options[] = {"typeA", "typeB"};
   return convert_enum_idx(options, 2, value, "pdsch_time_domain_res_alloc_s::map_type_e_");
 }
 
@@ -814,7 +849,7 @@ SRSASN_CODE pusch_time_domain_res_alloc_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pusch_time_domain_res_alloc_s::unpack(bit_ref& bref)
+SRSASN_CODE pusch_time_domain_res_alloc_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(k2_present, 1));
 
@@ -839,24 +874,24 @@ void pusch_time_domain_res_alloc_s::to_json(json_writer& j) const
 
 std::string pusch_time_domain_res_alloc_s::map_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"typeA", "typeB"};
+  static const char* options[] = {"typeA", "typeB"};
   return convert_enum_idx(options, 2, value, "pusch_time_domain_res_alloc_s::map_type_e_");
 }
 
 // CellReselectionSubPriority ::= ENUMERATED
 std::string cell_resel_sub_prio_opts::to_string() const
 {
-  static constexpr const char* options[] = {"oDot2", "oDot4", "oDot6", "oDot8"};
+  static const char* options[] = {"oDot2", "oDot4", "oDot6", "oDot8"};
   return convert_enum_idx(options, 4, value, "cell_resel_sub_prio_e");
 }
 float cell_resel_sub_prio_opts::to_number() const
 {
-  static constexpr float options[] = {0.2, 0.4, 0.6, 0.8};
-  return convert_enum_idx(options, 4, value, "cell_resel_sub_prio_e");
+  static const float options[] = {0.2, 0.4, 0.6, 0.8};
+  return map_enum_number(options, 4, value, "cell_resel_sub_prio_e");
 }
 std::string cell_resel_sub_prio_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"0.2", "0.4", "0.6", "0.8"};
+  static const char* options[] = {"0.2", "0.4", "0.6", "0.8"};
   return convert_enum_idx(options, 4, value, "cell_resel_sub_prio_e");
 }
 
@@ -886,7 +921,7 @@ SRSASN_CODE ctrl_res_set_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ctrl_res_set_s::unpack(bit_ref& bref)
+SRSASN_CODE ctrl_res_set_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(tci_states_pdcch_to_add_list_present, 1));
@@ -922,15 +957,15 @@ void ctrl_res_set_s::to_json(json_writer& j) const
   j.write_str("precoderGranularity", precoder_granularity.to_string());
   if (tci_states_pdcch_to_add_list_present) {
     j.start_array("tci-StatesPDCCH-ToAddList");
-    for (uint32_t i1 = 0; i1 < tci_states_pdcch_to_add_list.size(); ++i1) {
-      j.write_int(tci_states_pdcch_to_add_list[i1]);
+    for (const auto& e1 : tci_states_pdcch_to_add_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (tci_states_pdcch_to_release_list_present) {
     j.start_array("tci-StatesPDCCH-ToReleaseList");
-    for (uint32_t i1 = 0; i1 < tci_states_pdcch_to_release_list.size(); ++i1) {
-      j.write_int(tci_states_pdcch_to_release_list[i1]);
+    for (const auto& e1 : tci_states_pdcch_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -988,7 +1023,7 @@ SRSASN_CODE ctrl_res_set_s::cce_reg_map_type_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ctrl_res_set_s::cce_reg_map_type_c_::unpack(bit_ref& bref)
+SRSASN_CODE ctrl_res_set_s::cce_reg_map_type_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -1013,50 +1048,49 @@ SRSASN_CODE ctrl_res_set_s::cce_reg_map_type_c_::unpack(bit_ref& bref)
 
 std::string ctrl_res_set_s::cce_reg_map_type_c_::interleaved_s_::reg_bundle_size_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n3", "n6"};
+  static const char* options[] = {"n2", "n3", "n6"};
   return convert_enum_idx(options, 3, value, "ctrl_res_set_s::cce_reg_map_type_c_::interleaved_s_::reg_bundle_size_e_");
 }
 uint8_t ctrl_res_set_s::cce_reg_map_type_c_::interleaved_s_::reg_bundle_size_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 3, 6};
-  return convert_enum_idx(options, 3, value, "ctrl_res_set_s::cce_reg_map_type_c_::interleaved_s_::reg_bundle_size_e_");
+  static const uint8_t options[] = {2, 3, 6};
+  return map_enum_number(options, 3, value, "ctrl_res_set_s::cce_reg_map_type_c_::interleaved_s_::reg_bundle_size_e_");
 }
 
 std::string ctrl_res_set_s::cce_reg_map_type_c_::interleaved_s_::interleaver_size_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n3", "n6"};
+  static const char* options[] = {"n2", "n3", "n6"};
   return convert_enum_idx(
       options, 3, value, "ctrl_res_set_s::cce_reg_map_type_c_::interleaved_s_::interleaver_size_e_");
 }
 uint8_t ctrl_res_set_s::cce_reg_map_type_c_::interleaved_s_::interleaver_size_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 3, 6};
-  return convert_enum_idx(
-      options, 3, value, "ctrl_res_set_s::cce_reg_map_type_c_::interleaved_s_::interleaver_size_e_");
+  static const uint8_t options[] = {2, 3, 6};
+  return map_enum_number(options, 3, value, "ctrl_res_set_s::cce_reg_map_type_c_::interleaved_s_::interleaver_size_e_");
 }
 
 std::string ctrl_res_set_s::cce_reg_map_type_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"interleaved", "nonInterleaved"};
+  static const char* options[] = {"interleaved", "nonInterleaved"};
   return convert_enum_idx(options, 2, value, "ctrl_res_set_s::cce_reg_map_type_c_::types");
 }
 
 std::string ctrl_res_set_s::precoder_granularity_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sameAsREG-bundle", "allContiguousRBs"};
+  static const char* options[] = {"sameAsREG-bundle", "allContiguousRBs"};
   return convert_enum_idx(options, 2, value, "ctrl_res_set_s::precoder_granularity_e_");
 }
 
 // EUTRA-AllowedMeasBandwidth ::= ENUMERATED
 std::string eutra_allowed_meas_bw_opts::to_string() const
 {
-  static constexpr const char* options[] = {"mbw6", "mbw15", "mbw25", "mbw50", "mbw75", "mbw100"};
+  static const char* options[] = {"mbw6", "mbw15", "mbw25", "mbw50", "mbw75", "mbw100"};
   return convert_enum_idx(options, 6, value, "eutra_allowed_meas_bw_e");
 }
 uint8_t eutra_allowed_meas_bw_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {6, 15, 25, 50, 75, 100};
-  return convert_enum_idx(options, 6, value, "eutra_allowed_meas_bw_e");
+  static const uint8_t options[] = {6, 15, 25, 50, 75, 100};
+  return map_enum_number(options, 6, value, "eutra_allowed_meas_bw_e");
 }
 
 // RACH-ConfigGeneric ::= SEQUENCE
@@ -1074,7 +1108,7 @@ SRSASN_CODE rach_cfg_generic_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rach_cfg_generic_s::unpack(bit_ref& bref)
+SRSASN_CODE rach_cfg_generic_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(prach_cfg_idx, bref, (uint16_t)0u, (uint16_t)255u));
@@ -1104,46 +1138,46 @@ void rach_cfg_generic_s::to_json(json_writer& j) const
 
 std::string rach_cfg_generic_s::msg1_fdm_opts::to_string() const
 {
-  static constexpr const char* options[] = {"one", "two", "four", "eight"};
+  static const char* options[] = {"one", "two", "four", "eight"};
   return convert_enum_idx(options, 4, value, "rach_cfg_generic_s::msg1_fdm_e_");
 }
 uint8_t rach_cfg_generic_s::msg1_fdm_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4, 8};
-  return convert_enum_idx(options, 4, value, "rach_cfg_generic_s::msg1_fdm_e_");
+  static const uint8_t options[] = {1, 2, 4, 8};
+  return map_enum_number(options, 4, value, "rach_cfg_generic_s::msg1_fdm_e_");
 }
 
 std::string rach_cfg_generic_s::preamb_trans_max_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n3", "n4", "n5", "n6", "n7", "n8", "n10", "n20", "n50", "n100", "n200"};
+  static const char* options[] = {"n3", "n4", "n5", "n6", "n7", "n8", "n10", "n20", "n50", "n100", "n200"};
   return convert_enum_idx(options, 11, value, "rach_cfg_generic_s::preamb_trans_max_e_");
 }
 uint8_t rach_cfg_generic_s::preamb_trans_max_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {3, 4, 5, 6, 7, 8, 10, 20, 50, 100, 200};
-  return convert_enum_idx(options, 11, value, "rach_cfg_generic_s::preamb_trans_max_e_");
+  static const uint8_t options[] = {3, 4, 5, 6, 7, 8, 10, 20, 50, 100, 200};
+  return map_enum_number(options, 11, value, "rach_cfg_generic_s::preamb_trans_max_e_");
 }
 
 std::string rach_cfg_generic_s::pwr_ramp_step_opts::to_string() const
 {
-  static constexpr const char* options[] = {"dB0", "dB2", "dB4", "dB6"};
+  static const char* options[] = {"dB0", "dB2", "dB4", "dB6"};
   return convert_enum_idx(options, 4, value, "rach_cfg_generic_s::pwr_ramp_step_e_");
 }
 uint8_t rach_cfg_generic_s::pwr_ramp_step_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 2, 4, 6};
-  return convert_enum_idx(options, 4, value, "rach_cfg_generic_s::pwr_ramp_step_e_");
+  static const uint8_t options[] = {0, 2, 4, 6};
+  return map_enum_number(options, 4, value, "rach_cfg_generic_s::pwr_ramp_step_e_");
 }
 
 std::string rach_cfg_generic_s::ra_resp_win_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sl1", "sl2", "sl4", "sl8", "sl10", "sl20", "sl40", "sl80"};
+  static const char* options[] = {"sl1", "sl2", "sl4", "sl8", "sl10", "sl20", "sl40", "sl80"};
   return convert_enum_idx(options, 8, value, "rach_cfg_generic_s::ra_resp_win_e_");
 }
 uint8_t rach_cfg_generic_s::ra_resp_win_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4, 8, 10, 20, 40, 80};
-  return convert_enum_idx(options, 8, value, "rach_cfg_generic_s::ra_resp_win_e_");
+  static const uint8_t options[] = {1, 2, 4, 8, 10, 20, 40, 80};
+  return map_enum_number(options, 8, value, "rach_cfg_generic_s::ra_resp_win_e_");
 }
 
 // SS-RSSI-Measurement ::= SEQUENCE
@@ -1154,7 +1188,7 @@ SRSASN_CODE ss_rssi_meas_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ss_rssi_meas_s::unpack(bit_ref& bref)
+SRSASN_CODE ss_rssi_meas_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(meas_slots.unpack(bref));
   HANDLE_CODE(unpack_integer(end_symbol, bref, (uint8_t)0u, (uint8_t)3u));
@@ -1177,7 +1211,7 @@ SRSASN_CODE ssb_mtc_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ssb_mtc_s::unpack(bit_ref& bref)
+SRSASN_CODE ssb_mtc_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(periodicity_and_offset.unpack(bref));
   HANDLE_CODE(dur.unpack(bref));
@@ -1316,7 +1350,7 @@ SRSASN_CODE ssb_mtc_s::periodicity_and_offset_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ssb_mtc_s::periodicity_and_offset_c_::unpack(bit_ref& bref)
+SRSASN_CODE ssb_mtc_s::periodicity_and_offset_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -1349,24 +1383,24 @@ SRSASN_CODE ssb_mtc_s::periodicity_and_offset_c_::unpack(bit_ref& bref)
 
 std::string ssb_mtc_s::periodicity_and_offset_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sf5", "sf10", "sf20", "sf40", "sf80", "sf160"};
+  static const char* options[] = {"sf5", "sf10", "sf20", "sf40", "sf80", "sf160"};
   return convert_enum_idx(options, 6, value, "ssb_mtc_s::periodicity_and_offset_c_::types");
 }
 uint8_t ssb_mtc_s::periodicity_and_offset_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {5, 10, 20, 40, 80, 160};
-  return convert_enum_idx(options, 6, value, "ssb_mtc_s::periodicity_and_offset_c_::types");
+  static const uint8_t options[] = {5, 10, 20, 40, 80, 160};
+  return map_enum_number(options, 6, value, "ssb_mtc_s::periodicity_and_offset_c_::types");
 }
 
 std::string ssb_mtc_s::dur_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sf1", "sf2", "sf3", "sf4", "sf5"};
+  static const char* options[] = {"sf1", "sf2", "sf3", "sf4", "sf5"};
   return convert_enum_idx(options, 5, value, "ssb_mtc_s::dur_e_");
 }
 uint8_t ssb_mtc_s::dur_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3, 4, 5};
-  return convert_enum_idx(options, 5, value, "ssb_mtc_s::dur_e_");
+  static const uint8_t options[] = {1, 2, 3, 4, 5};
+  return map_enum_number(options, 5, value, "ssb_mtc_s::dur_e_");
 }
 
 // SSB-ToMeasure ::= CHOICE
@@ -1486,7 +1520,7 @@ SRSASN_CODE ssb_to_measure_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ssb_to_measure_c::unpack(bit_ref& bref)
+SRSASN_CODE ssb_to_measure_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -1510,7 +1544,7 @@ SRSASN_CODE ssb_to_measure_c::unpack(bit_ref& bref)
 
 std::string ssb_to_measure_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"shortBitmap", "mediumBitmap", "longBitmap"};
+  static const char* options[] = {"shortBitmap", "mediumBitmap", "longBitmap"};
   return convert_enum_idx(options, 3, value, "ssb_to_measure_c::types");
 }
 
@@ -1550,7 +1584,7 @@ SRSASN_CODE search_space_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE search_space_s::unpack(bit_ref& bref)
+SRSASN_CODE search_space_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ctrl_res_set_id_present, 1));
   HANDLE_CODE(bref.unpack(monitoring_slot_periodicity_and_offset_present, 1));
@@ -1847,7 +1881,7 @@ SRSASN_CODE search_space_s::monitoring_slot_periodicity_and_offset_c_::pack(bit_
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE search_space_s::monitoring_slot_periodicity_and_offset_c_::unpack(bit_ref& bref)
+SRSASN_CODE search_space_s::monitoring_slot_periodicity_and_offset_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -1906,82 +1940,82 @@ SRSASN_CODE search_space_s::monitoring_slot_periodicity_and_offset_c_::unpack(bi
 
 std::string search_space_s::monitoring_slot_periodicity_and_offset_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sl1",
-                                            "sl2",
-                                            "sl4",
-                                            "sl5",
-                                            "sl8",
-                                            "sl10",
-                                            "sl16",
-                                            "sl20",
-                                            "sl40",
-                                            "sl80",
-                                            "sl160",
-                                            "sl320",
-                                            "sl640",
-                                            "sl1280",
-                                            "sl2560"};
+  static const char* options[] = {"sl1",
+                                  "sl2",
+                                  "sl4",
+                                  "sl5",
+                                  "sl8",
+                                  "sl10",
+                                  "sl16",
+                                  "sl20",
+                                  "sl40",
+                                  "sl80",
+                                  "sl160",
+                                  "sl320",
+                                  "sl640",
+                                  "sl1280",
+                                  "sl2560"};
   return convert_enum_idx(options, 15, value, "search_space_s::monitoring_slot_periodicity_and_offset_c_::types");
 }
 uint16_t search_space_s::monitoring_slot_periodicity_and_offset_c_::types_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {1, 2, 4, 5, 8, 10, 16, 20, 40, 80, 160, 320, 640, 1280, 2560};
-  return convert_enum_idx(options, 15, value, "search_space_s::monitoring_slot_periodicity_and_offset_c_::types");
+  static const uint16_t options[] = {1, 2, 4, 5, 8, 10, 16, 20, 40, 80, 160, 320, 640, 1280, 2560};
+  return map_enum_number(options, 15, value, "search_space_s::monitoring_slot_periodicity_and_offset_c_::types");
 }
 
 std::string search_space_s::nrof_candidates_s_::aggregation_level1_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0", "n1", "n2", "n3", "n4", "n5", "n6", "n8"};
+  static const char* options[] = {"n0", "n1", "n2", "n3", "n4", "n5", "n6", "n8"};
   return convert_enum_idx(options, 8, value, "search_space_s::nrof_candidates_s_::aggregation_level1_e_");
 }
 uint8_t search_space_s::nrof_candidates_s_::aggregation_level1_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1, 2, 3, 4, 5, 6, 8};
-  return convert_enum_idx(options, 8, value, "search_space_s::nrof_candidates_s_::aggregation_level1_e_");
+  static const uint8_t options[] = {0, 1, 2, 3, 4, 5, 6, 8};
+  return map_enum_number(options, 8, value, "search_space_s::nrof_candidates_s_::aggregation_level1_e_");
 }
 
 std::string search_space_s::nrof_candidates_s_::aggregation_level2_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0", "n1", "n2", "n3", "n4", "n5", "n6", "n8"};
+  static const char* options[] = {"n0", "n1", "n2", "n3", "n4", "n5", "n6", "n8"};
   return convert_enum_idx(options, 8, value, "search_space_s::nrof_candidates_s_::aggregation_level2_e_");
 }
 uint8_t search_space_s::nrof_candidates_s_::aggregation_level2_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1, 2, 3, 4, 5, 6, 8};
-  return convert_enum_idx(options, 8, value, "search_space_s::nrof_candidates_s_::aggregation_level2_e_");
+  static const uint8_t options[] = {0, 1, 2, 3, 4, 5, 6, 8};
+  return map_enum_number(options, 8, value, "search_space_s::nrof_candidates_s_::aggregation_level2_e_");
 }
 
 std::string search_space_s::nrof_candidates_s_::aggregation_level4_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0", "n1", "n2", "n3", "n4", "n5", "n6", "n8"};
+  static const char* options[] = {"n0", "n1", "n2", "n3", "n4", "n5", "n6", "n8"};
   return convert_enum_idx(options, 8, value, "search_space_s::nrof_candidates_s_::aggregation_level4_e_");
 }
 uint8_t search_space_s::nrof_candidates_s_::aggregation_level4_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1, 2, 3, 4, 5, 6, 8};
-  return convert_enum_idx(options, 8, value, "search_space_s::nrof_candidates_s_::aggregation_level4_e_");
+  static const uint8_t options[] = {0, 1, 2, 3, 4, 5, 6, 8};
+  return map_enum_number(options, 8, value, "search_space_s::nrof_candidates_s_::aggregation_level4_e_");
 }
 
 std::string search_space_s::nrof_candidates_s_::aggregation_level8_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0", "n1", "n2", "n3", "n4", "n5", "n6", "n8"};
+  static const char* options[] = {"n0", "n1", "n2", "n3", "n4", "n5", "n6", "n8"};
   return convert_enum_idx(options, 8, value, "search_space_s::nrof_candidates_s_::aggregation_level8_e_");
 }
 uint8_t search_space_s::nrof_candidates_s_::aggregation_level8_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1, 2, 3, 4, 5, 6, 8};
-  return convert_enum_idx(options, 8, value, "search_space_s::nrof_candidates_s_::aggregation_level8_e_");
+  static const uint8_t options[] = {0, 1, 2, 3, 4, 5, 6, 8};
+  return map_enum_number(options, 8, value, "search_space_s::nrof_candidates_s_::aggregation_level8_e_");
 }
 
 std::string search_space_s::nrof_candidates_s_::aggregation_level16_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0", "n1", "n2", "n3", "n4", "n5", "n6", "n8"};
+  static const char* options[] = {"n0", "n1", "n2", "n3", "n4", "n5", "n6", "n8"};
   return convert_enum_idx(options, 8, value, "search_space_s::nrof_candidates_s_::aggregation_level16_e_");
 }
 uint8_t search_space_s::nrof_candidates_s_::aggregation_level16_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1, 2, 3, 4, 5, 6, 8};
-  return convert_enum_idx(options, 8, value, "search_space_s::nrof_candidates_s_::aggregation_level16_e_");
+  static const uint8_t options[] = {0, 1, 2, 3, 4, 5, 6, 8};
+  return map_enum_number(options, 8, value, "search_space_s::nrof_candidates_s_::aggregation_level16_e_");
 }
 
 void search_space_s::search_space_type_c_::destroy_()
@@ -2186,7 +2220,7 @@ SRSASN_CODE search_space_s::search_space_type_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE search_space_s::search_space_type_c_::unpack(bit_ref& bref)
+SRSASN_CODE search_space_s::search_space_type_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -2258,7 +2292,7 @@ SRSASN_CODE search_space_s::search_space_type_c_::unpack(bit_ref& bref)
 std::string search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_s_::
     aggregation_level1_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2"};
+  static const char* options[] = {"n1", "n2"};
   return convert_enum_idx(options,
                           2,
                           value,
@@ -2268,18 +2302,18 @@ std::string search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_
 uint8_t search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_s_::
     aggregation_level1_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options,
-                          2,
-                          value,
-                          "search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_"
-                          "s_::aggregation_level1_e_");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options,
+                         2,
+                         value,
+                         "search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_"
+                         "s_::aggregation_level1_e_");
 }
 
 std::string search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_s_::
     aggregation_level2_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2"};
+  static const char* options[] = {"n1", "n2"};
   return convert_enum_idx(options,
                           2,
                           value,
@@ -2289,18 +2323,18 @@ std::string search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_
 uint8_t search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_s_::
     aggregation_level2_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options,
-                          2,
-                          value,
-                          "search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_"
-                          "s_::aggregation_level2_e_");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options,
+                         2,
+                         value,
+                         "search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_"
+                         "s_::aggregation_level2_e_");
 }
 
 std::string search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_s_::
     aggregation_level4_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2"};
+  static const char* options[] = {"n1", "n2"};
   return convert_enum_idx(options,
                           2,
                           value,
@@ -2310,18 +2344,18 @@ std::string search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_
 uint8_t search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_s_::
     aggregation_level4_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options,
-                          2,
-                          value,
-                          "search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_"
-                          "s_::aggregation_level4_e_");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options,
+                         2,
+                         value,
+                         "search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_"
+                         "s_::aggregation_level4_e_");
 }
 
 std::string search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_s_::
     aggregation_level8_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2"};
+  static const char* options[] = {"n1", "n2"};
   return convert_enum_idx(options,
                           2,
                           value,
@@ -2331,18 +2365,18 @@ std::string search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_
 uint8_t search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_s_::
     aggregation_level8_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options,
-                          2,
-                          value,
-                          "search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_"
-                          "s_::aggregation_level8_e_");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options,
+                         2,
+                         value,
+                         "search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_"
+                         "s_::aggregation_level8_e_");
 }
 
 std::string search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_s_::
     aggregation_level16_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2"};
+  static const char* options[] = {"n1", "n2"};
   return convert_enum_idx(options,
                           2,
                           value,
@@ -2352,49 +2386,49 @@ std::string search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_
 uint8_t search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_s_::
     aggregation_level16_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options,
-                          2,
-                          value,
-                          "search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_"
-                          "s_::aggregation_level16_e_");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options,
+                         2,
+                         value,
+                         "search_space_s::search_space_type_c_::common_s_::dci_format2_minus0_s_::nrof_candidates_sfi_"
+                         "s_::aggregation_level16_e_");
 }
 
 std::string search_space_s::search_space_type_c_::common_s_::dci_format2_minus3_s_::dummy1_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sl1", "sl2", "sl4", "sl5", "sl8", "sl10", "sl16", "sl20"};
+  static const char* options[] = {"sl1", "sl2", "sl4", "sl5", "sl8", "sl10", "sl16", "sl20"};
   return convert_enum_idx(
       options, 8, value, "search_space_s::search_space_type_c_::common_s_::dci_format2_minus3_s_::dummy1_e_");
 }
 uint8_t search_space_s::search_space_type_c_::common_s_::dci_format2_minus3_s_::dummy1_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4, 5, 8, 10, 16, 20};
-  return convert_enum_idx(
+  static const uint8_t options[] = {1, 2, 4, 5, 8, 10, 16, 20};
+  return map_enum_number(
       options, 8, value, "search_space_s::search_space_type_c_::common_s_::dci_format2_minus3_s_::dummy1_e_");
 }
 
 std::string search_space_s::search_space_type_c_::common_s_::dci_format2_minus3_s_::dummy2_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2"};
+  static const char* options[] = {"n1", "n2"};
   return convert_enum_idx(
       options, 2, value, "search_space_s::search_space_type_c_::common_s_::dci_format2_minus3_s_::dummy2_e_");
 }
 uint8_t search_space_s::search_space_type_c_::common_s_::dci_format2_minus3_s_::dummy2_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(
       options, 2, value, "search_space_s::search_space_type_c_::common_s_::dci_format2_minus3_s_::dummy2_e_");
 }
 
 std::string search_space_s::search_space_type_c_::ue_specific_s_::dci_formats_opts::to_string() const
 {
-  static constexpr const char* options[] = {"formats0-0-And-1-0", "formats0-1-And-1-1"};
+  static const char* options[] = {"formats0-0-And-1-0", "formats0-1-And-1-1"};
   return convert_enum_idx(options, 2, value, "search_space_s::search_space_type_c_::ue_specific_s_::dci_formats_e_");
 }
 
 std::string search_space_s::search_space_type_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"common", "ue-Specific"};
+  static const char* options[] = {"common", "ue-Specific"};
   return convert_enum_idx(options, 2, value, "search_space_s::search_space_type_c_::types");
 }
 
@@ -2406,7 +2440,7 @@ SRSASN_CODE speed_state_scale_factors_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE speed_state_scale_factors_s::unpack(bit_ref& bref)
+SRSASN_CODE speed_state_scale_factors_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(sf_medium.unpack(bref));
   HANDLE_CODE(sf_high.unpack(bref));
@@ -2423,47 +2457,46 @@ void speed_state_scale_factors_s::to_json(json_writer& j) const
 
 std::string speed_state_scale_factors_s::sf_medium_opts::to_string() const
 {
-  static constexpr const char* options[] = {"oDot25", "oDot5", "oDot75", "lDot0"};
+  static const char* options[] = {"oDot25", "oDot5", "oDot75", "lDot0"};
   return convert_enum_idx(options, 4, value, "speed_state_scale_factors_s::sf_medium_e_");
 }
 float speed_state_scale_factors_s::sf_medium_opts::to_number() const
 {
-  static constexpr float options[] = {0.25, 0.5, 0.75, 1.0};
-  return convert_enum_idx(options, 4, value, "speed_state_scale_factors_s::sf_medium_e_");
+  static const float options[] = {0.25, 0.5, 0.75, 1.0};
+  return map_enum_number(options, 4, value, "speed_state_scale_factors_s::sf_medium_e_");
 }
 std::string speed_state_scale_factors_s::sf_medium_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"0.25", "0.5", "0.75", "1.0"};
+  static const char* options[] = {"0.25", "0.5", "0.75", "1.0"};
   return convert_enum_idx(options, 4, value, "speed_state_scale_factors_s::sf_medium_e_");
 }
 
 std::string speed_state_scale_factors_s::sf_high_opts::to_string() const
 {
-  static constexpr const char* options[] = {"oDot25", "oDot5", "oDot75", "lDot0"};
+  static const char* options[] = {"oDot25", "oDot5", "oDot75", "lDot0"};
   return convert_enum_idx(options, 4, value, "speed_state_scale_factors_s::sf_high_e_");
 }
 float speed_state_scale_factors_s::sf_high_opts::to_number() const
 {
-  static constexpr float options[] = {0.25, 0.5, 0.75, 1.0};
-  return convert_enum_idx(options, 4, value, "speed_state_scale_factors_s::sf_high_e_");
+  static const float options[] = {0.25, 0.5, 0.75, 1.0};
+  return map_enum_number(options, 4, value, "speed_state_scale_factors_s::sf_high_e_");
 }
 std::string speed_state_scale_factors_s::sf_high_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"0.25", "0.5", "0.75", "1.0"};
+  static const char* options[] = {"0.25", "0.5", "0.75", "1.0"};
   return convert_enum_idx(options, 4, value, "speed_state_scale_factors_s::sf_high_e_");
 }
 
 // SubcarrierSpacing ::= ENUMERATED
 std::string subcarrier_spacing_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "kHz15", "kHz30", "kHz60", "kHz120", "kHz240", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"kHz15", "kHz30", "kHz60", "kHz120", "kHz240", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 8, value, "subcarrier_spacing_e");
 }
 uint8_t subcarrier_spacing_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {15, 30, 60, 120, 240};
-  return convert_enum_idx(options, 5, value, "subcarrier_spacing_e");
+  static const uint8_t options[] = {15, 30, 60, 120, 240};
+  return map_enum_number(options, 5, value, "subcarrier_spacing_e");
 }
 
 // ThresholdNR ::= SEQUENCE
@@ -2485,7 +2518,7 @@ SRSASN_CODE thres_nr_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE thres_nr_s::unpack(bit_ref& bref)
+SRSASN_CODE thres_nr_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(thres_rsrp_present, 1));
   HANDLE_CODE(bref.unpack(thres_rsrq_present, 1));
@@ -2528,7 +2561,7 @@ SRSASN_CODE bwp_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE bwp_s::unpack(bit_ref& bref)
+SRSASN_CODE bwp_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(cp_present, 1));
 
@@ -2588,7 +2621,7 @@ SRSASN_CODE carrier_freq_eutra_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE carrier_freq_eutra_s::unpack(bit_ref& bref)
+SRSASN_CODE carrier_freq_eutra_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(eutra_multi_band_info_list_present, 1));
   HANDLE_CODE(bref.unpack(eutra_freq_neigh_cell_list_present, 1));
@@ -2633,22 +2666,22 @@ void carrier_freq_eutra_s::to_json(json_writer& j) const
   j.write_int("carrierFreq", carrier_freq);
   if (eutra_multi_band_info_list_present) {
     j.start_array("eutra-multiBandInfoList");
-    for (uint32_t i1 = 0; i1 < eutra_multi_band_info_list.size(); ++i1) {
-      eutra_multi_band_info_list[i1].to_json(j);
+    for (const auto& e1 : eutra_multi_band_info_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (eutra_freq_neigh_cell_list_present) {
     j.start_array("eutra-FreqNeighCellList");
-    for (uint32_t i1 = 0; i1 < eutra_freq_neigh_cell_list.size(); ++i1) {
-      eutra_freq_neigh_cell_list[i1].to_json(j);
+    for (const auto& e1 : eutra_freq_neigh_cell_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (eutra_black_cell_list_present) {
     j.start_array("eutra-BlackCellList");
-    for (uint32_t i1 = 0; i1 < eutra_black_cell_list.size(); ++i1) {
-      eutra_black_cell_list[i1].to_json(j);
+    for (const auto& e1 : eutra_black_cell_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -2759,7 +2792,7 @@ SRSASN_CODE inter_freq_carrier_freq_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE inter_freq_carrier_freq_info_s::unpack(bit_ref& bref)
+SRSASN_CODE inter_freq_carrier_freq_info_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(freq_band_list_present, 1));
@@ -2848,15 +2881,15 @@ void inter_freq_carrier_freq_info_s::to_json(json_writer& j) const
   j.write_int("dl-CarrierFreq", dl_carrier_freq);
   if (freq_band_list_present) {
     j.start_array("frequencyBandList");
-    for (uint32_t i1 = 0; i1 < freq_band_list.size(); ++i1) {
-      freq_band_list[i1].to_json(j);
+    for (const auto& e1 : freq_band_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (freq_band_list_sul_present) {
     j.start_array("frequencyBandListSUL");
-    for (uint32_t i1 = 0; i1 < freq_band_list_sul.size(); ++i1) {
-      freq_band_list_sul[i1].to_json(j);
+    for (const auto& e1 : freq_band_list_sul) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -2916,15 +2949,15 @@ void inter_freq_carrier_freq_info_s::to_json(json_writer& j) const
   }
   if (inter_freq_neigh_cell_list_present) {
     j.start_array("interFreqNeighCellList");
-    for (uint32_t i1 = 0; i1 < inter_freq_neigh_cell_list.size(); ++i1) {
-      inter_freq_neigh_cell_list[i1].to_json(j);
+    for (const auto& e1 : inter_freq_neigh_cell_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (inter_freq_black_cell_list_present) {
     j.start_array("interFreqBlackCellList");
-    for (uint32_t i1 = 0; i1 < inter_freq_black_cell_list.size(); ++i1) {
-      inter_freq_black_cell_list[i1].to_json(j);
+    for (const auto& e1 : inter_freq_black_cell_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -2953,7 +2986,7 @@ SRSASN_CODE intra_freq_neigh_cell_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE intra_freq_neigh_cell_info_s::unpack(bit_ref& bref)
+SRSASN_CODE intra_freq_neigh_cell_info_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(q_rx_lev_min_offset_cell_present, 1));
@@ -3045,7 +3078,7 @@ SRSASN_CODE pdcch_cfg_common_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pdcch_cfg_common_s::unpack(bit_ref& bref)
+SRSASN_CODE pdcch_cfg_common_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(ctrl_res_set_zero_present, 1));
@@ -3114,8 +3147,8 @@ void pdcch_cfg_common_s::to_json(json_writer& j) const
   }
   if (common_search_space_list_present) {
     j.start_array("commonSearchSpaceList");
-    for (uint32_t i1 = 0; i1 < common_search_space_list.size(); ++i1) {
-      common_search_space_list[i1].to_json(j);
+    for (const auto& e1 : common_search_space_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -3288,65 +3321,58 @@ void pdcch_cfg_common_s::first_pdcch_monitoring_occasion_of_po_c_::to_json(json_
   switch (type_) {
     case types::scs15_kh_zone_t:
       j.start_array("sCS15KHZoneT");
-      for (uint32_t i1 = 0; i1 < c.get<scs15_kh_zone_t_l_>().size(); ++i1) {
-        j.write_int(c.get<scs15_kh_zone_t_l_>()[i1]);
+      for (const auto& e1 : c.get<scs15_kh_zone_t_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
     case types::scs30_kh_zone_t_scs15_kh_zhalf_t:
       j.start_array("sCS30KHZoneT-SCS15KHZhalfT");
-      for (uint32_t i1 = 0; i1 < c.get<scs30_kh_zone_t_scs15_kh_zhalf_t_l_>().size(); ++i1) {
-        j.write_int(c.get<scs30_kh_zone_t_scs15_kh_zhalf_t_l_>()[i1]);
+      for (const auto& e1 : c.get<scs30_kh_zone_t_scs15_kh_zhalf_t_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
     case types::scs60_kh_zone_t_scs30_kh_zhalf_t_scs15_kh_zquarter_t:
       j.start_array("sCS60KHZoneT-SCS30KHZhalfT-SCS15KHZquarterT");
-      for (uint32_t i1 = 0; i1 < c.get<scs60_kh_zone_t_scs30_kh_zhalf_t_scs15_kh_zquarter_t_l_>().size(); ++i1) {
-        j.write_int(c.get<scs60_kh_zone_t_scs30_kh_zhalf_t_scs15_kh_zquarter_t_l_>()[i1]);
+      for (const auto& e1 : c.get<scs60_kh_zone_t_scs30_kh_zhalf_t_scs15_kh_zquarter_t_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
     case types::scs120_kh_zone_t_scs60_kh_zhalf_t_scs30_kh_zquarter_t_scs15_kh_zone_eighth_t:
       j.start_array("sCS120KHZoneT-SCS60KHZhalfT-SCS30KHZquarterT-SCS15KHZoneEighthT");
-      for (uint32_t i1 = 0;
-           i1 < c.get<scs120_kh_zone_t_scs60_kh_zhalf_t_scs30_kh_zquarter_t_scs15_kh_zone_eighth_t_l_>().size();
-           ++i1) {
-        j.write_int(c.get<scs120_kh_zone_t_scs60_kh_zhalf_t_scs30_kh_zquarter_t_scs15_kh_zone_eighth_t_l_>()[i1]);
+      for (const auto& e1 : c.get<scs120_kh_zone_t_scs60_kh_zhalf_t_scs30_kh_zquarter_t_scs15_kh_zone_eighth_t_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
     case types::scs120_kh_zhalf_t_scs60_kh_zquarter_t_scs30_kh_zone_eighth_t_scs15_kh_zone_sixteenth_t:
       j.start_array("sCS120KHZhalfT-SCS60KHZquarterT-SCS30KHZoneEighthT-SCS15KHZoneSixteenthT");
-      for (uint32_t i1 = 0;
-           i1 <
-           c.get<scs120_kh_zhalf_t_scs60_kh_zquarter_t_scs30_kh_zone_eighth_t_scs15_kh_zone_sixteenth_t_l_>().size();
-           ++i1) {
-        j.write_int(
-            c.get<scs120_kh_zhalf_t_scs60_kh_zquarter_t_scs30_kh_zone_eighth_t_scs15_kh_zone_sixteenth_t_l_>()[i1]);
+      for (const auto& e1 :
+           c.get<scs120_kh_zhalf_t_scs60_kh_zquarter_t_scs30_kh_zone_eighth_t_scs15_kh_zone_sixteenth_t_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
     case types::scs120_kh_zquarter_t_scs60_kh_zone_eighth_t_scs30_kh_zone_sixteenth_t:
       j.start_array("sCS120KHZquarterT-SCS60KHZoneEighthT-SCS30KHZoneSixteenthT");
-      for (uint32_t i1 = 0;
-           i1 < c.get<scs120_kh_zquarter_t_scs60_kh_zone_eighth_t_scs30_kh_zone_sixteenth_t_l_>().size();
-           ++i1) {
-        j.write_int(c.get<scs120_kh_zquarter_t_scs60_kh_zone_eighth_t_scs30_kh_zone_sixteenth_t_l_>()[i1]);
+      for (const auto& e1 : c.get<scs120_kh_zquarter_t_scs60_kh_zone_eighth_t_scs30_kh_zone_sixteenth_t_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
     case types::scs120_kh_zone_eighth_t_scs60_kh_zone_sixteenth_t:
       j.start_array("sCS120KHZoneEighthT-SCS60KHZoneSixteenthT");
-      for (uint32_t i1 = 0; i1 < c.get<scs120_kh_zone_eighth_t_scs60_kh_zone_sixteenth_t_l_>().size(); ++i1) {
-        j.write_int(c.get<scs120_kh_zone_eighth_t_scs60_kh_zone_sixteenth_t_l_>()[i1]);
+      for (const auto& e1 : c.get<scs120_kh_zone_eighth_t_scs60_kh_zone_sixteenth_t_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
     case types::scs120_kh_zone_sixteenth_t:
       j.start_array("sCS120KHZoneSixteenthT");
-      for (uint32_t i1 = 0; i1 < c.get<scs120_kh_zone_sixteenth_t_l_>().size(); ++i1) {
-        j.write_int(c.get<scs120_kh_zone_sixteenth_t_l_>()[i1]);
+      for (const auto& e1 : c.get<scs120_kh_zone_sixteenth_t_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
@@ -3413,7 +3439,7 @@ SRSASN_CODE pdcch_cfg_common_s::first_pdcch_monitoring_occasion_of_po_c_::pack(b
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pdcch_cfg_common_s::first_pdcch_monitoring_occasion_of_po_c_::unpack(bit_ref& bref)
+SRSASN_CODE pdcch_cfg_common_s::first_pdcch_monitoring_occasion_of_po_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -3476,14 +3502,14 @@ SRSASN_CODE pdcch_cfg_common_s::first_pdcch_monitoring_occasion_of_po_c_::unpack
 
 std::string pdcch_cfg_common_s::first_pdcch_monitoring_occasion_of_po_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sCS15KHZoneT",
-                                            "sCS30KHZoneT-SCS15KHZhalfT",
-                                            "sCS60KHZoneT-SCS30KHZhalfT-SCS15KHZquarterT",
-                                            "sCS120KHZoneT-SCS60KHZhalfT-SCS30KHZquarterT-SCS15KHZoneEighthT",
-                                            "sCS120KHZhalfT-SCS60KHZquarterT-SCS30KHZoneEighthT-SCS15KHZoneSixteenthT",
-                                            "sCS120KHZquarterT-SCS60KHZoneEighthT-SCS30KHZoneSixteenthT",
-                                            "sCS120KHZoneEighthT-SCS60KHZoneSixteenthT",
-                                            "sCS120KHZoneSixteenthT"};
+  static const char* options[] = {"sCS15KHZoneT",
+                                  "sCS30KHZoneT-SCS15KHZhalfT",
+                                  "sCS60KHZoneT-SCS30KHZhalfT-SCS15KHZquarterT",
+                                  "sCS120KHZoneT-SCS60KHZhalfT-SCS30KHZquarterT-SCS15KHZoneEighthT",
+                                  "sCS120KHZhalfT-SCS60KHZquarterT-SCS30KHZoneEighthT-SCS15KHZoneSixteenthT",
+                                  "sCS120KHZquarterT-SCS60KHZoneEighthT-SCS30KHZoneSixteenthT",
+                                  "sCS120KHZoneEighthT-SCS60KHZoneSixteenthT",
+                                  "sCS120KHZoneSixteenthT"};
   return convert_enum_idx(options, 8, value, "pdcch_cfg_common_s::first_pdcch_monitoring_occasion_of_po_c_::types");
 }
 
@@ -3499,7 +3525,7 @@ SRSASN_CODE pdsch_cfg_common_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pdsch_cfg_common_s::unpack(bit_ref& bref)
+SRSASN_CODE pdsch_cfg_common_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(pdsch_time_domain_alloc_list_present, 1));
@@ -3515,8 +3541,8 @@ void pdsch_cfg_common_s::to_json(json_writer& j) const
   j.start_obj();
   if (pdsch_time_domain_alloc_list_present) {
     j.start_array("pdsch-TimeDomainAllocationList");
-    for (uint32_t i1 = 0; i1 < pdsch_time_domain_alloc_list.size(); ++i1) {
-      pdsch_time_domain_alloc_list[i1].to_json(j);
+    for (const auto& e1 : pdsch_time_domain_alloc_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -3535,7 +3561,7 @@ SRSASN_CODE plmn_id_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE plmn_id_s::unpack(bit_ref& bref)
+SRSASN_CODE plmn_id_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(mcc_present, 1));
 
@@ -3551,14 +3577,14 @@ void plmn_id_s::to_json(json_writer& j) const
   j.start_obj();
   if (mcc_present) {
     j.start_array("mcc");
-    for (uint32_t i1 = 0; i1 < mcc.size(); ++i1) {
-      j.write_int(mcc[i1]);
+    for (const auto& e1 : mcc) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   j.start_array("mnc");
-  for (uint32_t i1 = 0; i1 < mnc.size(); ++i1) {
-    j.write_int(mnc[i1]);
+  for (const auto& e1 : mnc) {
+    j.write_int(e1);
   }
   j.end_array();
   j.end_obj();
@@ -3585,7 +3611,7 @@ SRSASN_CODE pucch_cfg_common_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_cfg_common_s::unpack(bit_ref& bref)
+SRSASN_CODE pucch_cfg_common_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(pucch_res_common_present, 1));
@@ -3623,7 +3649,7 @@ void pucch_cfg_common_s::to_json(json_writer& j) const
 
 std::string pucch_cfg_common_s::pucch_group_hop_opts::to_string() const
 {
-  static constexpr const char* options[] = {"neither", "enable", "disable"};
+  static const char* options[] = {"neither", "enable", "disable"};
   return convert_enum_idx(options, 3, value, "pucch_cfg_common_s::pucch_group_hop_e_");
 }
 
@@ -3648,7 +3674,7 @@ SRSASN_CODE pusch_cfg_common_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pusch_cfg_common_s::unpack(bit_ref& bref)
+SRSASN_CODE pusch_cfg_common_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(group_hop_enabled_transform_precoding_present, 1));
@@ -3676,8 +3702,8 @@ void pusch_cfg_common_s::to_json(json_writer& j) const
   }
   if (pusch_time_domain_alloc_list_present) {
     j.start_array("pusch-TimeDomainAllocationList");
-    for (uint32_t i1 = 0; i1 < pusch_time_domain_alloc_list.size(); ++i1) {
-      pusch_time_domain_alloc_list[i1].to_json(j);
+    for (const auto& e1 : pusch_time_domain_alloc_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -3693,13 +3719,13 @@ void pusch_cfg_common_s::to_json(json_writer& j) const
 // PagingCycle ::= ENUMERATED
 std::string paging_cycle_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rf32", "rf64", "rf128", "rf256"};
+  static const char* options[] = {"rf32", "rf64", "rf128", "rf256"};
   return convert_enum_idx(options, 4, value, "paging_cycle_e");
 }
 uint16_t paging_cycle_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {32, 64, 128, 256};
-  return convert_enum_idx(options, 4, value, "paging_cycle_e");
+  static const uint16_t options[] = {32, 64, 128, 256};
+  return map_enum_number(options, 4, value, "paging_cycle_e");
 }
 
 // RACH-ConfigCommon ::= SEQUENCE
@@ -3741,7 +3767,7 @@ SRSASN_CODE rach_cfg_common_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rach_cfg_common_s::unpack(bit_ref& bref)
+SRSASN_CODE rach_cfg_common_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(total_nof_ra_preambs_present, 1));
@@ -3967,7 +3993,7 @@ SRSASN_CODE rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::unpack(bit_ref& bref)
+SRSASN_CODE rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -4006,139 +4032,138 @@ SRSASN_CODE rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::
 
 std::string rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::one_eighth_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "n4", "n8", "n12", "n16", "n20", "n24", "n28", "n32", "n36", "n40", "n44", "n48", "n52", "n56", "n60", "n64"};
   return convert_enum_idx(
       options, 16, value, "rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::one_eighth_e_");
 }
 uint8_t rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::one_eighth_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64};
-  return convert_enum_idx(
+  static const uint8_t options[] = {4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64};
+  return map_enum_number(
       options, 16, value, "rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::one_eighth_e_");
 }
 
 std::string rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::one_fourth_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "n4", "n8", "n12", "n16", "n20", "n24", "n28", "n32", "n36", "n40", "n44", "n48", "n52", "n56", "n60", "n64"};
   return convert_enum_idx(
       options, 16, value, "rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::one_fourth_e_");
 }
 uint8_t rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::one_fourth_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64};
-  return convert_enum_idx(
+  static const uint8_t options[] = {4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64};
+  return map_enum_number(
       options, 16, value, "rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::one_fourth_e_");
 }
 
 std::string rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::one_half_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "n4", "n8", "n12", "n16", "n20", "n24", "n28", "n32", "n36", "n40", "n44", "n48", "n52", "n56", "n60", "n64"};
   return convert_enum_idx(
       options, 16, value, "rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::one_half_e_");
 }
 uint8_t rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::one_half_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64};
-  return convert_enum_idx(
+  static const uint8_t options[] = {4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64};
+  return map_enum_number(
       options, 16, value, "rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::one_half_e_");
 }
 
 std::string rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::one_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "n4", "n8", "n12", "n16", "n20", "n24", "n28", "n32", "n36", "n40", "n44", "n48", "n52", "n56", "n60", "n64"};
   return convert_enum_idx(
       options, 16, value, "rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::one_e_");
 }
 uint8_t rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::one_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64};
-  return convert_enum_idx(
+  static const uint8_t options[] = {4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64};
+  return map_enum_number(
       options, 16, value, "rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::one_e_");
 }
 
 std::string rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::two_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n4", "n8", "n12", "n16", "n20", "n24", "n28", "n32"};
+  static const char* options[] = {"n4", "n8", "n12", "n16", "n20", "n24", "n28", "n32"};
   return convert_enum_idx(
       options, 8, value, "rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::two_e_");
 }
 uint8_t rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::two_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 8, 12, 16, 20, 24, 28, 32};
-  return convert_enum_idx(
+  static const uint8_t options[] = {4, 8, 12, 16, 20, 24, 28, 32};
+  return map_enum_number(
       options, 8, value, "rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::two_e_");
 }
 
 std::string rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "oneEighth", "oneFourth", "oneHalf", "one", "two", "four", "eight", "sixteen"};
+  static const char* options[] = {"oneEighth", "oneFourth", "oneHalf", "one", "two", "four", "eight", "sixteen"};
   return convert_enum_idx(
       options, 8, value, "rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::types");
 }
 float rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::types_opts::to_number() const
 {
-  static constexpr float options[] = {0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 6.0};
-  return convert_enum_idx(
+  static const float options[] = {0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 6.0};
+  return map_enum_number(
       options, 8, value, "rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::types");
 }
 std::string rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::types_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"1/8", "1/4", "1/2", "1", "2", "4", "8", "6"};
+  static const char* options[] = {"1/8", "1/4", "1/2", "1", "2", "4", "8", "6"};
   return convert_enum_idx(
       options, 8, value, "rach_cfg_common_s::ssb_per_rach_occasion_and_cb_preambs_per_ssb_c_::types");
 }
 
 std::string rach_cfg_common_s::group_bcfgured_s_::ra_msg3_size_group_a_opts::to_string() const
 {
-  static constexpr const char* options[] = {"b56",
-                                            "b144",
-                                            "b208",
-                                            "b256",
-                                            "b282",
-                                            "b480",
-                                            "b640",
-                                            "b800",
-                                            "b1000",
-                                            "b72",
-                                            "spare6",
-                                            "spare5",
-                                            "spare4",
-                                            "spare3",
-                                            "spare2",
-                                            "spare1"};
+  static const char* options[] = {"b56",
+                                  "b144",
+                                  "b208",
+                                  "b256",
+                                  "b282",
+                                  "b480",
+                                  "b640",
+                                  "b800",
+                                  "b1000",
+                                  "b72",
+                                  "spare6",
+                                  "spare5",
+                                  "spare4",
+                                  "spare3",
+                                  "spare2",
+                                  "spare1"};
   return convert_enum_idx(options, 16, value, "rach_cfg_common_s::group_bcfgured_s_::ra_msg3_size_group_a_e_");
 }
 uint16_t rach_cfg_common_s::group_bcfgured_s_::ra_msg3_size_group_a_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {56, 144, 208, 256, 282, 480, 640, 800, 1000, 72};
-  return convert_enum_idx(options, 10, value, "rach_cfg_common_s::group_bcfgured_s_::ra_msg3_size_group_a_e_");
+  static const uint16_t options[] = {56, 144, 208, 256, 282, 480, 640, 800, 1000, 72};
+  return map_enum_number(options, 10, value, "rach_cfg_common_s::group_bcfgured_s_::ra_msg3_size_group_a_e_");
 }
 
 std::string rach_cfg_common_s::group_bcfgured_s_::msg_pwr_offset_group_b_opts::to_string() const
 {
-  static constexpr const char* options[] = {"minusinfinity", "dB0", "dB5", "dB8", "dB10", "dB12", "dB15", "dB18"};
+  static const char* options[] = {"minusinfinity", "dB0", "dB5", "dB8", "dB10", "dB12", "dB15", "dB18"};
   return convert_enum_idx(options, 8, value, "rach_cfg_common_s::group_bcfgured_s_::msg_pwr_offset_group_b_e_");
 }
 int8_t rach_cfg_common_s::group_bcfgured_s_::msg_pwr_offset_group_b_opts::to_number() const
 {
-  static constexpr int8_t options[] = {-1, 0, 5, 8, 10, 12, 15, 18};
-  return convert_enum_idx(options, 8, value, "rach_cfg_common_s::group_bcfgured_s_::msg_pwr_offset_group_b_e_");
+  static const int8_t options[] = {-1, 0, 5, 8, 10, 12, 15, 18};
+  return map_enum_number(options, 8, value, "rach_cfg_common_s::group_bcfgured_s_::msg_pwr_offset_group_b_e_");
 }
 
 std::string rach_cfg_common_s::ra_contention_resolution_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sf8", "sf16", "sf24", "sf32", "sf40", "sf48", "sf56", "sf64"};
+  static const char* options[] = {"sf8", "sf16", "sf24", "sf32", "sf40", "sf48", "sf56", "sf64"};
   return convert_enum_idx(options, 8, value, "rach_cfg_common_s::ra_contention_resolution_timer_e_");
 }
 uint8_t rach_cfg_common_s::ra_contention_resolution_timer_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {8, 16, 24, 32, 40, 48, 56, 64};
-  return convert_enum_idx(options, 8, value, "rach_cfg_common_s::ra_contention_resolution_timer_e_");
+  static const uint8_t options[] = {8, 16, 24, 32, 40, 48, 56, 64};
+  return map_enum_number(options, 8, value, "rach_cfg_common_s::ra_contention_resolution_timer_e_");
 }
 
 void rach_cfg_common_s::prach_root_seq_idx_c_::destroy_() {}
@@ -4216,7 +4241,7 @@ SRSASN_CODE rach_cfg_common_s::prach_root_seq_idx_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rach_cfg_common_s::prach_root_seq_idx_c_::unpack(bit_ref& bref)
+SRSASN_CODE rach_cfg_common_s::prach_root_seq_idx_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -4237,18 +4262,18 @@ SRSASN_CODE rach_cfg_common_s::prach_root_seq_idx_c_::unpack(bit_ref& bref)
 
 std::string rach_cfg_common_s::prach_root_seq_idx_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"l839", "l139"};
+  static const char* options[] = {"l839", "l139"};
   return convert_enum_idx(options, 2, value, "rach_cfg_common_s::prach_root_seq_idx_c_::types");
 }
 uint16_t rach_cfg_common_s::prach_root_seq_idx_c_::types_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {839, 139};
-  return convert_enum_idx(options, 2, value, "rach_cfg_common_s::prach_root_seq_idx_c_::types");
+  static const uint16_t options[] = {839, 139};
+  return map_enum_number(options, 2, value, "rach_cfg_common_s::prach_root_seq_idx_c_::types");
 }
 
 std::string rach_cfg_common_s::restricted_set_cfg_opts::to_string() const
 {
-  static constexpr const char* options[] = {"unrestrictedSet", "restrictedSetTypeA", "restrictedSetTypeB"};
+  static const char* options[] = {"unrestrictedSet", "restrictedSetTypeA", "restrictedSetTypeB"};
   return convert_enum_idx(options, 3, value, "rach_cfg_common_s::restricted_set_cfg_e_");
 }
 
@@ -4276,7 +4301,7 @@ SRSASN_CODE scs_specific_carrier_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE scs_specific_carrier_s::unpack(bit_ref& bref)
+SRSASN_CODE scs_specific_carrier_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(offset_to_carrier, bref, (uint16_t)0u, (uint16_t)2199u));
@@ -4325,7 +4350,7 @@ SRSASN_CODE sib_type_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sib_type_info_s::unpack(bit_ref& bref)
+SRSASN_CODE sib_type_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(value_tag_present, 1));
   HANDLE_CODE(bref.unpack(area_scope_present, 1));
@@ -4352,28 +4377,28 @@ void sib_type_info_s::to_json(json_writer& j) const
 
 std::string sib_type_info_s::type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sibType2",
-                                            "sibType3",
-                                            "sibType4",
-                                            "sibType5",
-                                            "sibType6",
-                                            "sibType7",
-                                            "sibType8",
-                                            "sibType9",
-                                            "spare8",
-                                            "spare7",
-                                            "spare6",
-                                            "spare5",
-                                            "spare4",
-                                            "spare3",
-                                            "spare2",
-                                            "spare1"};
+  static const char* options[] = {"sibType2",
+                                  "sibType3",
+                                  "sibType4",
+                                  "sibType5",
+                                  "sibType6",
+                                  "sibType7",
+                                  "sibType8",
+                                  "sibType9",
+                                  "spare8",
+                                  "spare7",
+                                  "spare6",
+                                  "spare5",
+                                  "spare4",
+                                  "spare3",
+                                  "spare2",
+                                  "spare1"};
   return convert_enum_idx(options, 16, value, "sib_type_info_s::type_e_");
 }
 uint8_t sib_type_info_s::type_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 3, 4, 5, 6, 7, 8, 9};
-  return convert_enum_idx(options, 8, value, "sib_type_info_s::type_e_");
+  static const uint8_t options[] = {2, 3, 4, 5, 6, 7, 8, 9};
+  return map_enum_number(options, 8, value, "sib_type_info_s::type_e_");
 }
 
 // SetupRelease{ElementTypeParam} ::= CHOICE
@@ -4389,7 +4414,7 @@ void setup_release_c<elem_type_paramT_>::to_json(json_writer& j) const
   switch (type_) {
     case types::release:
       break;
-    case types::setup:;
+    case types::setup:
       break;
     default:
       log_invalid_choice_id(type_, "setup_release_c");
@@ -4413,7 +4438,7 @@ SRSASN_CODE setup_release_c<elem_type_paramT_>::pack(bit_ref& bref) const
   return SRSASN_SUCCESS;
 }
 template <class elem_type_paramT_>
-SRSASN_CODE setup_release_c<elem_type_paramT_>::unpack(bit_ref& bref)
+SRSASN_CODE setup_release_c<elem_type_paramT_>::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -4434,7 +4459,7 @@ SRSASN_CODE setup_release_c<elem_type_paramT_>::unpack(bit_ref& bref)
 template <class elem_type_paramT_>
 std::string setup_release_c<elem_type_paramT_>::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"release", "setup"};
+  static const char* options[] = {"release", "setup"};
   return convert_enum_idx(options, 2, value, "setup_release_c::types");
 }
 
@@ -4446,7 +4471,7 @@ SRSASN_CODE uac_barr_per_cat_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE uac_barr_per_cat_s::unpack(bit_ref& bref)
+SRSASN_CODE uac_barr_per_cat_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(access_category, bref, (uint8_t)1u, (uint8_t)63u));
   HANDLE_CODE(unpack_integer(uac_barr_info_set_idx, bref, (uint8_t)1u, (uint8_t)8u));
@@ -4469,7 +4494,7 @@ SRSASN_CODE bcch_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE bcch_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE bcch_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(mod_period_coeff.unpack(bref));
@@ -4485,13 +4510,13 @@ void bcch_cfg_s::to_json(json_writer& j) const
 
 std::string bcch_cfg_s::mod_period_coeff_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n4", "n8", "n16"};
+  static const char* options[] = {"n2", "n4", "n8", "n16"};
   return convert_enum_idx(options, 4, value, "bcch_cfg_s::mod_period_coeff_e_");
 }
 uint8_t bcch_cfg_s::mod_period_coeff_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 8, 16};
-  return convert_enum_idx(options, 4, value, "bcch_cfg_s::mod_period_coeff_e_");
+  static const uint8_t options[] = {2, 4, 8, 16};
+  return map_enum_number(options, 4, value, "bcch_cfg_s::mod_period_coeff_e_");
 }
 
 // BWP-DownlinkCommon ::= SEQUENCE
@@ -4511,7 +4536,7 @@ SRSASN_CODE bwp_dl_common_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE bwp_dl_common_s::unpack(bit_ref& bref)
+SRSASN_CODE bwp_dl_common_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(pdcch_cfg_common_present, 1));
@@ -4564,7 +4589,7 @@ SRSASN_CODE bwp_ul_common_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE bwp_ul_common_s::unpack(bit_ref& bref)
+SRSASN_CODE bwp_ul_common_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(rach_cfg_common_present, 1));
@@ -4613,7 +4638,7 @@ SRSASN_CODE freq_info_dl_sib_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE freq_info_dl_sib_s::unpack(bit_ref& bref)
+SRSASN_CODE freq_info_dl_sib_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_dyn_seq_of(freq_band_list, bref, 1, 8));
   HANDLE_CODE(unpack_integer(offset_to_point_a, bref, (uint16_t)0u, (uint16_t)2199u));
@@ -4625,14 +4650,14 @@ void freq_info_dl_sib_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("frequencyBandList");
-  for (uint32_t i1 = 0; i1 < freq_band_list.size(); ++i1) {
-    freq_band_list[i1].to_json(j);
+  for (const auto& e1 : freq_band_list) {
+    e1.to_json(j);
   }
   j.end_array();
   j.write_int("offsetToPointA", offset_to_point_a);
   j.start_array("scs-SpecificCarrierList");
-  for (uint32_t i1 = 0; i1 < scs_specific_carrier_list.size(); ++i1) {
-    scs_specific_carrier_list[i1].to_json(j);
+  for (const auto& e1 : scs_specific_carrier_list) {
+    e1.to_json(j);
   }
   j.end_array();
   j.end_obj();
@@ -4660,7 +4685,7 @@ SRSASN_CODE freq_info_ul_sib_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE freq_info_ul_sib_s::unpack(bit_ref& bref)
+SRSASN_CODE freq_info_ul_sib_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(freq_band_list_present, 1));
@@ -4686,8 +4711,8 @@ void freq_info_ul_sib_s::to_json(json_writer& j) const
   j.start_obj();
   if (freq_band_list_present) {
     j.start_array("frequencyBandList");
-    for (uint32_t i1 = 0; i1 < freq_band_list.size(); ++i1) {
-      freq_band_list[i1].to_json(j);
+    for (const auto& e1 : freq_band_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -4695,8 +4720,8 @@ void freq_info_ul_sib_s::to_json(json_writer& j) const
     j.write_int("absoluteFrequencyPointA", absolute_freq_point_a);
   }
   j.start_array("scs-SpecificCarrierList");
-  for (uint32_t i1 = 0; i1 < scs_specific_carrier_list.size(); ++i1) {
-    scs_specific_carrier_list[i1].to_json(j);
+  for (const auto& e1 : scs_specific_carrier_list) {
+    e1.to_json(j);
   }
   j.end_array();
   if (p_max_present) {
@@ -4718,7 +4743,7 @@ SRSASN_CODE mob_state_params_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE mob_state_params_s::unpack(bit_ref& bref)
+SRSASN_CODE mob_state_params_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(t_eval.unpack(bref));
   HANDLE_CODE(t_hyst_normal.unpack(bref));
@@ -4739,24 +4764,24 @@ void mob_state_params_s::to_json(json_writer& j) const
 
 std::string mob_state_params_s::t_eval_opts::to_string() const
 {
-  static constexpr const char* options[] = {"s30", "s60", "s120", "s180", "s240", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"s30", "s60", "s120", "s180", "s240", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 8, value, "mob_state_params_s::t_eval_e_");
 }
 uint8_t mob_state_params_s::t_eval_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {30, 60, 120, 180, 240};
-  return convert_enum_idx(options, 5, value, "mob_state_params_s::t_eval_e_");
+  static const uint8_t options[] = {30, 60, 120, 180, 240};
+  return map_enum_number(options, 5, value, "mob_state_params_s::t_eval_e_");
 }
 
 std::string mob_state_params_s::t_hyst_normal_opts::to_string() const
 {
-  static constexpr const char* options[] = {"s30", "s60", "s120", "s180", "s240", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"s30", "s60", "s120", "s180", "s240", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 8, value, "mob_state_params_s::t_hyst_normal_e_");
 }
 uint8_t mob_state_params_s::t_hyst_normal_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {30, 60, 120, 180, 240};
-  return convert_enum_idx(options, 5, value, "mob_state_params_s::t_hyst_normal_e_");
+  static const uint8_t options[] = {30, 60, 120, 180, 240};
+  return map_enum_number(options, 5, value, "mob_state_params_s::t_hyst_normal_e_");
 }
 
 // PCCH-Config ::= SEQUENCE
@@ -4774,7 +4799,7 @@ SRSASN_CODE pcch_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pcch_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE pcch_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(first_pdcch_monitoring_occasion_of_po_present, 1));
@@ -4910,7 +4935,7 @@ SRSASN_CODE pcch_cfg_s::nand_paging_frame_offset_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pcch_cfg_s::nand_paging_frame_offset_c_::unpack(bit_ref& bref)
+SRSASN_CODE pcch_cfg_s::nand_paging_frame_offset_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -4939,29 +4964,29 @@ SRSASN_CODE pcch_cfg_s::nand_paging_frame_offset_c_::unpack(bit_ref& bref)
 
 std::string pcch_cfg_s::nand_paging_frame_offset_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"oneT", "halfT", "quarterT", "oneEighthT", "oneSixteenthT"};
+  static const char* options[] = {"oneT", "halfT", "quarterT", "oneEighthT", "oneSixteenthT"};
   return convert_enum_idx(options, 5, value, "pcch_cfg_s::nand_paging_frame_offset_c_::types");
 }
 float pcch_cfg_s::nand_paging_frame_offset_c_::types_opts::to_number() const
 {
-  static constexpr float options[] = {1.0, 0.5, 0.25, 0.125, 0.0625};
-  return convert_enum_idx(options, 5, value, "pcch_cfg_s::nand_paging_frame_offset_c_::types");
+  static const float options[] = {1.0, 0.5, 0.25, 0.125, 0.0625};
+  return map_enum_number(options, 5, value, "pcch_cfg_s::nand_paging_frame_offset_c_::types");
 }
 std::string pcch_cfg_s::nand_paging_frame_offset_c_::types_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"1", "0.5", "0.25", "1/8", "1/16"};
+  static const char* options[] = {"1", "0.5", "0.25", "1/8", "1/16"};
   return convert_enum_idx(options, 5, value, "pcch_cfg_s::nand_paging_frame_offset_c_::types");
 }
 
 std::string pcch_cfg_s::ns_opts::to_string() const
 {
-  static constexpr const char* options[] = {"four", "two", "one"};
+  static const char* options[] = {"four", "two", "one"};
   return convert_enum_idx(options, 3, value, "pcch_cfg_s::ns_e_");
 }
 uint8_t pcch_cfg_s::ns_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 2, 1};
-  return convert_enum_idx(options, 3, value, "pcch_cfg_s::ns_e_");
+  static const uint8_t options[] = {4, 2, 1};
+  return map_enum_number(options, 3, value, "pcch_cfg_s::ns_e_");
 }
 
 void pcch_cfg_s::first_pdcch_monitoring_occasion_of_po_c_::destroy_()
@@ -5111,65 +5136,58 @@ void pcch_cfg_s::first_pdcch_monitoring_occasion_of_po_c_::to_json(json_writer& 
   switch (type_) {
     case types::scs15_kh_zone_t:
       j.start_array("sCS15KHZoneT");
-      for (uint32_t i1 = 0; i1 < c.get<scs15_kh_zone_t_l_>().size(); ++i1) {
-        j.write_int(c.get<scs15_kh_zone_t_l_>()[i1]);
+      for (const auto& e1 : c.get<scs15_kh_zone_t_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
     case types::scs30_kh_zone_t_scs15_kh_zhalf_t:
       j.start_array("sCS30KHZoneT-SCS15KHZhalfT");
-      for (uint32_t i1 = 0; i1 < c.get<scs30_kh_zone_t_scs15_kh_zhalf_t_l_>().size(); ++i1) {
-        j.write_int(c.get<scs30_kh_zone_t_scs15_kh_zhalf_t_l_>()[i1]);
+      for (const auto& e1 : c.get<scs30_kh_zone_t_scs15_kh_zhalf_t_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
     case types::scs60_kh_zone_t_scs30_kh_zhalf_t_scs15_kh_zquarter_t:
       j.start_array("sCS60KHZoneT-SCS30KHZhalfT-SCS15KHZquarterT");
-      for (uint32_t i1 = 0; i1 < c.get<scs60_kh_zone_t_scs30_kh_zhalf_t_scs15_kh_zquarter_t_l_>().size(); ++i1) {
-        j.write_int(c.get<scs60_kh_zone_t_scs30_kh_zhalf_t_scs15_kh_zquarter_t_l_>()[i1]);
+      for (const auto& e1 : c.get<scs60_kh_zone_t_scs30_kh_zhalf_t_scs15_kh_zquarter_t_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
     case types::scs120_kh_zone_t_scs60_kh_zhalf_t_scs30_kh_zquarter_t_scs15_kh_zone_eighth_t:
       j.start_array("sCS120KHZoneT-SCS60KHZhalfT-SCS30KHZquarterT-SCS15KHZoneEighthT");
-      for (uint32_t i1 = 0;
-           i1 < c.get<scs120_kh_zone_t_scs60_kh_zhalf_t_scs30_kh_zquarter_t_scs15_kh_zone_eighth_t_l_>().size();
-           ++i1) {
-        j.write_int(c.get<scs120_kh_zone_t_scs60_kh_zhalf_t_scs30_kh_zquarter_t_scs15_kh_zone_eighth_t_l_>()[i1]);
+      for (const auto& e1 : c.get<scs120_kh_zone_t_scs60_kh_zhalf_t_scs30_kh_zquarter_t_scs15_kh_zone_eighth_t_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
     case types::scs120_kh_zhalf_t_scs60_kh_zquarter_t_scs30_kh_zone_eighth_t_scs15_kh_zone_sixteenth_t:
       j.start_array("sCS120KHZhalfT-SCS60KHZquarterT-SCS30KHZoneEighthT-SCS15KHZoneSixteenthT");
-      for (uint32_t i1 = 0;
-           i1 <
-           c.get<scs120_kh_zhalf_t_scs60_kh_zquarter_t_scs30_kh_zone_eighth_t_scs15_kh_zone_sixteenth_t_l_>().size();
-           ++i1) {
-        j.write_int(
-            c.get<scs120_kh_zhalf_t_scs60_kh_zquarter_t_scs30_kh_zone_eighth_t_scs15_kh_zone_sixteenth_t_l_>()[i1]);
+      for (const auto& e1 :
+           c.get<scs120_kh_zhalf_t_scs60_kh_zquarter_t_scs30_kh_zone_eighth_t_scs15_kh_zone_sixteenth_t_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
     case types::scs120_kh_zquarter_t_scs60_kh_zone_eighth_t_scs30_kh_zone_sixteenth_t:
       j.start_array("sCS120KHZquarterT-SCS60KHZoneEighthT-SCS30KHZoneSixteenthT");
-      for (uint32_t i1 = 0;
-           i1 < c.get<scs120_kh_zquarter_t_scs60_kh_zone_eighth_t_scs30_kh_zone_sixteenth_t_l_>().size();
-           ++i1) {
-        j.write_int(c.get<scs120_kh_zquarter_t_scs60_kh_zone_eighth_t_scs30_kh_zone_sixteenth_t_l_>()[i1]);
+      for (const auto& e1 : c.get<scs120_kh_zquarter_t_scs60_kh_zone_eighth_t_scs30_kh_zone_sixteenth_t_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
     case types::scs120_kh_zone_eighth_t_scs60_kh_zone_sixteenth_t:
       j.start_array("sCS120KHZoneEighthT-SCS60KHZoneSixteenthT");
-      for (uint32_t i1 = 0; i1 < c.get<scs120_kh_zone_eighth_t_scs60_kh_zone_sixteenth_t_l_>().size(); ++i1) {
-        j.write_int(c.get<scs120_kh_zone_eighth_t_scs60_kh_zone_sixteenth_t_l_>()[i1]);
+      for (const auto& e1 : c.get<scs120_kh_zone_eighth_t_scs60_kh_zone_sixteenth_t_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
     case types::scs120_kh_zone_sixteenth_t:
       j.start_array("sCS120KHZoneSixteenthT");
-      for (uint32_t i1 = 0; i1 < c.get<scs120_kh_zone_sixteenth_t_l_>().size(); ++i1) {
-        j.write_int(c.get<scs120_kh_zone_sixteenth_t_l_>()[i1]);
+      for (const auto& e1 : c.get<scs120_kh_zone_sixteenth_t_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
@@ -5236,7 +5254,7 @@ SRSASN_CODE pcch_cfg_s::first_pdcch_monitoring_occasion_of_po_c_::pack(bit_ref& 
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pcch_cfg_s::first_pdcch_monitoring_occasion_of_po_c_::unpack(bit_ref& bref)
+SRSASN_CODE pcch_cfg_s::first_pdcch_monitoring_occasion_of_po_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -5299,14 +5317,14 @@ SRSASN_CODE pcch_cfg_s::first_pdcch_monitoring_occasion_of_po_c_::unpack(bit_ref
 
 std::string pcch_cfg_s::first_pdcch_monitoring_occasion_of_po_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sCS15KHZoneT",
-                                            "sCS30KHZoneT-SCS15KHZhalfT",
-                                            "sCS60KHZoneT-SCS30KHZhalfT-SCS15KHZquarterT",
-                                            "sCS120KHZoneT-SCS60KHZhalfT-SCS30KHZquarterT-SCS15KHZoneEighthT",
-                                            "sCS120KHZhalfT-SCS60KHZquarterT-SCS30KHZoneEighthT-SCS15KHZoneSixteenthT",
-                                            "sCS120KHZquarterT-SCS60KHZoneEighthT-SCS30KHZoneSixteenthT",
-                                            "sCS120KHZoneEighthT-SCS60KHZoneSixteenthT",
-                                            "sCS120KHZoneSixteenthT"};
+  static const char* options[] = {"sCS15KHZoneT",
+                                  "sCS30KHZoneT-SCS15KHZhalfT",
+                                  "sCS60KHZoneT-SCS30KHZhalfT-SCS15KHZquarterT",
+                                  "sCS120KHZoneT-SCS60KHZhalfT-SCS30KHZquarterT-SCS15KHZoneEighthT",
+                                  "sCS120KHZhalfT-SCS60KHZquarterT-SCS30KHZoneEighthT-SCS15KHZoneSixteenthT",
+                                  "sCS120KHZquarterT-SCS60KHZoneEighthT-SCS30KHZoneSixteenthT",
+                                  "sCS120KHZoneEighthT-SCS60KHZoneSixteenthT",
+                                  "sCS120KHZoneSixteenthT"};
   return convert_enum_idx(options, 8, value, "pcch_cfg_s::first_pdcch_monitoring_occasion_of_po_c_::types");
 }
 
@@ -5329,7 +5347,7 @@ SRSASN_CODE plmn_id_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE plmn_id_info_s::unpack(bit_ref& bref)
+SRSASN_CODE plmn_id_info_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(tac_present, 1));
@@ -5351,8 +5369,8 @@ void plmn_id_info_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("plmn-IdentityList");
-  for (uint32_t i1 = 0; i1 < plmn_id_list.size(); ++i1) {
-    plmn_id_list[i1].to_json(j);
+  for (const auto& e1 : plmn_id_list) {
+    e1.to_json(j);
   }
   j.end_array();
   if (tac_present) {
@@ -5368,7 +5386,7 @@ void plmn_id_info_s::to_json(json_writer& j) const
 
 std::string plmn_id_info_s::cell_reserved_for_oper_opts::to_string() const
 {
-  static constexpr const char* options[] = {"reserved", "notReserved"};
+  static const char* options[] = {"reserved", "notReserved"};
   return convert_enum_idx(options, 2, value, "plmn_id_info_s::cell_reserved_for_oper_e_");
 }
 
@@ -5388,7 +5406,7 @@ SRSASN_CODE si_request_res_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE si_request_res_s::unpack(bit_ref& bref)
+SRSASN_CODE si_request_res_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ra_assoc_period_idx_present, 1));
   HANDLE_CODE(bref.unpack(ra_ssb_occasion_mask_idx_present, 1));
@@ -5442,7 +5460,7 @@ SRSASN_CODE tdd_ul_dl_pattern_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE tdd_ul_dl_pattern_s::unpack(bit_ref& bref)
+SRSASN_CODE tdd_ul_dl_pattern_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(dl_ul_tx_periodicity.unpack(bref));
@@ -5484,32 +5502,31 @@ void tdd_ul_dl_pattern_s::to_json(json_writer& j) const
 
 std::string tdd_ul_dl_pattern_s::dl_ul_tx_periodicity_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms0p5", "ms0p625", "ms1", "ms1p25", "ms2", "ms2p5", "ms5", "ms10"};
+  static const char* options[] = {"ms0p5", "ms0p625", "ms1", "ms1p25", "ms2", "ms2p5", "ms5", "ms10"};
   return convert_enum_idx(options, 8, value, "tdd_ul_dl_pattern_s::dl_ul_tx_periodicity_e_");
 }
 
 std::string tdd_ul_dl_pattern_s::dl_ul_tx_periodicity_v1530_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms3", "ms4"};
+  static const char* options[] = {"ms3", "ms4"};
   return convert_enum_idx(options, 2, value, "tdd_ul_dl_pattern_s::dl_ul_tx_periodicity_v1530_e_");
 }
 uint8_t tdd_ul_dl_pattern_s::dl_ul_tx_periodicity_v1530_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {3, 4};
-  return convert_enum_idx(options, 2, value, "tdd_ul_dl_pattern_s::dl_ul_tx_periodicity_v1530_e_");
+  static const uint8_t options[] = {3, 4};
+  return map_enum_number(options, 2, value, "tdd_ul_dl_pattern_s::dl_ul_tx_periodicity_v1530_e_");
 }
 
 // TimeAlignmentTimer ::= ENUMERATED
 std::string time_align_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "ms500", "ms750", "ms1280", "ms1920", "ms2560", "ms5120", "ms10240", "infinity"};
+  static const char* options[] = {"ms500", "ms750", "ms1280", "ms1920", "ms2560", "ms5120", "ms10240", "infinity"};
   return convert_enum_idx(options, 8, value, "time_align_timer_e");
 }
 int16_t time_align_timer_opts::to_number() const
 {
-  static constexpr int16_t options[] = {500, 750, 1280, 1920, 2560, 5120, 10240, -1};
-  return convert_enum_idx(options, 8, value, "time_align_timer_e");
+  static const int16_t options[] = {500, 750, 1280, 1920, 2560, 5120, 10240, -1};
+  return map_enum_number(options, 8, value, "time_align_timer_e");
 }
 
 // DownlinkConfigCommonSIB ::= SEQUENCE
@@ -5523,7 +5540,7 @@ SRSASN_CODE dl_cfg_common_sib_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dl_cfg_common_sib_s::unpack(bit_ref& bref)
+SRSASN_CODE dl_cfg_common_sib_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(freq_info_dl.unpack(bref));
@@ -5564,7 +5581,7 @@ SRSASN_CODE si_request_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE si_request_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE si_request_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(rach_occasions_si_present, 1));
   HANDLE_CODE(bref.unpack(si_request_period_present, 1));
@@ -5595,8 +5612,8 @@ void si_request_cfg_s::to_json(json_writer& j) const
     j.write_str("si-RequestPeriod", si_request_period.to_string());
   }
   j.start_array("si-RequestResources");
-  for (uint32_t i1 = 0; i1 < si_request_res.size(); ++i1) {
-    si_request_res[i1].to_json(j);
+  for (const auto& e1 : si_request_res) {
+    e1.to_json(j);
   }
   j.end_array();
   j.end_obj();
@@ -5604,24 +5621,23 @@ void si_request_cfg_s::to_json(json_writer& j) const
 
 std::string si_request_cfg_s::rach_occasions_si_s_::ssb_per_rach_occasion_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "oneEighth", "oneFourth", "oneHalf", "one", "two", "four", "eight", "sixteen"};
+  static const char* options[] = {"oneEighth", "oneFourth", "oneHalf", "one", "two", "four", "eight", "sixteen"};
   return convert_enum_idx(options, 8, value, "si_request_cfg_s::rach_occasions_si_s_::ssb_per_rach_occasion_e_");
 }
 float si_request_cfg_s::rach_occasions_si_s_::ssb_per_rach_occasion_opts::to_number() const
 {
-  static constexpr float options[] = {0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 6.0};
-  return convert_enum_idx(options, 8, value, "si_request_cfg_s::rach_occasions_si_s_::ssb_per_rach_occasion_e_");
+  static const float options[] = {0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 6.0};
+  return map_enum_number(options, 8, value, "si_request_cfg_s::rach_occasions_si_s_::ssb_per_rach_occasion_e_");
 }
 std::string si_request_cfg_s::rach_occasions_si_s_::ssb_per_rach_occasion_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"1/8", "1/4", "1/2", "1", "2", "4", "8", "6"};
+  static const char* options[] = {"1/8", "1/4", "1/2", "1", "2", "4", "8", "6"};
   return convert_enum_idx(options, 8, value, "si_request_cfg_s::rach_occasions_si_s_::ssb_per_rach_occasion_e_");
 }
 
 std::string si_request_cfg_s::si_request_period_opts::to_string() const
 {
-  static constexpr const char* options[] = {"one", "two", "four", "six", "eight", "ten", "twelve", "sixteen"};
+  static const char* options[] = {"one", "two", "four", "six", "eight", "ten", "twelve", "sixteen"};
   return convert_enum_idx(options, 8, value, "si_request_cfg_s::si_request_period_e_");
 }
 
@@ -5672,7 +5688,7 @@ SRSASN_CODE sib2_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sib2_s::unpack(bit_ref& bref)
+SRSASN_CODE sib2_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   bref.unpack(cell_resel_info_common.ext, 1);
@@ -5771,54 +5787,54 @@ void sib2_s::to_json(json_writer& j) const
 
 std::string sib2_s::cell_resel_info_common_s_::q_hyst_opts::to_string() const
 {
-  static constexpr const char* options[] = {"dB0",
-                                            "dB1",
-                                            "dB2",
-                                            "dB3",
-                                            "dB4",
-                                            "dB5",
-                                            "dB6",
-                                            "dB8",
-                                            "dB10",
-                                            "dB12",
-                                            "dB14",
-                                            "dB16",
-                                            "dB18",
-                                            "dB20",
-                                            "dB22",
-                                            "dB24"};
+  static const char* options[] = {"dB0",
+                                  "dB1",
+                                  "dB2",
+                                  "dB3",
+                                  "dB4",
+                                  "dB5",
+                                  "dB6",
+                                  "dB8",
+                                  "dB10",
+                                  "dB12",
+                                  "dB14",
+                                  "dB16",
+                                  "dB18",
+                                  "dB20",
+                                  "dB22",
+                                  "dB24"};
   return convert_enum_idx(options, 16, value, "sib2_s::cell_resel_info_common_s_::q_hyst_e_");
 }
 uint8_t sib2_s::cell_resel_info_common_s_::q_hyst_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24};
-  return convert_enum_idx(options, 16, value, "sib2_s::cell_resel_info_common_s_::q_hyst_e_");
+  static const uint8_t options[] = {0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24};
+  return map_enum_number(options, 16, value, "sib2_s::cell_resel_info_common_s_::q_hyst_e_");
 }
 
 std::string
 sib2_s::cell_resel_info_common_s_::speed_state_resel_pars_s_::q_hyst_sf_s_::sf_medium_opts::to_string() const
 {
-  static constexpr const char* options[] = {"dB-6", "dB-4", "dB-2", "dB0"};
+  static const char* options[] = {"dB-6", "dB-4", "dB-2", "dB0"};
   return convert_enum_idx(
       options, 4, value, "sib2_s::cell_resel_info_common_s_::speed_state_resel_pars_s_::q_hyst_sf_s_::sf_medium_e_");
 }
 int8_t sib2_s::cell_resel_info_common_s_::speed_state_resel_pars_s_::q_hyst_sf_s_::sf_medium_opts::to_number() const
 {
-  static constexpr int8_t options[] = {-6, -4, -2, 0};
-  return convert_enum_idx(
+  static const int8_t options[] = {-6, -4, -2, 0};
+  return map_enum_number(
       options, 4, value, "sib2_s::cell_resel_info_common_s_::speed_state_resel_pars_s_::q_hyst_sf_s_::sf_medium_e_");
 }
 
 std::string sib2_s::cell_resel_info_common_s_::speed_state_resel_pars_s_::q_hyst_sf_s_::sf_high_opts::to_string() const
 {
-  static constexpr const char* options[] = {"dB-6", "dB-4", "dB-2", "dB0"};
+  static const char* options[] = {"dB-6", "dB-4", "dB-2", "dB0"};
   return convert_enum_idx(
       options, 4, value, "sib2_s::cell_resel_info_common_s_::speed_state_resel_pars_s_::q_hyst_sf_s_::sf_high_e_");
 }
 int8_t sib2_s::cell_resel_info_common_s_::speed_state_resel_pars_s_::q_hyst_sf_s_::sf_high_opts::to_number() const
 {
-  static constexpr int8_t options[] = {-6, -4, -2, 0};
-  return convert_enum_idx(
+  static const int8_t options[] = {-6, -4, -2, 0};
+  return map_enum_number(
       options, 4, value, "sib2_s::cell_resel_info_common_s_::speed_state_resel_pars_s_::q_hyst_sf_s_::sf_high_e_");
 }
 
@@ -5883,7 +5899,7 @@ SRSASN_CODE sib2_s::intra_freq_cell_resel_info_s_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sib2_s::intra_freq_cell_resel_info_s_::unpack(bit_ref& bref)
+SRSASN_CODE sib2_s::intra_freq_cell_resel_info_s_::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(q_rx_lev_min_sul_present, 1));
@@ -5962,15 +5978,15 @@ void sib2_s::intra_freq_cell_resel_info_s_::to_json(json_writer& j) const
   j.write_int("t-ReselectionNR", t_resel_nr);
   if (freq_band_list_present) {
     j.start_array("frequencyBandList");
-    for (uint32_t i1 = 0; i1 < freq_band_list.size(); ++i1) {
-      freq_band_list[i1].to_json(j);
+    for (const auto& e1 : freq_band_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (freq_band_list_sul_present) {
     j.start_array("frequencyBandListSUL");
-    for (uint32_t i1 = 0; i1 < freq_band_list_sul.size(); ++i1) {
-      freq_band_list_sul[i1].to_json(j);
+    for (const auto& e1 : freq_band_list_sul) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -6019,7 +6035,7 @@ SRSASN_CODE sib3_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sib3_s::unpack(bit_ref& bref)
+SRSASN_CODE sib3_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(intra_freq_neigh_cell_list_present, 1));
@@ -6043,15 +6059,15 @@ void sib3_s::to_json(json_writer& j) const
   j.start_obj();
   if (intra_freq_neigh_cell_list_present) {
     j.start_array("intraFreqNeighCellList");
-    for (uint32_t i1 = 0; i1 < intra_freq_neigh_cell_list.size(); ++i1) {
-      intra_freq_neigh_cell_list[i1].to_json(j);
+    for (const auto& e1 : intra_freq_neigh_cell_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (intra_freq_black_cell_list_present) {
     j.start_array("intraFreqBlackCellList");
-    for (uint32_t i1 = 0; i1 < intra_freq_black_cell_list.size(); ++i1) {
-      intra_freq_black_cell_list[i1].to_json(j);
+    for (const auto& e1 : intra_freq_black_cell_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -6074,7 +6090,7 @@ SRSASN_CODE sib4_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sib4_s::unpack(bit_ref& bref)
+SRSASN_CODE sib4_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
@@ -6090,8 +6106,8 @@ void sib4_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("interFreqCarrierFreqList");
-  for (uint32_t i1 = 0; i1 < inter_freq_carrier_freq_list.size(); ++i1) {
-    inter_freq_carrier_freq_list[i1].to_json(j);
+  for (const auto& e1 : inter_freq_carrier_freq_list) {
+    e1.to_json(j);
   }
   j.end_array();
   if (late_non_crit_ext_present) {
@@ -6121,7 +6137,7 @@ SRSASN_CODE sib5_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sib5_s::unpack(bit_ref& bref)
+SRSASN_CODE sib5_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(carrier_freq_list_eutra_present, 1));
@@ -6146,8 +6162,8 @@ void sib5_s::to_json(json_writer& j) const
   j.start_obj();
   if (carrier_freq_list_eutra_present) {
     j.start_array("carrierFreqListEUTRA");
-    for (uint32_t i1 = 0; i1 < carrier_freq_list_eutra.size(); ++i1) {
-      carrier_freq_list_eutra[i1].to_json(j);
+    for (const auto& e1 : carrier_freq_list_eutra) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -6177,7 +6193,7 @@ SRSASN_CODE sib6_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sib6_s::unpack(bit_ref& bref)
+SRSASN_CODE sib6_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
@@ -6224,7 +6240,7 @@ SRSASN_CODE sib7_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sib7_s::unpack(bit_ref& bref)
+SRSASN_CODE sib7_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(data_coding_scheme_present, 1));
@@ -6263,7 +6279,7 @@ void sib7_s::to_json(json_writer& j) const
 
 std::string sib7_s::warning_msg_segment_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"notLastSegment", "lastSegment"};
+  static const char* options[] = {"notLastSegment", "lastSegment"};
   return convert_enum_idx(options, 2, value, "sib7_s::warning_msg_segment_type_e_");
 }
 
@@ -6292,7 +6308,7 @@ SRSASN_CODE sib8_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sib8_s::unpack(bit_ref& bref)
+SRSASN_CODE sib8_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(data_coding_scheme_present, 1));
@@ -6338,7 +6354,7 @@ void sib8_s::to_json(json_writer& j) const
 
 std::string sib8_s::warning_msg_segment_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"notLastSegment", "lastSegment"};
+  static const char* options[] = {"notLastSegment", "lastSegment"};
   return convert_enum_idx(options, 2, value, "sib8_s::warning_msg_segment_type_e_");
 }
 
@@ -6370,7 +6386,7 @@ SRSASN_CODE sib9_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sib9_s::unpack(bit_ref& bref)
+SRSASN_CODE sib9_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(time_info_present, 1));
@@ -6430,7 +6446,7 @@ SRSASN_CODE sched_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sched_info_s::unpack(bit_ref& bref)
+SRSASN_CODE sched_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(si_broadcast_status.unpack(bref));
   HANDLE_CODE(si_periodicity.unpack(bref));
@@ -6444,8 +6460,8 @@ void sched_info_s::to_json(json_writer& j) const
   j.write_str("si-BroadcastStatus", si_broadcast_status.to_string());
   j.write_str("si-Periodicity", si_periodicity.to_string());
   j.start_array("sib-MappingInfo");
-  for (uint32_t i1 = 0; i1 < sib_map_info.size(); ++i1) {
-    sib_map_info[i1].to_json(j);
+  for (const auto& e1 : sib_map_info) {
+    e1.to_json(j);
   }
   j.end_array();
   j.end_obj();
@@ -6453,19 +6469,19 @@ void sched_info_s::to_json(json_writer& j) const
 
 std::string sched_info_s::si_broadcast_status_opts::to_string() const
 {
-  static constexpr const char* options[] = {"broadcasting", "notBroadcasting"};
+  static const char* options[] = {"broadcasting", "notBroadcasting"};
   return convert_enum_idx(options, 2, value, "sched_info_s::si_broadcast_status_e_");
 }
 
 std::string sched_info_s::si_periodicity_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rf8", "rf16", "rf32", "rf64", "rf128", "rf256", "rf512"};
+  static const char* options[] = {"rf8", "rf16", "rf32", "rf64", "rf128", "rf256", "rf512"};
   return convert_enum_idx(options, 7, value, "sched_info_s::si_periodicity_e_");
 }
 uint16_t sched_info_s::si_periodicity_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {8, 16, 32, 64, 128, 256, 512};
-  return convert_enum_idx(options, 7, value, "sched_info_s::si_periodicity_e_");
+  static const uint16_t options[] = {8, 16, 32, 64, 128, 256, 512};
+  return map_enum_number(options, 7, value, "sched_info_s::si_periodicity_e_");
 }
 
 // TDD-UL-DL-ConfigCommon ::= SEQUENCE
@@ -6482,7 +6498,7 @@ SRSASN_CODE tdd_ul_dl_cfg_common_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE tdd_ul_dl_cfg_common_s::unpack(bit_ref& bref)
+SRSASN_CODE tdd_ul_dl_cfg_common_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(pattern2_present, 1));
@@ -6517,7 +6533,7 @@ SRSASN_CODE uac_barr_info_set_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE uac_barr_info_set_s::unpack(bit_ref& bref)
+SRSASN_CODE uac_barr_info_set_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(uac_barr_factor.unpack(bref));
   HANDLE_CODE(uac_barr_time.unpack(bref));
@@ -6536,31 +6552,31 @@ void uac_barr_info_set_s::to_json(json_writer& j) const
 
 std::string uac_barr_info_set_s::uac_barr_factor_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "p00", "p05", "p10", "p15", "p20", "p25", "p30", "p40", "p50", "p60", "p70", "p75", "p80", "p85", "p90", "p95"};
   return convert_enum_idx(options, 16, value, "uac_barr_info_set_s::uac_barr_factor_e_");
 }
 float uac_barr_info_set_s::uac_barr_factor_opts::to_number() const
 {
-  static constexpr float options[] = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5};
-  return convert_enum_idx(options, 16, value, "uac_barr_info_set_s::uac_barr_factor_e_");
+  static const float options[] = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5};
+  return map_enum_number(options, 16, value, "uac_barr_info_set_s::uac_barr_factor_e_");
 }
 std::string uac_barr_info_set_s::uac_barr_factor_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "0.0", "0.5", "1.0", "1.5", "2.0", "2.5", "3.0", "4.0", "5.0", "6.0", "7.0", "7.5", "8.0", "8.5", "9.0", "9.5"};
   return convert_enum_idx(options, 16, value, "uac_barr_info_set_s::uac_barr_factor_e_");
 }
 
 std::string uac_barr_info_set_s::uac_barr_time_opts::to_string() const
 {
-  static constexpr const char* options[] = {"s4", "s8", "s16", "s32", "s64", "s128", "s256", "s512"};
+  static const char* options[] = {"s4", "s8", "s16", "s32", "s64", "s128", "s256", "s512"};
   return convert_enum_idx(options, 8, value, "uac_barr_info_set_s::uac_barr_time_e_");
 }
 uint16_t uac_barr_info_set_s::uac_barr_time_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {4, 8, 16, 32, 64, 128, 256, 512};
-  return convert_enum_idx(options, 8, value, "uac_barr_info_set_s::uac_barr_time_e_");
+  static const uint16_t options[] = {4, 8, 16, 32, 64, 128, 256, 512};
+  return map_enum_number(options, 8, value, "uac_barr_info_set_s::uac_barr_time_e_");
 }
 
 // UAC-BarringPerPLMN ::= SEQUENCE
@@ -6575,7 +6591,7 @@ SRSASN_CODE uac_barr_per_plmn_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE uac_barr_per_plmn_s::unpack(bit_ref& bref)
+SRSASN_CODE uac_barr_per_plmn_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(uac_ac_barr_list_type_present, 1));
 
@@ -6672,15 +6688,15 @@ void uac_barr_per_plmn_s::uac_ac_barr_list_type_c_::to_json(json_writer& j) cons
   switch (type_) {
     case types::uac_implicit_ac_barr_list:
       j.start_array("uac-ImplicitACBarringList");
-      for (uint32_t i1 = 0; i1 < c.get<uac_implicit_ac_barr_list_l_>().size(); ++i1) {
-        j.write_int(c.get<uac_implicit_ac_barr_list_l_>()[i1]);
+      for (const auto& e1 : c.get<uac_implicit_ac_barr_list_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
     case types::uac_explicit_ac_barr_list:
       j.start_array("uac-ExplicitACBarringList");
-      for (uint32_t i1 = 0; i1 < c.get<uac_barr_per_cat_list_l>().size(); ++i1) {
-        c.get<uac_barr_per_cat_list_l>()[i1].to_json(j);
+      for (const auto& e1 : c.get<uac_barr_per_cat_list_l>()) {
+        e1.to_json(j);
       }
       j.end_array();
       break;
@@ -6708,7 +6724,7 @@ SRSASN_CODE uac_barr_per_plmn_s::uac_ac_barr_list_type_c_::pack(bit_ref& bref) c
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE uac_barr_per_plmn_s::uac_ac_barr_list_type_c_::unpack(bit_ref& bref)
+SRSASN_CODE uac_barr_per_plmn_s::uac_ac_barr_list_type_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -6732,7 +6748,7 @@ SRSASN_CODE uac_barr_per_plmn_s::uac_ac_barr_list_type_c_::unpack(bit_ref& bref)
 
 std::string uac_barr_per_plmn_s::uac_ac_barr_list_type_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"uac-ImplicitACBarringList", "uac-ExplicitACBarringList"};
+  static const char* options[] = {"uac-ImplicitACBarringList", "uac-ExplicitACBarringList"};
   return convert_enum_idx(options, 2, value, "uac_barr_per_plmn_s::uac_ac_barr_list_type_c_::types");
 }
 
@@ -6745,7 +6761,7 @@ SRSASN_CODE ul_cfg_common_sib_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_cfg_common_sib_s::unpack(bit_ref& bref)
+SRSASN_CODE ul_cfg_common_sib_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(freq_info_ul.unpack(bref));
   HANDLE_CODE(init_ul_bwp.unpack(bref));
@@ -6774,7 +6790,7 @@ SRSASN_CODE cell_access_related_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cell_access_related_info_s::unpack(bit_ref& bref)
+SRSASN_CODE cell_access_related_info_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(cell_reserved_for_other_use_present, 1));
@@ -6787,8 +6803,8 @@ void cell_access_related_info_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("plmn-IdentityList");
-  for (uint32_t i1 = 0; i1 < plmn_id_list.size(); ++i1) {
-    plmn_id_list[i1].to_json(j);
+  for (const auto& e1 : plmn_id_list) {
+    e1.to_json(j);
   }
   j.end_array();
   if (cell_reserved_for_other_use_present) {
@@ -6810,7 +6826,7 @@ SRSASN_CODE conn_est_fail_ctrl_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE conn_est_fail_ctrl_s::unpack(bit_ref& bref)
+SRSASN_CODE conn_est_fail_ctrl_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(conn_est_fail_offset_present, 1));
 
@@ -6835,24 +6851,24 @@ void conn_est_fail_ctrl_s::to_json(json_writer& j) const
 
 std::string conn_est_fail_ctrl_s::conn_est_fail_count_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n3", "n4"};
+  static const char* options[] = {"n1", "n2", "n3", "n4"};
   return convert_enum_idx(options, 4, value, "conn_est_fail_ctrl_s::conn_est_fail_count_e_");
 }
 uint8_t conn_est_fail_ctrl_s::conn_est_fail_count_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3, 4};
-  return convert_enum_idx(options, 4, value, "conn_est_fail_ctrl_s::conn_est_fail_count_e_");
+  static const uint8_t options[] = {1, 2, 3, 4};
+  return map_enum_number(options, 4, value, "conn_est_fail_ctrl_s::conn_est_fail_count_e_");
 }
 
 std::string conn_est_fail_ctrl_s::conn_est_fail_offset_validity_opts::to_string() const
 {
-  static constexpr const char* options[] = {"s30", "s60", "s120", "s240", "s300", "s420", "s600", "s900"};
+  static const char* options[] = {"s30", "s60", "s120", "s240", "s300", "s420", "s600", "s900"};
   return convert_enum_idx(options, 8, value, "conn_est_fail_ctrl_s::conn_est_fail_offset_validity_e_");
 }
 uint16_t conn_est_fail_ctrl_s::conn_est_fail_offset_validity_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {30, 60, 120, 240, 300, 420, 600, 900};
-  return convert_enum_idx(options, 8, value, "conn_est_fail_ctrl_s::conn_est_fail_offset_validity_e_");
+  static const uint16_t options[] = {30, 60, 120, 240, 300, 420, 600, 900};
+  return map_enum_number(options, 8, value, "conn_est_fail_ctrl_s::conn_est_fail_offset_validity_e_");
 }
 
 // SI-SchedulingInfo ::= SEQUENCE
@@ -6877,7 +6893,7 @@ SRSASN_CODE si_sched_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE si_sched_info_s::unpack(bit_ref& bref)
+SRSASN_CODE si_sched_info_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(si_request_cfg_present, 1));
@@ -6902,8 +6918,8 @@ void si_sched_info_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("schedulingInfoList");
-  for (uint32_t i1 = 0; i1 < sched_info_list.size(); ++i1) {
-    sched_info_list[i1].to_json(j);
+  for (const auto& e1 : sched_info_list) {
+    e1.to_json(j);
   }
   j.end_array();
   j.write_str("si-WindowLength", si_win_len.to_string());
@@ -6923,13 +6939,13 @@ void si_sched_info_s::to_json(json_writer& j) const
 
 std::string si_sched_info_s::si_win_len_opts::to_string() const
 {
-  static constexpr const char* options[] = {"s5", "s10", "s20", "s40", "s80", "s160", "s320", "s640", "s1280"};
+  static const char* options[] = {"s5", "s10", "s20", "s40", "s80", "s160", "s320", "s640", "s1280"};
   return convert_enum_idx(options, 9, value, "si_sched_info_s::si_win_len_e_");
 }
 uint16_t si_sched_info_s::si_win_len_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {5, 10, 20, 40, 80, 160, 320, 640, 1280};
-  return convert_enum_idx(options, 9, value, "si_sched_info_s::si_win_len_e_");
+  static const uint16_t options[] = {5, 10, 20, 40, 80, 160, 320, 640, 1280};
+  return map_enum_number(options, 9, value, "si_sched_info_s::si_win_len_e_");
 }
 
 // ServingCellConfigCommonSIB ::= SEQUENCE
@@ -6964,7 +6980,7 @@ SRSASN_CODE serving_cell_cfg_common_sib_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE serving_cell_cfg_common_sib_s::unpack(bit_ref& bref)
+SRSASN_CODE serving_cell_cfg_common_sib_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(ul_cfg_common_present, 1));
@@ -7029,24 +7045,24 @@ void serving_cell_cfg_common_sib_s::to_json(json_writer& j) const
 
 std::string serving_cell_cfg_common_sib_s::n_timing_advance_offset_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0", "n25600", "n39936"};
+  static const char* options[] = {"n0", "n25600", "n39936"};
   return convert_enum_idx(options, 3, value, "serving_cell_cfg_common_sib_s::n_timing_advance_offset_e_");
 }
 uint16_t serving_cell_cfg_common_sib_s::n_timing_advance_offset_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {0, 25600, 39936};
-  return convert_enum_idx(options, 3, value, "serving_cell_cfg_common_sib_s::n_timing_advance_offset_e_");
+  static const uint16_t options[] = {0, 25600, 39936};
+  return map_enum_number(options, 3, value, "serving_cell_cfg_common_sib_s::n_timing_advance_offset_e_");
 }
 
 std::string serving_cell_cfg_common_sib_s::ssb_periodicity_serving_cell_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms5", "ms10", "ms20", "ms40", "ms80", "ms160"};
+  static const char* options[] = {"ms5", "ms10", "ms20", "ms40", "ms80", "ms160"};
   return convert_enum_idx(options, 6, value, "serving_cell_cfg_common_sib_s::ssb_periodicity_serving_cell_e_");
 }
 uint8_t serving_cell_cfg_common_sib_s::ssb_periodicity_serving_cell_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {5, 10, 20, 40, 80, 160};
-  return convert_enum_idx(options, 6, value, "serving_cell_cfg_common_sib_s::ssb_periodicity_serving_cell_e_");
+  static const uint8_t options[] = {5, 10, 20, 40, 80, 160};
+  return map_enum_number(options, 6, value, "serving_cell_cfg_common_sib_s::ssb_periodicity_serving_cell_e_");
 }
 
 // SystemInformation-IEs ::= SEQUENCE
@@ -7062,7 +7078,7 @@ SRSASN_CODE sys_info_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sys_info_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE sys_info_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -7078,8 +7094,8 @@ void sys_info_ies_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("sib-TypeAndInfo");
-  for (uint32_t i1 = 0; i1 < sib_type_and_info.size(); ++i1) {
-    sib_type_and_info[i1].to_json(j);
+  for (const auto& e1 : sib_type_and_info) {
+    e1.to_json(j);
   }
   j.end_array();
   if (late_non_crit_ext_present) {
@@ -7309,7 +7325,7 @@ SRSASN_CODE sys_info_ies_s::sib_type_and_info_item_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sys_info_ies_s::sib_type_and_info_item_c_::unpack(bit_ref& bref)
+SRSASN_CODE sys_info_ies_s::sib_type_and_info_item_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -7348,19 +7364,19 @@ SRSASN_CODE sys_info_ies_s::sib_type_and_info_item_c_::unpack(bit_ref& bref)
 
 std::string sys_info_ies_s::sib_type_and_info_item_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sib2", "sib3", "sib4", "sib5", "sib6", "sib7", "sib8", "sib9"};
+  static const char* options[] = {"sib2", "sib3", "sib4", "sib5", "sib6", "sib7", "sib8", "sib9"};
   return convert_enum_idx(options, 8, value, "sys_info_ies_s::sib_type_and_info_item_c_::types");
 }
 uint8_t sys_info_ies_s::sib_type_and_info_item_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 3, 4, 5, 6, 7, 8, 9};
-  return convert_enum_idx(options, 8, value, "sys_info_ies_s::sib_type_and_info_item_c_::types");
+  static const uint8_t options[] = {2, 3, 4, 5, 6, 7, 8, 9};
+  return map_enum_number(options, 8, value, "sys_info_ies_s::sib_type_and_info_item_c_::types");
 }
 
 // UAC-AccessCategory1-SelectionAssistanceInfo ::= ENUMERATED
 std::string uac_access_category1_sel_assist_info_opts::to_string() const
 {
-  static constexpr const char* options[] = {"a", "b", "c"};
+  static const char* options[] = {"a", "b", "c"};
   return convert_enum_idx(options, 3, value, "uac_access_category1_sel_assist_info_e");
 }
 
@@ -7378,7 +7394,7 @@ SRSASN_CODE ue_timers_and_consts_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_timers_and_consts_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_timers_and_consts_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(t300.unpack(bref));
@@ -7406,79 +7422,79 @@ void ue_timers_and_consts_s::to_json(json_writer& j) const
 
 std::string ue_timers_and_consts_s::t300_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms100", "ms200", "ms300", "ms400", "ms600", "ms1000", "ms1500", "ms2000"};
+  static const char* options[] = {"ms100", "ms200", "ms300", "ms400", "ms600", "ms1000", "ms1500", "ms2000"};
   return convert_enum_idx(options, 8, value, "ue_timers_and_consts_s::t300_e_");
 }
 uint16_t ue_timers_and_consts_s::t300_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {100, 200, 300, 400, 600, 1000, 1500, 2000};
-  return convert_enum_idx(options, 8, value, "ue_timers_and_consts_s::t300_e_");
+  static const uint16_t options[] = {100, 200, 300, 400, 600, 1000, 1500, 2000};
+  return map_enum_number(options, 8, value, "ue_timers_and_consts_s::t300_e_");
 }
 
 std::string ue_timers_and_consts_s::t301_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms100", "ms200", "ms300", "ms400", "ms600", "ms1000", "ms1500", "ms2000"};
+  static const char* options[] = {"ms100", "ms200", "ms300", "ms400", "ms600", "ms1000", "ms1500", "ms2000"};
   return convert_enum_idx(options, 8, value, "ue_timers_and_consts_s::t301_e_");
 }
 uint16_t ue_timers_and_consts_s::t301_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {100, 200, 300, 400, 600, 1000, 1500, 2000};
-  return convert_enum_idx(options, 8, value, "ue_timers_and_consts_s::t301_e_");
+  static const uint16_t options[] = {100, 200, 300, 400, 600, 1000, 1500, 2000};
+  return map_enum_number(options, 8, value, "ue_timers_and_consts_s::t301_e_");
 }
 
 std::string ue_timers_and_consts_s::t310_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms0", "ms50", "ms100", "ms200", "ms500", "ms1000", "ms2000"};
+  static const char* options[] = {"ms0", "ms50", "ms100", "ms200", "ms500", "ms1000", "ms2000"};
   return convert_enum_idx(options, 7, value, "ue_timers_and_consts_s::t310_e_");
 }
 uint16_t ue_timers_and_consts_s::t310_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {0, 50, 100, 200, 500, 1000, 2000};
-  return convert_enum_idx(options, 7, value, "ue_timers_and_consts_s::t310_e_");
+  static const uint16_t options[] = {0, 50, 100, 200, 500, 1000, 2000};
+  return map_enum_number(options, 7, value, "ue_timers_and_consts_s::t310_e_");
 }
 
 std::string ue_timers_and_consts_s::n310_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n3", "n4", "n6", "n8", "n10", "n20"};
+  static const char* options[] = {"n1", "n2", "n3", "n4", "n6", "n8", "n10", "n20"};
   return convert_enum_idx(options, 8, value, "ue_timers_and_consts_s::n310_e_");
 }
 uint8_t ue_timers_and_consts_s::n310_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3, 4, 6, 8, 10, 20};
-  return convert_enum_idx(options, 8, value, "ue_timers_and_consts_s::n310_e_");
+  static const uint8_t options[] = {1, 2, 3, 4, 6, 8, 10, 20};
+  return map_enum_number(options, 8, value, "ue_timers_and_consts_s::n310_e_");
 }
 
 std::string ue_timers_and_consts_s::t311_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms1000", "ms3000", "ms5000", "ms10000", "ms15000", "ms20000", "ms30000"};
+  static const char* options[] = {"ms1000", "ms3000", "ms5000", "ms10000", "ms15000", "ms20000", "ms30000"};
   return convert_enum_idx(options, 7, value, "ue_timers_and_consts_s::t311_e_");
 }
 uint16_t ue_timers_and_consts_s::t311_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {1000, 3000, 5000, 10000, 15000, 20000, 30000};
-  return convert_enum_idx(options, 7, value, "ue_timers_and_consts_s::t311_e_");
+  static const uint16_t options[] = {1000, 3000, 5000, 10000, 15000, 20000, 30000};
+  return map_enum_number(options, 7, value, "ue_timers_and_consts_s::t311_e_");
 }
 
 std::string ue_timers_and_consts_s::n311_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n3", "n4", "n5", "n6", "n8", "n10"};
+  static const char* options[] = {"n1", "n2", "n3", "n4", "n5", "n6", "n8", "n10"};
   return convert_enum_idx(options, 8, value, "ue_timers_and_consts_s::n311_e_");
 }
 uint8_t ue_timers_and_consts_s::n311_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3, 4, 5, 6, 8, 10};
-  return convert_enum_idx(options, 8, value, "ue_timers_and_consts_s::n311_e_");
+  static const uint8_t options[] = {1, 2, 3, 4, 5, 6, 8, 10};
+  return map_enum_number(options, 8, value, "ue_timers_and_consts_s::n311_e_");
 }
 
 std::string ue_timers_and_consts_s::t319_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms100", "ms200", "ms300", "ms400", "ms600", "ms1000", "ms1500", "ms2000"};
+  static const char* options[] = {"ms100", "ms200", "ms300", "ms400", "ms600", "ms1000", "ms1500", "ms2000"};
   return convert_enum_idx(options, 8, value, "ue_timers_and_consts_s::t319_e_");
 }
 uint16_t ue_timers_and_consts_s::t319_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {100, 200, 300, 400, 600, 1000, 1500, 2000};
-  return convert_enum_idx(options, 8, value, "ue_timers_and_consts_s::t319_e_");
+  static const uint16_t options[] = {100, 200, 300, 400, 600, 1000, 1500, 2000};
+  return map_enum_number(options, 8, value, "ue_timers_and_consts_s::t319_e_");
 }
 
 // SIB1 ::= SEQUENCE
@@ -7549,7 +7565,7 @@ SRSASN_CODE sib1_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sib1_s::unpack(bit_ref& bref)
+SRSASN_CODE sib1_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(cell_sel_info_present, 1));
   HANDLE_CODE(bref.unpack(conn_est_fail_ctrl_present, 1));
@@ -7666,21 +7682,21 @@ void sib1_s::to_json(json_writer& j) const
     j.start_obj();
     if (uac_barr_info.uac_barr_for_common_present) {
       j.start_array("uac-BarringForCommon");
-      for (uint32_t i1 = 0; i1 < uac_barr_info.uac_barr_for_common.size(); ++i1) {
-        uac_barr_info.uac_barr_for_common[i1].to_json(j);
+      for (const auto& e1 : uac_barr_info.uac_barr_for_common) {
+        e1.to_json(j);
       }
       j.end_array();
     }
     if (uac_barr_info.uac_barr_per_plmn_list_present) {
       j.start_array("uac-BarringPerPLMN-List");
-      for (uint32_t i1 = 0; i1 < uac_barr_info.uac_barr_per_plmn_list.size(); ++i1) {
-        uac_barr_info.uac_barr_per_plmn_list[i1].to_json(j);
+      for (const auto& e1 : uac_barr_info.uac_barr_per_plmn_list) {
+        e1.to_json(j);
       }
       j.end_array();
     }
     j.start_array("uac-BarringInfoSetList");
-    for (uint32_t i1 = 0; i1 < uac_barr_info.uac_barr_info_set_list.size(); ++i1) {
-      uac_barr_info.uac_barr_info_set_list[i1].to_json(j);
+    for (const auto& e1 : uac_barr_info.uac_barr_info_set_list) {
+      e1.to_json(j);
     }
     j.end_array();
     if (uac_barr_info.uac_access_category1_sel_assist_info_present) {
@@ -7778,8 +7794,8 @@ void sib1_s::uac_barr_info_s_::uac_access_category1_sel_assist_info_c_::to_json(
       break;
     case types::individual_plmn_list:
       j.start_array("individualPLMNList");
-      for (uint32_t i1 = 0; i1 < c.get<individual_plmn_list_l_>().size(); ++i1) {
-        j.write_str(c.get<individual_plmn_list_l_>()[i1].to_string());
+      for (const auto& e1 : c.get<individual_plmn_list_l_>()) {
+        j.write_str(e1.to_string());
       }
       j.end_array();
       break;
@@ -7804,7 +7820,7 @@ SRSASN_CODE sib1_s::uac_barr_info_s_::uac_access_category1_sel_assist_info_c_::p
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sib1_s::uac_barr_info_s_::uac_access_category1_sel_assist_info_c_::unpack(bit_ref& bref)
+SRSASN_CODE sib1_s::uac_barr_info_s_::uac_access_category1_sel_assist_info_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -7825,7 +7841,7 @@ SRSASN_CODE sib1_s::uac_barr_info_s_::uac_access_category1_sel_assist_info_c_::u
 
 std::string sib1_s::uac_barr_info_s_::uac_access_category1_sel_assist_info_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"plmnCommon", "individualPLMNList"};
+  static const char* options[] = {"plmnCommon", "individualPLMNList"};
   return convert_enum_idx(
       options, 2, value, "sib1_s::uac_barr_info_s_::uac_access_category1_sel_assist_info_c_::types");
 }
@@ -7837,7 +7853,7 @@ SRSASN_CODE sys_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sys_info_s::unpack(bit_ref& bref)
+SRSASN_CODE sys_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(crit_exts.unpack(bref));
 
@@ -7942,7 +7958,7 @@ SRSASN_CODE sys_info_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sys_info_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE sys_info_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -7962,7 +7978,7 @@ SRSASN_CODE sys_info_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string sys_info_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"systemInformation-r15", "criticalExtensionsFuture"};
+  static const char* options[] = {"systemInformation-r15", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "sys_info_s::crit_exts_c_::types");
 }
 
@@ -8058,7 +8074,7 @@ SRSASN_CODE bcch_dl_sch_msg_type_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE bcch_dl_sch_msg_type_c::unpack(bit_ref& bref)
+SRSASN_CODE bcch_dl_sch_msg_type_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -8176,7 +8192,7 @@ SRSASN_CODE bcch_dl_sch_msg_type_c::c1_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE bcch_dl_sch_msg_type_c::c1_c_::unpack(bit_ref& bref)
+SRSASN_CODE bcch_dl_sch_msg_type_c::c1_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -8197,29 +8213,27 @@ SRSASN_CODE bcch_dl_sch_msg_type_c::c1_c_::unpack(bit_ref& bref)
 
 std::string bcch_dl_sch_msg_type_c::c1_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"systemInformation", "systemInformationBlockType1"};
+  static const char* options[] = {"systemInformation", "systemInformationBlockType1"};
   return convert_enum_idx(options, 2, value, "bcch_dl_sch_msg_type_c::c1_c_::types");
 }
 uint8_t bcch_dl_sch_msg_type_c::c1_c_::types_opts::to_number() const
 {
-  switch (value) {
-    case sib_type1:
-      return 1;
-    default:
-      invalid_enum_number(value, "bcch_dl_sch_msg_type_c::c1_c_::types");
+  if (value == sib_type1) {
+    return 1;
   }
+  invalid_enum_number(value, "bcch_dl_sch_msg_type_c::c1_c_::types");
   return 0;
 }
 
 std::string bcch_dl_sch_msg_type_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"c1", "messageClassExtension"};
+  static const char* options[] = {"c1", "messageClassExtension"};
   return convert_enum_idx(options, 2, value, "bcch_dl_sch_msg_type_c::types");
 }
 uint8_t bcch_dl_sch_msg_type_c::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1};
-  return convert_enum_idx(options, 1, value, "bcch_dl_sch_msg_type_c::types");
+  static const uint8_t options[] = {1};
+  return map_enum_number(options, 1, value, "bcch_dl_sch_msg_type_c::types");
 }
 
 // BCCH-DL-SCH-Message ::= SEQUENCE
@@ -8231,7 +8245,7 @@ SRSASN_CODE bcch_dl_sch_msg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE bcch_dl_sch_msg_s::unpack(bit_ref& bref)
+SRSASN_CODE bcch_dl_sch_msg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(msg.unpack(bref));
 
@@ -8254,18 +8268,17 @@ void bcch_dl_sch_msg_s::to_json(json_writer& j) const
 // Alpha ::= ENUMERATED
 std::string alpha_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "alpha0", "alpha04", "alpha05", "alpha06", "alpha07", "alpha08", "alpha09", "alpha1"};
+  static const char* options[] = {"alpha0", "alpha04", "alpha05", "alpha06", "alpha07", "alpha08", "alpha09", "alpha1"};
   return convert_enum_idx(options, 8, value, "alpha_e");
 }
 float alpha_opts::to_number() const
 {
-  static constexpr float options[] = {0.0, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
-  return convert_enum_idx(options, 8, value, "alpha_e");
+  static const float options[] = {0.0, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
+  return map_enum_number(options, 8, value, "alpha_e");
 }
 std::string alpha_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"0", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1"};
+  static const char* options[] = {"0", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1"};
   return convert_enum_idx(options, 8, value, "alpha_e");
 }
 
@@ -8286,7 +8299,7 @@ SRSASN_CODE bfr_csirs_res_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE bfr_csirs_res_s::unpack(bit_ref& bref)
+SRSASN_CODE bfr_csirs_res_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(ra_occasion_list_present, 1));
@@ -8308,8 +8321,8 @@ void bfr_csirs_res_s::to_json(json_writer& j) const
   j.write_int("csi-RS", csi_rs);
   if (ra_occasion_list_present) {
     j.start_array("ra-OccasionList");
-    for (uint32_t i1 = 0; i1 < ra_occasion_list.size(); ++i1) {
-      j.write_int(ra_occasion_list[i1]);
+    for (const auto& e1 : ra_occasion_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -8328,7 +8341,7 @@ SRSASN_CODE bfr_ssb_res_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE bfr_ssb_res_s::unpack(bit_ref& bref)
+SRSASN_CODE bfr_ssb_res_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(ssb, bref, (uint8_t)0u, (uint8_t)63u));
@@ -8379,7 +8392,7 @@ SRSASN_CODE beta_offsets_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE beta_offsets_s::unpack(bit_ref& bref)
+SRSASN_CODE beta_offsets_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(beta_offset_ack_idx1_present, 1));
   HANDLE_CODE(bref.unpack(beta_offset_ack_idx2_present, 1));
@@ -8449,7 +8462,7 @@ SRSASN_CODE csi_freq_occupation_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_freq_occupation_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_freq_occupation_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(start_rb, bref, (uint16_t)0u, (uint16_t)274u));
@@ -8473,7 +8486,7 @@ SRSASN_CODE p0_pucch_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE p0_pucch_s::unpack(bit_ref& bref)
+SRSASN_CODE p0_pucch_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(p0_pucch_id, bref, (uint8_t)1u, (uint8_t)8u));
   HANDLE_CODE(unpack_integer(p0_pucch_value, bref, (int8_t)-16, (int8_t)15));
@@ -8504,7 +8517,7 @@ SRSASN_CODE p0_pusch_alpha_set_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE p0_pusch_alpha_set_s::unpack(bit_ref& bref)
+SRSASN_CODE p0_pusch_alpha_set_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(p0_present, 1));
   HANDLE_CODE(bref.unpack(alpha_present, 1));
@@ -8571,7 +8584,7 @@ SRSASN_CODE ptrs_ul_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ptrs_ul_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE ptrs_ul_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(transform_precoder_disabled_present, 1));
@@ -8617,15 +8630,15 @@ void ptrs_ul_cfg_s::to_json(json_writer& j) const
     j.start_obj();
     if (transform_precoder_disabled.freq_density_present) {
       j.start_array("frequencyDensity");
-      for (uint32_t i1 = 0; i1 < transform_precoder_disabled.freq_density.size(); ++i1) {
-        j.write_int(transform_precoder_disabled.freq_density[i1]);
+      for (const auto& e1 : transform_precoder_disabled.freq_density) {
+        j.write_int(e1);
       }
       j.end_array();
     }
     if (transform_precoder_disabled.time_density_present) {
       j.start_array("timeDensity");
-      for (uint32_t i1 = 0; i1 < transform_precoder_disabled.time_density.size(); ++i1) {
-        j.write_int(transform_precoder_disabled.time_density[i1]);
+      for (const auto& e1 : transform_precoder_disabled.time_density) {
+        j.write_int(e1);
       }
       j.end_array();
     }
@@ -8640,8 +8653,8 @@ void ptrs_ul_cfg_s::to_json(json_writer& j) const
     j.write_fieldname("transformPrecoderEnabled");
     j.start_obj();
     j.start_array("sampleDensity");
-    for (uint32_t i1 = 0; i1 < transform_precoder_enabled.sample_density.size(); ++i1) {
-      j.write_int(transform_precoder_enabled.sample_density[i1]);
+    for (const auto& e1 : transform_precoder_enabled.sample_density) {
+      j.write_int(e1);
     }
     j.end_array();
     if (transform_precoder_enabled.time_density_transform_precoding_present) {
@@ -8654,62 +8667,62 @@ void ptrs_ul_cfg_s::to_json(json_writer& j) const
 
 std::string ptrs_ul_cfg_s::transform_precoder_disabled_s_::max_nrof_ports_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2"};
+  static const char* options[] = {"n1", "n2"};
   return convert_enum_idx(options, 2, value, "ptrs_ul_cfg_s::transform_precoder_disabled_s_::max_nrof_ports_e_");
 }
 uint8_t ptrs_ul_cfg_s::transform_precoder_disabled_s_::max_nrof_ports_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options, 2, value, "ptrs_ul_cfg_s::transform_precoder_disabled_s_::max_nrof_ports_e_");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options, 2, value, "ptrs_ul_cfg_s::transform_precoder_disabled_s_::max_nrof_ports_e_");
 }
 
 std::string ptrs_ul_cfg_s::transform_precoder_disabled_s_::res_elem_offset_opts::to_string() const
 {
-  static constexpr const char* options[] = {"offset01", "offset10", "offset11"};
+  static const char* options[] = {"offset01", "offset10", "offset11"};
   return convert_enum_idx(options, 3, value, "ptrs_ul_cfg_s::transform_precoder_disabled_s_::res_elem_offset_e_");
 }
 float ptrs_ul_cfg_s::transform_precoder_disabled_s_::res_elem_offset_opts::to_number() const
 {
-  static constexpr float options[] = {0.1, 1.0, 1.1};
-  return convert_enum_idx(options, 3, value, "ptrs_ul_cfg_s::transform_precoder_disabled_s_::res_elem_offset_e_");
+  static const float options[] = {0.1, 1.0, 1.1};
+  return map_enum_number(options, 3, value, "ptrs_ul_cfg_s::transform_precoder_disabled_s_::res_elem_offset_e_");
 }
 std::string ptrs_ul_cfg_s::transform_precoder_disabled_s_::res_elem_offset_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"0.1", "1.0", "1.1"};
+  static const char* options[] = {"0.1", "1.0", "1.1"};
   return convert_enum_idx(options, 3, value, "ptrs_ul_cfg_s::transform_precoder_disabled_s_::res_elem_offset_e_");
 }
 
 std::string ptrs_ul_cfg_s::transform_precoder_disabled_s_::ptrs_pwr_opts::to_string() const
 {
-  static constexpr const char* options[] = {"p00", "p01", "p10", "p11"};
+  static const char* options[] = {"p00", "p01", "p10", "p11"};
   return convert_enum_idx(options, 4, value, "ptrs_ul_cfg_s::transform_precoder_disabled_s_::ptrs_pwr_e_");
 }
 float ptrs_ul_cfg_s::transform_precoder_disabled_s_::ptrs_pwr_opts::to_number() const
 {
-  static constexpr float options[] = {0.0, 0.1, 1.0, 1.1};
-  return convert_enum_idx(options, 4, value, "ptrs_ul_cfg_s::transform_precoder_disabled_s_::ptrs_pwr_e_");
+  static const float options[] = {0.0, 0.1, 1.0, 1.1};
+  return map_enum_number(options, 4, value, "ptrs_ul_cfg_s::transform_precoder_disabled_s_::ptrs_pwr_e_");
 }
 std::string ptrs_ul_cfg_s::transform_precoder_disabled_s_::ptrs_pwr_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"0.0", "0.1", "1.0", "1.1"};
+  static const char* options[] = {"0.0", "0.1", "1.0", "1.1"};
   return convert_enum_idx(options, 4, value, "ptrs_ul_cfg_s::transform_precoder_disabled_s_::ptrs_pwr_e_");
 }
 
 // PUCCH-MaxCodeRate ::= ENUMERATED
 std::string pucch_max_code_rate_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "zeroDot08", "zeroDot15", "zeroDot25", "zeroDot35", "zeroDot45", "zeroDot60", "zeroDot80"};
   return convert_enum_idx(options, 7, value, "pucch_max_code_rate_e");
 }
 float pucch_max_code_rate_opts::to_number() const
 {
-  static constexpr float options[] = {0.08, 0.15, 0.25, 0.35, 0.45, 0.6, 0.8};
-  return convert_enum_idx(options, 7, value, "pucch_max_code_rate_e");
+  static const float options[] = {0.08, 0.15, 0.25, 0.35, 0.45, 0.6, 0.8};
+  return map_enum_number(options, 7, value, "pucch_max_code_rate_e");
 }
 std::string pucch_max_code_rate_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"0.08", "0.15", "0.25", "0.35", "0.45", "0.60", "0.80"};
+  static const char* options[] = {"0.08", "0.15", "0.25", "0.35", "0.45", "0.60", "0.80"};
   return convert_enum_idx(options, 7, value, "pucch_max_code_rate_e");
 }
 
@@ -8721,7 +8734,7 @@ SRSASN_CODE pucch_pathloss_ref_rs_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_pathloss_ref_rs_s::unpack(bit_ref& bref)
+SRSASN_CODE pucch_pathloss_ref_rs_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(pucch_pathloss_ref_rs_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(ref_sig.unpack(bref));
@@ -8812,7 +8825,7 @@ SRSASN_CODE pucch_pathloss_ref_rs_s::ref_sig_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_pathloss_ref_rs_s::ref_sig_c_::unpack(bit_ref& bref)
+SRSASN_CODE pucch_pathloss_ref_rs_s::ref_sig_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -8833,7 +8846,7 @@ SRSASN_CODE pucch_pathloss_ref_rs_s::ref_sig_c_::unpack(bit_ref& bref)
 
 std::string pucch_pathloss_ref_rs_s::ref_sig_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ssb-Index", "csi-RS-Index"};
+  static const char* options[] = {"ssb-Index", "csi-RS-Index"};
   return convert_enum_idx(options, 2, value, "pucch_pathloss_ref_rs_s::ref_sig_c_::types");
 }
 
@@ -8846,7 +8859,7 @@ SRSASN_CODE pucch_format0_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_format0_s::unpack(bit_ref& bref)
+SRSASN_CODE pucch_format0_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(init_cyclic_shift, bref, (uint8_t)0u, (uint8_t)11u));
   HANDLE_CODE(unpack_integer(nrof_symbols, bref, (uint8_t)1u, (uint8_t)2u));
@@ -8873,7 +8886,7 @@ SRSASN_CODE pucch_format1_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_format1_s::unpack(bit_ref& bref)
+SRSASN_CODE pucch_format1_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(init_cyclic_shift, bref, (uint8_t)0u, (uint8_t)11u));
   HANDLE_CODE(unpack_integer(nrof_symbols, bref, (uint8_t)4u, (uint8_t)14u));
@@ -8901,7 +8914,7 @@ SRSASN_CODE pucch_format2_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_format2_s::unpack(bit_ref& bref)
+SRSASN_CODE pucch_format2_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(nrof_prbs, bref, (uint8_t)1u, (uint8_t)16u));
   HANDLE_CODE(unpack_integer(nrof_symbols, bref, (uint8_t)1u, (uint8_t)2u));
@@ -8927,7 +8940,7 @@ SRSASN_CODE pucch_format3_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_format3_s::unpack(bit_ref& bref)
+SRSASN_CODE pucch_format3_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(nrof_prbs, bref, (uint8_t)1u, (uint8_t)16u));
   HANDLE_CODE(unpack_integer(nrof_symbols, bref, (uint8_t)4u, (uint8_t)14u));
@@ -8954,7 +8967,7 @@ SRSASN_CODE pucch_format4_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_format4_s::unpack(bit_ref& bref)
+SRSASN_CODE pucch_format4_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(nrof_symbols, bref, (uint8_t)4u, (uint8_t)14u));
   HANDLE_CODE(occ_len.unpack(bref));
@@ -8975,24 +8988,24 @@ void pucch_format4_s::to_json(json_writer& j) const
 
 std::string pucch_format4_s::occ_len_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n4"};
+  static const char* options[] = {"n2", "n4"};
   return convert_enum_idx(options, 2, value, "pucch_format4_s::occ_len_e_");
 }
 uint8_t pucch_format4_s::occ_len_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4};
-  return convert_enum_idx(options, 2, value, "pucch_format4_s::occ_len_e_");
+  static const uint8_t options[] = {2, 4};
+  return map_enum_number(options, 2, value, "pucch_format4_s::occ_len_e_");
 }
 
 std::string pucch_format4_s::occ_idx_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0", "n1", "n2", "n3"};
+  static const char* options[] = {"n0", "n1", "n2", "n3"};
   return convert_enum_idx(options, 4, value, "pucch_format4_s::occ_idx_e_");
 }
 uint8_t pucch_format4_s::occ_idx_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1, 2, 3};
-  return convert_enum_idx(options, 4, value, "pucch_format4_s::occ_idx_e_");
+  static const uint8_t options[] = {0, 1, 2, 3};
+  return map_enum_number(options, 4, value, "pucch_format4_s::occ_idx_e_");
 }
 
 // PUSCH-PathlossReferenceRS ::= SEQUENCE
@@ -9003,7 +9016,7 @@ SRSASN_CODE pusch_pathloss_ref_rs_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pusch_pathloss_ref_rs_s::unpack(bit_ref& bref)
+SRSASN_CODE pusch_pathloss_ref_rs_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(pusch_pathloss_ref_rs_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(ref_sig.unpack(bref));
@@ -9094,7 +9107,7 @@ SRSASN_CODE pusch_pathloss_ref_rs_s::ref_sig_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pusch_pathloss_ref_rs_s::ref_sig_c_::unpack(bit_ref& bref)
+SRSASN_CODE pusch_pathloss_ref_rs_s::ref_sig_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -9115,7 +9128,7 @@ SRSASN_CODE pusch_pathloss_ref_rs_s::ref_sig_c_::unpack(bit_ref& bref)
 
 std::string pusch_pathloss_ref_rs_s::ref_sig_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ssb-Index", "csi-RS-Index"};
+  static const char* options[] = {"ssb-Index", "csi-RS-Index"};
   return convert_enum_idx(options, 2, value, "pusch_pathloss_ref_rs_s::ref_sig_c_::types");
 }
 
@@ -9129,7 +9142,7 @@ SRSASN_CODE sri_pusch_pwr_ctrl_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sri_pusch_pwr_ctrl_s::unpack(bit_ref& bref)
+SRSASN_CODE sri_pusch_pwr_ctrl_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(sri_pusch_pwr_ctrl_id, bref, (uint8_t)0u, (uint8_t)15u));
   HANDLE_CODE(unpack_integer(sri_pusch_pathloss_ref_rs_id, bref, (uint8_t)0u, (uint8_t)3u));
@@ -9150,13 +9163,13 @@ void sri_pusch_pwr_ctrl_s::to_json(json_writer& j) const
 
 std::string sri_pusch_pwr_ctrl_s::sri_pusch_closed_loop_idx_opts::to_string() const
 {
-  static constexpr const char* options[] = {"i0", "i1"};
+  static const char* options[] = {"i0", "i1"};
   return convert_enum_idx(options, 2, value, "sri_pusch_pwr_ctrl_s::sri_pusch_closed_loop_idx_e_");
 }
 uint8_t sri_pusch_pwr_ctrl_s::sri_pusch_closed_loop_idx_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1};
-  return convert_enum_idx(options, 2, value, "sri_pusch_pwr_ctrl_s::sri_pusch_closed_loop_idx_e_");
+  static const uint8_t options[] = {0, 1};
+  return map_enum_number(options, 2, value, "sri_pusch_pwr_ctrl_s::sri_pusch_closed_loop_idx_e_");
 }
 
 // SRS-PeriodicityAndOffset ::= CHOICE
@@ -9410,7 +9423,7 @@ SRSASN_CODE srs_periodicity_and_offset_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_periodicity_and_offset_c::unpack(bit_ref& bref)
+SRSASN_CODE srs_periodicity_and_offset_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -9475,29 +9488,29 @@ SRSASN_CODE srs_periodicity_and_offset_c::unpack(bit_ref& bref)
 
 std::string srs_periodicity_and_offset_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sl1",
-                                            "sl2",
-                                            "sl4",
-                                            "sl5",
-                                            "sl8",
-                                            "sl10",
-                                            "sl16",
-                                            "sl20",
-                                            "sl32",
-                                            "sl40",
-                                            "sl64",
-                                            "sl80",
-                                            "sl160",
-                                            "sl320",
-                                            "sl640",
-                                            "sl1280",
-                                            "sl2560"};
+  static const char* options[] = {"sl1",
+                                  "sl2",
+                                  "sl4",
+                                  "sl5",
+                                  "sl8",
+                                  "sl10",
+                                  "sl16",
+                                  "sl20",
+                                  "sl32",
+                                  "sl40",
+                                  "sl64",
+                                  "sl80",
+                                  "sl160",
+                                  "sl320",
+                                  "sl640",
+                                  "sl1280",
+                                  "sl2560"};
   return convert_enum_idx(options, 17, value, "srs_periodicity_and_offset_c::types");
 }
 uint16_t srs_periodicity_and_offset_c::types_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {1, 2, 4, 5, 8, 10, 16, 20, 32, 40, 64, 80, 160, 320, 640, 1280, 2560};
-  return convert_enum_idx(options, 17, value, "srs_periodicity_and_offset_c::types");
+  static const uint16_t options[] = {1, 2, 4, 5, 8, 10, 16, 20, 32, 40, 64, 80, 160, 320, 640, 1280, 2560};
+  return map_enum_number(options, 17, value, "srs_periodicity_and_offset_c::types");
 }
 
 // SRS-SpatialRelationInfo ::= SEQUENCE
@@ -9512,7 +9525,7 @@ SRSASN_CODE srs_spatial_relation_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_spatial_relation_info_s::unpack(bit_ref& bref)
+SRSASN_CODE srs_spatial_relation_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(serving_cell_id_present, 1));
 
@@ -9648,7 +9661,7 @@ SRSASN_CODE srs_spatial_relation_info_s::ref_sig_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_spatial_relation_info_s::ref_sig_c_::unpack(bit_ref& bref)
+SRSASN_CODE srs_spatial_relation_info_s::ref_sig_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -9673,7 +9686,7 @@ SRSASN_CODE srs_spatial_relation_info_s::ref_sig_c_::unpack(bit_ref& bref)
 
 std::string srs_spatial_relation_info_s::ref_sig_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ssb-Index", "csi-RS-Index", "srs"};
+  static const char* options[] = {"ssb-Index", "csi-RS-Index", "srs"};
   return convert_enum_idx(options, 3, value, "srs_spatial_relation_info_s::ref_sig_c_::types");
 }
 
@@ -9750,9 +9763,9 @@ void cg_uci_on_pusch_c::to_json(json_writer& j) const
   j.start_obj();
   switch (type_) {
     case types::dynamic_type:
-      j.start_array("dynamic_type");
-      for (uint32_t i1 = 0; i1 < c.get<dynamic_l_>().size(); ++i1) {
-        c.get<dynamic_l_>()[i1].to_json(j);
+      j.start_array("dynamic");
+      for (const auto& e1 : c.get<dynamic_l_>()) {
+        e1.to_json(j);
       }
       j.end_array();
       break;
@@ -9781,7 +9794,7 @@ SRSASN_CODE cg_uci_on_pusch_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cg_uci_on_pusch_c::unpack(bit_ref& bref)
+SRSASN_CODE cg_uci_on_pusch_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -9802,7 +9815,7 @@ SRSASN_CODE cg_uci_on_pusch_c::unpack(bit_ref& bref)
 
 std::string cg_uci_on_pusch_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"dynamic_type", "semiStatic"};
+  static const char* options[] = {"dynamic", "semiStatic"};
   return convert_enum_idx(options, 2, value, "cg_uci_on_pusch_c::types");
 }
 
@@ -9824,7 +9837,7 @@ SRSASN_CODE csi_rs_res_map_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_rs_res_map_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_rs_res_map_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(first_ofdm_symbol_in_time_domain2_present, 1));
@@ -9994,7 +10007,7 @@ SRSASN_CODE csi_rs_res_map_s::freq_domain_alloc_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_rs_res_map_s::freq_domain_alloc_c_::unpack(bit_ref& bref)
+SRSASN_CODE csi_rs_res_map_s::freq_domain_alloc_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -10021,29 +10034,29 @@ SRSASN_CODE csi_rs_res_map_s::freq_domain_alloc_c_::unpack(bit_ref& bref)
 
 std::string csi_rs_res_map_s::freq_domain_alloc_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"row1", "row2", "row4", "other"};
+  static const char* options[] = {"row1", "row2", "row4", "other"};
   return convert_enum_idx(options, 4, value, "csi_rs_res_map_s::freq_domain_alloc_c_::types");
 }
 uint8_t csi_rs_res_map_s::freq_domain_alloc_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4};
-  return convert_enum_idx(options, 3, value, "csi_rs_res_map_s::freq_domain_alloc_c_::types");
+  static const uint8_t options[] = {1, 2, 4};
+  return map_enum_number(options, 3, value, "csi_rs_res_map_s::freq_domain_alloc_c_::types");
 }
 
 std::string csi_rs_res_map_s::nrof_ports_opts::to_string() const
 {
-  static constexpr const char* options[] = {"p1", "p2", "p4", "p8", "p12", "p16", "p24", "p32"};
+  static const char* options[] = {"p1", "p2", "p4", "p8", "p12", "p16", "p24", "p32"};
   return convert_enum_idx(options, 8, value, "csi_rs_res_map_s::nrof_ports_e_");
 }
 uint8_t csi_rs_res_map_s::nrof_ports_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4, 8, 12, 16, 24, 32};
-  return convert_enum_idx(options, 8, value, "csi_rs_res_map_s::nrof_ports_e_");
+  static const uint8_t options[] = {1, 2, 4, 8, 12, 16, 24, 32};
+  return map_enum_number(options, 8, value, "csi_rs_res_map_s::nrof_ports_e_");
 }
 
 std::string csi_rs_res_map_s::cdm_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"noCDM", "fd-CDM2", "cdm4-FD2-TD2", "cdm8-FD2-TD4"};
+  static const char* options[] = {"noCDM", "fd-CDM2", "cdm4-FD2-TD2", "cdm8-FD2-TD4"};
   return convert_enum_idx(options, 4, value, "csi_rs_res_map_s::cdm_type_e_");
 }
 uint8_t csi_rs_res_map_s::cdm_type_opts::to_number() const
@@ -10102,7 +10115,7 @@ SRSASN_CODE csi_rs_res_map_s::density_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_rs_res_map_s::density_c_::unpack(bit_ref& bref)
+SRSASN_CODE csi_rs_res_map_s::density_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -10126,19 +10139,19 @@ SRSASN_CODE csi_rs_res_map_s::density_c_::unpack(bit_ref& bref)
 
 std::string csi_rs_res_map_s::density_c_::dot5_opts::to_string() const
 {
-  static constexpr const char* options[] = {"evenPRBs", "oddPRBs"};
+  static const char* options[] = {"evenPRBs", "oddPRBs"};
   return convert_enum_idx(options, 2, value, "csi_rs_res_map_s::density_c_::dot5_e_");
 }
 
 std::string csi_rs_res_map_s::density_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"dot5", "one", "three", "spare"};
+  static const char* options[] = {"dot5", "one", "three", "spare"};
   return convert_enum_idx(options, 4, value, "csi_rs_res_map_s::density_c_::types");
 }
 uint8_t csi_rs_res_map_s::density_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {5, 1, 3};
-  return convert_enum_idx(options, 3, value, "csi_rs_res_map_s::density_c_::types");
+  static const uint8_t options[] = {5, 1, 3};
+  return map_enum_number(options, 3, value, "csi_rs_res_map_s::density_c_::types");
 }
 
 // CSI-ResourcePeriodicityAndOffset ::= CHOICE
@@ -10349,7 +10362,7 @@ SRSASN_CODE csi_res_periodicity_and_offset_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_res_periodicity_and_offset_c::unpack(bit_ref& bref)
+SRSASN_CODE csi_res_periodicity_and_offset_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -10403,25 +10416,25 @@ SRSASN_CODE csi_res_periodicity_and_offset_c::unpack(bit_ref& bref)
 
 std::string csi_res_periodicity_and_offset_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"slots4",
-                                            "slots5",
-                                            "slots8",
-                                            "slots10",
-                                            "slots16",
-                                            "slots20",
-                                            "slots32",
-                                            "slots40",
-                                            "slots64",
-                                            "slots80",
-                                            "slots160",
-                                            "slots320",
-                                            "slots640"};
+  static const char* options[] = {"slots4",
+                                  "slots5",
+                                  "slots8",
+                                  "slots10",
+                                  "slots16",
+                                  "slots20",
+                                  "slots32",
+                                  "slots40",
+                                  "slots64",
+                                  "slots80",
+                                  "slots160",
+                                  "slots320",
+                                  "slots640"};
   return convert_enum_idx(options, 13, value, "csi_res_periodicity_and_offset_c::types");
 }
 uint16_t csi_res_periodicity_and_offset_c::types_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {4, 5, 8, 10, 16, 20, 32, 40, 64, 80, 160, 320, 640};
-  return convert_enum_idx(options, 13, value, "csi_res_periodicity_and_offset_c::types");
+  static const uint16_t options[] = {4, 5, 8, 10, 16, 20, 32, 40, 64, 80, 160, 320, 640};
+  return map_enum_number(options, 13, value, "csi_res_periodicity_and_offset_c::types");
 }
 
 // DMRS-UplinkConfig ::= SEQUENCE
@@ -10464,7 +10477,7 @@ SRSASN_CODE dmrs_ul_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dmrs_ul_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE dmrs_ul_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(dmrs_type_present, 1));
@@ -10549,13 +10562,13 @@ void dmrs_ul_cfg_s::to_json(json_writer& j) const
 
 std::string dmrs_ul_cfg_s::dmrs_add_position_opts::to_string() const
 {
-  static constexpr const char* options[] = {"pos0", "pos1", "pos3"};
+  static const char* options[] = {"pos0", "pos1", "pos3"};
   return convert_enum_idx(options, 3, value, "dmrs_ul_cfg_s::dmrs_add_position_e_");
 }
 uint8_t dmrs_ul_cfg_s::dmrs_add_position_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1, 3};
-  return convert_enum_idx(options, 3, value, "dmrs_ul_cfg_s::dmrs_add_position_e_");
+  static const uint8_t options[] = {0, 1, 3};
+  return map_enum_number(options, 3, value, "dmrs_ul_cfg_s::dmrs_add_position_e_");
 }
 
 // INT-ConfigurationPerServingCell ::= SEQUENCE
@@ -10566,7 +10579,7 @@ SRSASN_CODE int_cfg_per_serving_cell_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE int_cfg_per_serving_cell_s::unpack(bit_ref& bref)
+SRSASN_CODE int_cfg_per_serving_cell_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(serving_cell_id, bref, (uint8_t)0u, (uint8_t)31u));
   HANDLE_CODE(unpack_integer(position_in_dci, bref, (uint8_t)0u, (uint8_t)125u));
@@ -10682,7 +10695,7 @@ SRSASN_CODE prach_res_ded_bfr_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE prach_res_ded_bfr_c::unpack(bit_ref& bref)
+SRSASN_CODE prach_res_ded_bfr_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -10703,7 +10716,7 @@ SRSASN_CODE prach_res_ded_bfr_c::unpack(bit_ref& bref)
 
 std::string prach_res_ded_bfr_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ssb", "csi-RS"};
+  static const char* options[] = {"ssb", "csi-RS"};
   return convert_enum_idx(options, 2, value, "prach_res_ded_bfr_c::types");
 }
 
@@ -10731,7 +10744,7 @@ SRSASN_CODE ptrs_dl_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ptrs_dl_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE ptrs_dl_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(freq_density_present, 1));
@@ -10759,15 +10772,15 @@ void ptrs_dl_cfg_s::to_json(json_writer& j) const
   j.start_obj();
   if (freq_density_present) {
     j.start_array("frequencyDensity");
-    for (uint32_t i1 = 0; i1 < freq_density.size(); ++i1) {
-      j.write_int(freq_density[i1]);
+    for (const auto& e1 : freq_density) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (time_density_present) {
     j.start_array("timeDensity");
-    for (uint32_t i1 = 0; i1 < time_density.size(); ++i1) {
-      j.write_int(time_density[i1]);
+    for (const auto& e1 : time_density) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -10782,17 +10795,17 @@ void ptrs_dl_cfg_s::to_json(json_writer& j) const
 
 std::string ptrs_dl_cfg_s::res_elem_offset_opts::to_string() const
 {
-  static constexpr const char* options[] = {"offset01", "offset10", "offset11"};
+  static const char* options[] = {"offset01", "offset10", "offset11"};
   return convert_enum_idx(options, 3, value, "ptrs_dl_cfg_s::res_elem_offset_e_");
 }
 float ptrs_dl_cfg_s::res_elem_offset_opts::to_number() const
 {
-  static constexpr float options[] = {0.1, 1.0, 1.1};
-  return convert_enum_idx(options, 3, value, "ptrs_dl_cfg_s::res_elem_offset_e_");
+  static const float options[] = {0.1, 1.0, 1.1};
+  return map_enum_number(options, 3, value, "ptrs_dl_cfg_s::res_elem_offset_e_");
 }
 std::string ptrs_dl_cfg_s::res_elem_offset_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"0.1", "1.0", "1.1"};
+  static const char* options[] = {"0.1", "1.0", "1.1"};
   return convert_enum_idx(options, 3, value, "ptrs_dl_cfg_s::res_elem_offset_e_");
 }
 
@@ -10815,7 +10828,7 @@ SRSASN_CODE pucch_format_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_format_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE pucch_format_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(interslot_freq_hop_present, 1));
   HANDLE_CODE(bref.unpack(add_dmrs_present, 1));
@@ -10859,13 +10872,13 @@ void pucch_format_cfg_s::to_json(json_writer& j) const
 
 std::string pucch_format_cfg_s::nrof_slots_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n4", "n8"};
+  static const char* options[] = {"n2", "n4", "n8"};
   return convert_enum_idx(options, 3, value, "pucch_format_cfg_s::nrof_slots_e_");
 }
 uint8_t pucch_format_cfg_s::nrof_slots_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 8};
-  return convert_enum_idx(options, 3, value, "pucch_format_cfg_s::nrof_slots_e_");
+  static const uint8_t options[] = {2, 4, 8};
+  return map_enum_number(options, 3, value, "pucch_format_cfg_s::nrof_slots_e_");
 }
 
 // PUCCH-PowerControl ::= SEQUENCE
@@ -10905,7 +10918,7 @@ SRSASN_CODE pucch_pwr_ctrl_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_pwr_ctrl_s::unpack(bit_ref& bref)
+SRSASN_CODE pucch_pwr_ctrl_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(delta_f_pucch_f0_present, 1));
@@ -10961,15 +10974,15 @@ void pucch_pwr_ctrl_s::to_json(json_writer& j) const
   }
   if (p0_set_present) {
     j.start_array("p0-Set");
-    for (uint32_t i1 = 0; i1 < p0_set.size(); ++i1) {
-      p0_set[i1].to_json(j);
+    for (const auto& e1 : p0_set) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (pathloss_ref_rss_present) {
     j.start_array("pathlossReferenceRSs");
-    for (uint32_t i1 = 0; i1 < pathloss_ref_rss.size(); ++i1) {
-      pathloss_ref_rss[i1].to_json(j);
+    for (const auto& e1 : pathloss_ref_rss) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -10994,7 +11007,7 @@ SRSASN_CODE pucch_res_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_res_s::unpack(bit_ref& bref)
+SRSASN_CODE pucch_res_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(intra_slot_freq_hop_present, 1));
   HANDLE_CODE(bref.unpack(second_hop_prb_present, 1));
@@ -11181,7 +11194,7 @@ SRSASN_CODE pucch_res_s::format_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_res_s::format_c_::unpack(bit_ref& bref)
+SRSASN_CODE pucch_res_s::format_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -11211,13 +11224,13 @@ SRSASN_CODE pucch_res_s::format_c_::unpack(bit_ref& bref)
 
 std::string pucch_res_s::format_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"format0", "format1", "format2", "format3", "format4"};
+  static const char* options[] = {"format0", "format1", "format2", "format3", "format4"};
   return convert_enum_idx(options, 5, value, "pucch_res_s::format_c_::types");
 }
 uint8_t pucch_res_s::format_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1, 2, 3, 4};
-  return convert_enum_idx(options, 5, value, "pucch_res_s::format_c_::types");
+  static const uint8_t options[] = {0, 1, 2, 3, 4};
+  return map_enum_number(options, 5, value, "pucch_res_s::format_c_::types");
 }
 
 // PUCCH-ResourceSet ::= SEQUENCE
@@ -11233,7 +11246,7 @@ SRSASN_CODE pucch_res_set_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_res_set_s::unpack(bit_ref& bref)
+SRSASN_CODE pucch_res_set_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(max_payload_minus1_present, 1));
 
@@ -11250,8 +11263,8 @@ void pucch_res_set_s::to_json(json_writer& j) const
   j.start_obj();
   j.write_int("pucch-ResourceSetId", pucch_res_set_id);
   j.start_array("resourceList");
-  for (uint32_t i1 = 0; i1 < res_list.size(); ++i1) {
-    j.write_int(res_list[i1]);
+  for (const auto& e1 : res_list) {
+    j.write_int(e1);
   }
   j.end_array();
   if (max_payload_minus1_present) {
@@ -11276,7 +11289,7 @@ SRSASN_CODE pucch_spatial_relation_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_spatial_relation_info_s::unpack(bit_ref& bref)
+SRSASN_CODE pucch_spatial_relation_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(serving_cell_id_present, 1));
 
@@ -11420,7 +11433,7 @@ SRSASN_CODE pucch_spatial_relation_info_s::ref_sig_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_spatial_relation_info_s::ref_sig_c_::unpack(bit_ref& bref)
+SRSASN_CODE pucch_spatial_relation_info_s::ref_sig_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -11445,19 +11458,19 @@ SRSASN_CODE pucch_spatial_relation_info_s::ref_sig_c_::unpack(bit_ref& bref)
 
 std::string pucch_spatial_relation_info_s::ref_sig_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ssb-Index", "csi-RS-Index", "srs"};
+  static const char* options[] = {"ssb-Index", "csi-RS-Index", "srs"};
   return convert_enum_idx(options, 3, value, "pucch_spatial_relation_info_s::ref_sig_c_::types");
 }
 
 std::string pucch_spatial_relation_info_s::closed_loop_idx_opts::to_string() const
 {
-  static constexpr const char* options[] = {"i0", "i1"};
+  static const char* options[] = {"i0", "i1"};
   return convert_enum_idx(options, 2, value, "pucch_spatial_relation_info_s::closed_loop_idx_e_");
 }
 uint8_t pucch_spatial_relation_info_s::closed_loop_idx_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1};
-  return convert_enum_idx(options, 2, value, "pucch_spatial_relation_info_s::closed_loop_idx_e_");
+  static const uint8_t options[] = {0, 1};
+  return map_enum_number(options, 2, value, "pucch_spatial_relation_info_s::closed_loop_idx_e_");
 }
 
 // PUSCH-PowerControl ::= SEQUENCE
@@ -11498,7 +11511,7 @@ SRSASN_CODE pusch_pwr_ctrl_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pusch_pwr_ctrl_s::unpack(bit_ref& bref)
+SRSASN_CODE pusch_pwr_ctrl_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(tpc_accumulation_present, 1));
   HANDLE_CODE(bref.unpack(msg3_alpha_present, 1));
@@ -11549,22 +11562,22 @@ void pusch_pwr_ctrl_s::to_json(json_writer& j) const
   }
   if (p0_alpha_sets_present) {
     j.start_array("p0-AlphaSets");
-    for (uint32_t i1 = 0; i1 < p0_alpha_sets.size(); ++i1) {
-      p0_alpha_sets[i1].to_json(j);
+    for (const auto& e1 : p0_alpha_sets) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (pathloss_ref_rs_to_add_mod_list_present) {
     j.start_array("pathlossReferenceRSToAddModList");
-    for (uint32_t i1 = 0; i1 < pathloss_ref_rs_to_add_mod_list.size(); ++i1) {
-      pathloss_ref_rs_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : pathloss_ref_rs_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (pathloss_ref_rs_to_release_list_present) {
     j.start_array("pathlossReferenceRSToReleaseList");
-    for (uint32_t i1 = 0; i1 < pathloss_ref_rs_to_release_list.size(); ++i1) {
-      j.write_int(pathloss_ref_rs_to_release_list[i1]);
+    for (const auto& e1 : pathloss_ref_rs_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -11576,15 +11589,15 @@ void pusch_pwr_ctrl_s::to_json(json_writer& j) const
   }
   if (sri_pusch_map_to_add_mod_list_present) {
     j.start_array("sri-PUSCH-MappingToAddModList");
-    for (uint32_t i1 = 0; i1 < sri_pusch_map_to_add_mod_list.size(); ++i1) {
-      sri_pusch_map_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : sri_pusch_map_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (sri_pusch_map_to_release_list_present) {
     j.start_array("sri-PUSCH-MappingToReleaseList");
-    for (uint32_t i1 = 0; i1 < sri_pusch_map_to_release_list.size(); ++i1) {
-      j.write_int(sri_pusch_map_to_release_list[i1]);
+    for (const auto& e1 : sri_pusch_map_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -11609,7 +11622,7 @@ SRSASN_CODE qcl_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE qcl_info_s::unpack(bit_ref& bref)
+SRSASN_CODE qcl_info_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(cell_present, 1));
@@ -11715,7 +11728,7 @@ SRSASN_CODE qcl_info_s::ref_sig_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE qcl_info_s::ref_sig_c_::unpack(bit_ref& bref)
+SRSASN_CODE qcl_info_s::ref_sig_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -11736,13 +11749,13 @@ SRSASN_CODE qcl_info_s::ref_sig_c_::unpack(bit_ref& bref)
 
 std::string qcl_info_s::ref_sig_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"csi-rs", "ssb"};
+  static const char* options[] = {"csi-rs", "ssb"};
   return convert_enum_idx(options, 2, value, "qcl_info_s::ref_sig_c_::types");
 }
 
 std::string qcl_info_s::qcl_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"typeA", "typeB", "typeC", "typeD"};
+  static const char* options[] = {"typeA", "typeB", "typeC", "typeD"};
   return convert_enum_idx(options, 4, value, "qcl_info_s::qcl_type_e_");
 }
 
@@ -11759,7 +11772,7 @@ SRSASN_CODE ra_prioritization_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ra_prioritization_s::unpack(bit_ref& bref)
+SRSASN_CODE ra_prioritization_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(scaling_factor_bi_present, 1));
@@ -11783,24 +11796,24 @@ void ra_prioritization_s::to_json(json_writer& j) const
 
 std::string ra_prioritization_s::pwr_ramp_step_high_prio_opts::to_string() const
 {
-  static constexpr const char* options[] = {"dB0", "dB2", "dB4", "dB6"};
+  static const char* options[] = {"dB0", "dB2", "dB4", "dB6"};
   return convert_enum_idx(options, 4, value, "ra_prioritization_s::pwr_ramp_step_high_prio_e_");
 }
 uint8_t ra_prioritization_s::pwr_ramp_step_high_prio_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 2, 4, 6};
-  return convert_enum_idx(options, 4, value, "ra_prioritization_s::pwr_ramp_step_high_prio_e_");
+  static const uint8_t options[] = {0, 2, 4, 6};
+  return map_enum_number(options, 4, value, "ra_prioritization_s::pwr_ramp_step_high_prio_e_");
 }
 
 std::string ra_prioritization_s::scaling_factor_bi_opts::to_string() const
 {
-  static constexpr const char* options[] = {"zero", "dot25", "dot5", "dot75"};
+  static const char* options[] = {"zero", "dot25", "dot5", "dot75"};
   return convert_enum_idx(options, 4, value, "ra_prioritization_s::scaling_factor_bi_e_");
 }
 uint8_t ra_prioritization_s::scaling_factor_bi_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 25, 5, 75};
-  return convert_enum_idx(options, 4, value, "ra_prioritization_s::scaling_factor_bi_e_");
+  static const uint8_t options[] = {0, 25, 5, 75};
+  return map_enum_number(options, 4, value, "ra_prioritization_s::scaling_factor_bi_e_");
 }
 
 // SRS-Resource ::= SEQUENCE
@@ -11833,7 +11846,7 @@ SRSASN_CODE srs_res_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_res_s::unpack(bit_ref& bref)
+SRSASN_CODE srs_res_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(ptrs_port_idx_present, 1));
@@ -11899,24 +11912,24 @@ void srs_res_s::to_json(json_writer& j) const
 
 std::string srs_res_s::nrof_srs_ports_opts::to_string() const
 {
-  static constexpr const char* options[] = {"port1", "ports2", "ports4"};
+  static const char* options[] = {"port1", "ports2", "ports4"};
   return convert_enum_idx(options, 3, value, "srs_res_s::nrof_srs_ports_e_");
 }
 uint8_t srs_res_s::nrof_srs_ports_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4};
-  return convert_enum_idx(options, 3, value, "srs_res_s::nrof_srs_ports_e_");
+  static const uint8_t options[] = {1, 2, 4};
+  return map_enum_number(options, 3, value, "srs_res_s::nrof_srs_ports_e_");
 }
 
 std::string srs_res_s::ptrs_port_idx_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0", "n1"};
+  static const char* options[] = {"n0", "n1"};
   return convert_enum_idx(options, 2, value, "srs_res_s::ptrs_port_idx_e_");
 }
 uint8_t srs_res_s::ptrs_port_idx_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1};
-  return convert_enum_idx(options, 2, value, "srs_res_s::ptrs_port_idx_e_");
+  static const uint8_t options[] = {0, 1};
+  return map_enum_number(options, 2, value, "srs_res_s::ptrs_port_idx_e_");
 }
 
 void srs_res_s::tx_comb_c_::destroy_()
@@ -12027,7 +12040,7 @@ SRSASN_CODE srs_res_s::tx_comb_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_res_s::tx_comb_c_::unpack(bit_ref& bref)
+SRSASN_CODE srs_res_s::tx_comb_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -12050,40 +12063,40 @@ SRSASN_CODE srs_res_s::tx_comb_c_::unpack(bit_ref& bref)
 
 std::string srs_res_s::tx_comb_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n4"};
+  static const char* options[] = {"n2", "n4"};
   return convert_enum_idx(options, 2, value, "srs_res_s::tx_comb_c_::types");
 }
 uint8_t srs_res_s::tx_comb_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4};
-  return convert_enum_idx(options, 2, value, "srs_res_s::tx_comb_c_::types");
+  static const uint8_t options[] = {2, 4};
+  return map_enum_number(options, 2, value, "srs_res_s::tx_comb_c_::types");
 }
 
 std::string srs_res_s::res_map_s_::nrof_symbols_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n4"};
+  static const char* options[] = {"n1", "n2", "n4"};
   return convert_enum_idx(options, 3, value, "srs_res_s::res_map_s_::nrof_symbols_e_");
 }
 uint8_t srs_res_s::res_map_s_::nrof_symbols_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4};
-  return convert_enum_idx(options, 3, value, "srs_res_s::res_map_s_::nrof_symbols_e_");
+  static const uint8_t options[] = {1, 2, 4};
+  return map_enum_number(options, 3, value, "srs_res_s::res_map_s_::nrof_symbols_e_");
 }
 
 std::string srs_res_s::res_map_s_::repeat_factor_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n4"};
+  static const char* options[] = {"n1", "n2", "n4"};
   return convert_enum_idx(options, 3, value, "srs_res_s::res_map_s_::repeat_factor_e_");
 }
 uint8_t srs_res_s::res_map_s_::repeat_factor_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4};
-  return convert_enum_idx(options, 3, value, "srs_res_s::res_map_s_::repeat_factor_e_");
+  static const uint8_t options[] = {1, 2, 4};
+  return map_enum_number(options, 3, value, "srs_res_s::res_map_s_::repeat_factor_e_");
 }
 
 std::string srs_res_s::group_or_seq_hop_opts::to_string() const
 {
-  static constexpr const char* options[] = {"neither", "groupHopping", "sequenceHopping"};
+  static const char* options[] = {"neither", "groupHopping", "sequenceHopping"};
   return convert_enum_idx(options, 3, value, "srs_res_s::group_or_seq_hop_e_");
 }
 
@@ -12215,7 +12228,7 @@ SRSASN_CODE srs_res_s::res_type_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_res_s::res_type_c_::unpack(bit_ref& bref)
+SRSASN_CODE srs_res_s::res_type_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -12241,7 +12254,7 @@ SRSASN_CODE srs_res_s::res_type_c_::unpack(bit_ref& bref)
 
 std::string srs_res_s::res_type_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"aperiodic", "semi-persistent", "periodic"};
+  static const char* options[] = {"aperiodic", "semi-persistent", "periodic"};
   return convert_enum_idx(options, 3, value, "srs_res_s::res_type_c_::types");
 }
 
@@ -12276,7 +12289,7 @@ SRSASN_CODE srs_res_set_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_res_set_s::unpack(bit_ref& bref)
+SRSASN_CODE srs_res_set_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(srs_res_id_list_present, 1));
@@ -12312,8 +12325,8 @@ void srs_res_set_s::to_json(json_writer& j) const
   j.write_int("srs-ResourceSetId", srs_res_set_id);
   if (srs_res_id_list_present) {
     j.start_array("srs-ResourceIdList");
-    for (uint32_t i1 = 0; i1 < srs_res_id_list.size(); ++i1) {
-      j.write_int(srs_res_id_list[i1]);
+    for (const auto& e1 : srs_res_id_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -12471,7 +12484,7 @@ SRSASN_CODE srs_res_set_s::res_type_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_res_set_s::res_type_c_::unpack(bit_ref& bref)
+SRSASN_CODE srs_res_set_s::res_type_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -12531,7 +12544,7 @@ SRSASN_CODE srs_res_set_s::res_type_c_::aperiodic_s_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_res_set_s::res_type_c_::aperiodic_s_::unpack(bit_ref& bref)
+SRSASN_CODE srs_res_set_s::res_type_c_::aperiodic_s_::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(csi_rs_present, 1));
@@ -12576,8 +12589,8 @@ void srs_res_set_s::res_type_c_::aperiodic_s_::to_json(json_writer& j) const
   if (ext) {
     if (aperiodic_srs_res_trigger_list_v1530.is_present()) {
       j.start_array("aperiodicSRS-ResourceTriggerList-v1530");
-      for (uint32_t i1 = 0; i1 < aperiodic_srs_res_trigger_list_v1530->size(); ++i1) {
-        j.write_int(((*aperiodic_srs_res_trigger_list_v1530)[i1]));
+      for (const auto& e1 : *aperiodic_srs_res_trigger_list_v1530) {
+        j.write_int(e1);
       }
       j.end_array();
     }
@@ -12587,13 +12600,13 @@ void srs_res_set_s::res_type_c_::aperiodic_s_::to_json(json_writer& j) const
 
 std::string srs_res_set_s::res_type_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"aperiodic", "semi-persistent", "periodic"};
+  static const char* options[] = {"aperiodic", "semi-persistent", "periodic"};
   return convert_enum_idx(options, 3, value, "srs_res_set_s::res_type_c_::types");
 }
 
 std::string srs_res_set_s::usage_opts::to_string() const
 {
-  static constexpr const char* options[] = {"beamManagement", "codebook", "nonCodebook", "antennaSwitching"};
+  static const char* options[] = {"beamManagement", "codebook", "nonCodebook", "antennaSwitching"};
   return convert_enum_idx(options, 4, value, "srs_res_set_s::usage_e_");
 }
 
@@ -12672,7 +12685,7 @@ SRSASN_CODE srs_res_set_s::pathloss_ref_rs_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_res_set_s::pathloss_ref_rs_c_::unpack(bit_ref& bref)
+SRSASN_CODE srs_res_set_s::pathloss_ref_rs_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -12693,19 +12706,19 @@ SRSASN_CODE srs_res_set_s::pathloss_ref_rs_c_::unpack(bit_ref& bref)
 
 std::string srs_res_set_s::pathloss_ref_rs_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ssb-Index", "csi-RS-Index"};
+  static const char* options[] = {"ssb-Index", "csi-RS-Index"};
   return convert_enum_idx(options, 2, value, "srs_res_set_s::pathloss_ref_rs_c_::types");
 }
 
 std::string srs_res_set_s::srs_pwr_ctrl_adjustment_states_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sameAsFci2", "separateClosedLoop"};
+  static const char* options[] = {"sameAsFci2", "separateClosedLoop"};
   return convert_enum_idx(options, 2, value, "srs_res_set_s::srs_pwr_ctrl_adjustment_states_e_");
 }
 uint8_t srs_res_set_s::srs_pwr_ctrl_adjustment_states_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2};
-  return convert_enum_idx(options, 1, value, "srs_res_set_s::srs_pwr_ctrl_adjustment_states_e_");
+  static const uint8_t options[] = {2};
+  return map_enum_number(options, 1, value, "srs_res_set_s::srs_pwr_ctrl_adjustment_states_e_");
 }
 
 // SchedulingRequestResourceConfig ::= SEQUENCE
@@ -12725,7 +12738,7 @@ SRSASN_CODE sched_request_res_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sched_request_res_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE sched_request_res_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(periodicity_and_offset_present, 1));
   HANDLE_CODE(bref.unpack(res_present, 1));
@@ -12976,7 +12989,7 @@ SRSASN_CODE sched_request_res_cfg_s::periodicity_and_offset_c_::pack(bit_ref& br
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sched_request_res_cfg_s::periodicity_and_offset_c_::unpack(bit_ref& bref)
+SRSASN_CODE sched_request_res_cfg_s::periodicity_and_offset_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -13033,21 +13046,21 @@ SRSASN_CODE sched_request_res_cfg_s::periodicity_and_offset_c_::unpack(bit_ref& 
 
 std::string sched_request_res_cfg_s::periodicity_and_offset_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sym2",
-                                            "sym6or7",
-                                            "sl1",
-                                            "sl2",
-                                            "sl4",
-                                            "sl5",
-                                            "sl8",
-                                            "sl10",
-                                            "sl16",
-                                            "sl20",
-                                            "sl40",
-                                            "sl80",
-                                            "sl160",
-                                            "sl320",
-                                            "sl640"};
+  static const char* options[] = {"sym2",
+                                  "sym6or7",
+                                  "sl1",
+                                  "sl2",
+                                  "sl4",
+                                  "sl5",
+                                  "sl8",
+                                  "sl10",
+                                  "sl16",
+                                  "sl20",
+                                  "sl40",
+                                  "sl80",
+                                  "sl160",
+                                  "sl320",
+                                  "sl640"};
   return convert_enum_idx(options, 15, value, "sched_request_res_cfg_s::periodicity_and_offset_c_::types");
 }
 
@@ -13063,7 +13076,7 @@ SRSASN_CODE uci_on_pusch_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE uci_on_pusch_s::unpack(bit_ref& bref)
+SRSASN_CODE uci_on_pusch_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(beta_offsets_present, 1));
 
@@ -13158,9 +13171,9 @@ void uci_on_pusch_s::beta_offsets_c_::to_json(json_writer& j) const
   j.start_obj();
   switch (type_) {
     case types::dynamic_type:
-      j.start_array("dynamic_type");
-      for (uint32_t i1 = 0; i1 < c.get<dynamic_l_>().size(); ++i1) {
-        c.get<dynamic_l_>()[i1].to_json(j);
+      j.start_array("dynamic");
+      for (const auto& e1 : c.get<dynamic_l_>()) {
+        e1.to_json(j);
       }
       j.end_array();
       break;
@@ -13189,7 +13202,7 @@ SRSASN_CODE uci_on_pusch_s::beta_offsets_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE uci_on_pusch_s::beta_offsets_c_::unpack(bit_ref& bref)
+SRSASN_CODE uci_on_pusch_s::beta_offsets_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -13210,13 +13223,13 @@ SRSASN_CODE uci_on_pusch_s::beta_offsets_c_::unpack(bit_ref& bref)
 
 std::string uci_on_pusch_s::beta_offsets_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"dynamic_type", "semiStatic"};
+  static const char* options[] = {"dynamic", "semiStatic"};
   return convert_enum_idx(options, 2, value, "uci_on_pusch_s::beta_offsets_c_::types");
 }
 
 std::string uci_on_pusch_s::scaling_opts::to_string() const
 {
-  static constexpr const char* options[] = {"f0p5", "f0p65", "f0p8", "f1"};
+  static const char* options[] = {"f0p5", "f0p65", "f0p8", "f1"};
   return convert_enum_idx(options, 4, value, "uci_on_pusch_s::scaling_e_");
 }
 
@@ -13278,7 +13291,7 @@ SRSASN_CODE beam_fail_recovery_cfg_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE beam_fail_recovery_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE beam_fail_recovery_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(root_seq_idx_bfr_present, 1));
@@ -13349,8 +13362,8 @@ void beam_fail_recovery_cfg_s::to_json(json_writer& j) const
   }
   if (candidate_beam_rs_list_present) {
     j.start_array("candidateBeamRSList");
-    for (uint32_t i1 = 0; i1 < candidate_beam_rs_list.size(); ++i1) {
-      candidate_beam_rs_list[i1].to_json(j);
+    for (const auto& e1 : candidate_beam_rs_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -13380,30 +13393,29 @@ void beam_fail_recovery_cfg_s::to_json(json_writer& j) const
 
 std::string beam_fail_recovery_cfg_s::ssb_per_rach_occasion_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "oneEighth", "oneFourth", "oneHalf", "one", "two", "four", "eight", "sixteen"};
+  static const char* options[] = {"oneEighth", "oneFourth", "oneHalf", "one", "two", "four", "eight", "sixteen"};
   return convert_enum_idx(options, 8, value, "beam_fail_recovery_cfg_s::ssb_per_rach_occasion_e_");
 }
 float beam_fail_recovery_cfg_s::ssb_per_rach_occasion_opts::to_number() const
 {
-  static constexpr float options[] = {0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 6.0};
-  return convert_enum_idx(options, 8, value, "beam_fail_recovery_cfg_s::ssb_per_rach_occasion_e_");
+  static const float options[] = {0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 6.0};
+  return map_enum_number(options, 8, value, "beam_fail_recovery_cfg_s::ssb_per_rach_occasion_e_");
 }
 std::string beam_fail_recovery_cfg_s::ssb_per_rach_occasion_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"1/8", "1/4", "1/2", "1", "2", "4", "8", "6"};
+  static const char* options[] = {"1/8", "1/4", "1/2", "1", "2", "4", "8", "6"};
   return convert_enum_idx(options, 8, value, "beam_fail_recovery_cfg_s::ssb_per_rach_occasion_e_");
 }
 
 std::string beam_fail_recovery_cfg_s::beam_fail_recovery_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms10", "ms20", "ms40", "ms60", "ms80", "ms100", "ms150", "ms200"};
+  static const char* options[] = {"ms10", "ms20", "ms40", "ms60", "ms80", "ms100", "ms150", "ms200"};
   return convert_enum_idx(options, 8, value, "beam_fail_recovery_cfg_s::beam_fail_recovery_timer_e_");
 }
 uint8_t beam_fail_recovery_cfg_s::beam_fail_recovery_timer_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {10, 20, 40, 60, 80, 100, 150, 200};
-  return convert_enum_idx(options, 8, value, "beam_fail_recovery_cfg_s::beam_fail_recovery_timer_e_");
+  static const uint8_t options[] = {10, 20, 40, 60, 80, 100, 150, 200};
+  return map_enum_number(options, 8, value, "beam_fail_recovery_cfg_s::beam_fail_recovery_timer_e_");
 }
 
 // CSI-AssociatedReportConfigInfo ::= SEQUENCE
@@ -13424,7 +13436,7 @@ SRSASN_CODE csi_associated_report_cfg_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_associated_report_cfg_info_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_associated_report_cfg_info_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(csi_im_res_for_interference_present, 1));
@@ -13531,8 +13543,8 @@ void csi_associated_report_cfg_info_s::res_for_ch_c_::to_json(json_writer& j) co
       j.write_int("resourceSet", c.get<nzp_csi_rs_s_>().res_set);
       if (c.get<nzp_csi_rs_s_>().qcl_info_present) {
         j.start_array("qcl-info");
-        for (uint32_t i1 = 0; i1 < c.get<nzp_csi_rs_s_>().qcl_info.size(); ++i1) {
-          j.write_int(c.get<nzp_csi_rs_s_>().qcl_info[i1]);
+        for (const auto& e1 : c.get<nzp_csi_rs_s_>().qcl_info) {
+          j.write_int(e1);
         }
         j.end_array();
       }
@@ -13566,7 +13578,7 @@ SRSASN_CODE csi_associated_report_cfg_info_s::res_for_ch_c_::pack(bit_ref& bref)
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_associated_report_cfg_info_s::res_for_ch_c_::unpack(bit_ref& bref)
+SRSASN_CODE csi_associated_report_cfg_info_s::res_for_ch_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -13591,7 +13603,7 @@ SRSASN_CODE csi_associated_report_cfg_info_s::res_for_ch_c_::unpack(bit_ref& bre
 
 std::string csi_associated_report_cfg_info_s::res_for_ch_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"nzp-CSI-RS", "csi-SSB-ResourceSet"};
+  static const char* options[] = {"nzp-CSI-RS", "csi-SSB-ResourceSet"};
   return convert_enum_idx(options, 2, value, "csi_associated_report_cfg_info_s::res_for_ch_c_::types");
 }
 
@@ -13662,7 +13674,7 @@ SRSASN_CODE cfgured_grant_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cfgured_grant_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE cfgured_grant_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(freq_hop_present, 1));
@@ -13790,85 +13802,85 @@ void cfgured_grant_cfg_s::to_json(json_writer& j) const
 
 std::string cfgured_grant_cfg_s::freq_hop_opts::to_string() const
 {
-  static constexpr const char* options[] = {"intraSlot", "interSlot"};
+  static const char* options[] = {"intraSlot", "interSlot"};
   return convert_enum_idx(options, 2, value, "cfgured_grant_cfg_s::freq_hop_e_");
 }
 
 std::string cfgured_grant_cfg_s::mcs_table_opts::to_string() const
 {
-  static constexpr const char* options[] = {"qam256", "qam64LowSE"};
+  static const char* options[] = {"qam256", "qam64LowSE"};
   return convert_enum_idx(options, 2, value, "cfgured_grant_cfg_s::mcs_table_e_");
 }
 uint16_t cfgured_grant_cfg_s::mcs_table_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {256, 64};
-  return convert_enum_idx(options, 2, value, "cfgured_grant_cfg_s::mcs_table_e_");
+  static const uint16_t options[] = {256, 64};
+  return map_enum_number(options, 2, value, "cfgured_grant_cfg_s::mcs_table_e_");
 }
 
 std::string cfgured_grant_cfg_s::mcs_table_transform_precoder_opts::to_string() const
 {
-  static constexpr const char* options[] = {"qam256", "qam64LowSE"};
+  static const char* options[] = {"qam256", "qam64LowSE"};
   return convert_enum_idx(options, 2, value, "cfgured_grant_cfg_s::mcs_table_transform_precoder_e_");
 }
 uint16_t cfgured_grant_cfg_s::mcs_table_transform_precoder_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {256, 64};
-  return convert_enum_idx(options, 2, value, "cfgured_grant_cfg_s::mcs_table_transform_precoder_e_");
+  static const uint16_t options[] = {256, 64};
+  return map_enum_number(options, 2, value, "cfgured_grant_cfg_s::mcs_table_transform_precoder_e_");
 }
 
 std::string cfgured_grant_cfg_s::res_alloc_opts::to_string() const
 {
-  static constexpr const char* options[] = {"resourceAllocationType0", "resourceAllocationType1", "dynamicSwitch"};
+  static const char* options[] = {"resourceAllocationType0", "resourceAllocationType1", "dynamicSwitch"};
   return convert_enum_idx(options, 3, value, "cfgured_grant_cfg_s::res_alloc_e_");
 }
 uint8_t cfgured_grant_cfg_s::res_alloc_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1};
-  return convert_enum_idx(options, 2, value, "cfgured_grant_cfg_s::res_alloc_e_");
+  static const uint8_t options[] = {0, 1};
+  return map_enum_number(options, 2, value, "cfgured_grant_cfg_s::res_alloc_e_");
 }
 
 std::string cfgured_grant_cfg_s::pwr_ctrl_loop_to_use_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0", "n1"};
+  static const char* options[] = {"n0", "n1"};
   return convert_enum_idx(options, 2, value, "cfgured_grant_cfg_s::pwr_ctrl_loop_to_use_e_");
 }
 uint8_t cfgured_grant_cfg_s::pwr_ctrl_loop_to_use_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1};
-  return convert_enum_idx(options, 2, value, "cfgured_grant_cfg_s::pwr_ctrl_loop_to_use_e_");
+  static const uint8_t options[] = {0, 1};
+  return map_enum_number(options, 2, value, "cfgured_grant_cfg_s::pwr_ctrl_loop_to_use_e_");
 }
 
 std::string cfgured_grant_cfg_s::transform_precoder_opts::to_string() const
 {
-  static constexpr const char* options[] = {"enabled", "disabled"};
+  static const char* options[] = {"enabled", "disabled"};
   return convert_enum_idx(options, 2, value, "cfgured_grant_cfg_s::transform_precoder_e_");
 }
 
 std::string cfgured_grant_cfg_s::rep_k_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n4", "n8"};
+  static const char* options[] = {"n1", "n2", "n4", "n8"};
   return convert_enum_idx(options, 4, value, "cfgured_grant_cfg_s::rep_k_e_");
 }
 uint8_t cfgured_grant_cfg_s::rep_k_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4, 8};
-  return convert_enum_idx(options, 4, value, "cfgured_grant_cfg_s::rep_k_e_");
+  static const uint8_t options[] = {1, 2, 4, 8};
+  return map_enum_number(options, 4, value, "cfgured_grant_cfg_s::rep_k_e_");
 }
 
 std::string cfgured_grant_cfg_s::rep_k_rv_opts::to_string() const
 {
-  static constexpr const char* options[] = {"s1-0231", "s2-0303", "s3-0000"};
+  static const char* options[] = {"s1-0231", "s2-0303", "s3-0000"};
   return convert_enum_idx(options, 3, value, "cfgured_grant_cfg_s::rep_k_rv_e_");
 }
 uint8_t cfgured_grant_cfg_s::rep_k_rv_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3};
-  return convert_enum_idx(options, 3, value, "cfgured_grant_cfg_s::rep_k_rv_e_");
+  static const uint8_t options[] = {1, 2, 3};
+  return map_enum_number(options, 3, value, "cfgured_grant_cfg_s::rep_k_rv_e_");
 }
 
 std::string cfgured_grant_cfg_s::periodicity_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "sym2",      "sym7",      "sym1x14",   "sym2x14",    "sym4x14",    "sym5x14",    "sym8x14",    "sym10x14",
       "sym16x14",  "sym20x14",  "sym32x14",  "sym40x14",   "sym64x14",   "sym80x14",   "sym128x14",  "sym160x14",
       "sym256x14", "sym320x14", "sym512x14", "sym640x14",  "sym1024x14", "sym1280x14", "sym2560x14", "sym5120x14",
@@ -13904,7 +13916,7 @@ SRSASN_CODE dmrs_dl_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dmrs_dl_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE dmrs_dl_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(dmrs_type_present, 1));
@@ -13956,13 +13968,13 @@ void dmrs_dl_cfg_s::to_json(json_writer& j) const
 
 std::string dmrs_dl_cfg_s::dmrs_add_position_opts::to_string() const
 {
-  static constexpr const char* options[] = {"pos0", "pos1", "pos3"};
+  static const char* options[] = {"pos0", "pos1", "pos3"};
   return convert_enum_idx(options, 3, value, "dmrs_dl_cfg_s::dmrs_add_position_e_");
 }
 uint8_t dmrs_dl_cfg_s::dmrs_add_position_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1, 3};
-  return convert_enum_idx(options, 3, value, "dmrs_dl_cfg_s::dmrs_add_position_e_");
+  static const uint8_t options[] = {0, 1, 3};
+  return map_enum_number(options, 3, value, "dmrs_dl_cfg_s::dmrs_add_position_e_");
 }
 
 // DownlinkPreemption ::= SEQUENCE
@@ -13976,7 +13988,7 @@ SRSASN_CODE dl_preemption_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dl_preemption_s::unpack(bit_ref& bref)
+SRSASN_CODE dl_preemption_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(int_rnti, bref, (uint32_t)0u, (uint32_t)65535u));
@@ -13993,8 +14005,8 @@ void dl_preemption_s::to_json(json_writer& j) const
   j.write_str("timeFrequencySet", time_freq_set.to_string());
   j.write_int("dci-PayloadSize", dci_payload_size);
   j.start_array("int-ConfigurationPerServingCell");
-  for (uint32_t i1 = 0; i1 < int_cfg_per_serving_cell.size(); ++i1) {
-    int_cfg_per_serving_cell[i1].to_json(j);
+  for (const auto& e1 : int_cfg_per_serving_cell) {
+    e1.to_json(j);
   }
   j.end_array();
   j.end_obj();
@@ -14002,13 +14014,13 @@ void dl_preemption_s::to_json(json_writer& j) const
 
 std::string dl_preemption_s::time_freq_set_opts::to_string() const
 {
-  static constexpr const char* options[] = {"set0", "set1"};
+  static const char* options[] = {"set0", "set1"};
   return convert_enum_idx(options, 2, value, "dl_preemption_s::time_freq_set_e_");
 }
 uint8_t dl_preemption_s::time_freq_set_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1};
-  return convert_enum_idx(options, 2, value, "dl_preemption_s::time_freq_set_e_");
+  static const uint8_t options[] = {0, 1};
+  return map_enum_number(options, 2, value, "dl_preemption_s::time_freq_set_e_");
 }
 
 // EUTRA-MBSFN-SubframeConfig ::= SEQUENCE
@@ -14026,7 +14038,7 @@ SRSASN_CODE eutra_mbsfn_sf_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE eutra_mbsfn_sf_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE eutra_mbsfn_sf_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(sf_alloc2_present, 1));
@@ -14056,13 +14068,13 @@ void eutra_mbsfn_sf_cfg_s::to_json(json_writer& j) const
 
 std::string eutra_mbsfn_sf_cfg_s::radioframe_alloc_period_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n4", "n8", "n16", "n32"};
+  static const char* options[] = {"n1", "n2", "n4", "n8", "n16", "n32"};
   return convert_enum_idx(options, 6, value, "eutra_mbsfn_sf_cfg_s::radioframe_alloc_period_e_");
 }
 uint8_t eutra_mbsfn_sf_cfg_s::radioframe_alloc_period_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4, 8, 16, 32};
-  return convert_enum_idx(options, 6, value, "eutra_mbsfn_sf_cfg_s::radioframe_alloc_period_e_");
+  static const uint8_t options[] = {1, 2, 4, 8, 16, 32};
+  return map_enum_number(options, 6, value, "eutra_mbsfn_sf_cfg_s::radioframe_alloc_period_e_");
 }
 
 void eutra_mbsfn_sf_cfg_s::sf_alloc1_c_::destroy_()
@@ -14164,7 +14176,7 @@ SRSASN_CODE eutra_mbsfn_sf_cfg_s::sf_alloc1_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE eutra_mbsfn_sf_cfg_s::sf_alloc1_c_::unpack(bit_ref& bref)
+SRSASN_CODE eutra_mbsfn_sf_cfg_s::sf_alloc1_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -14185,13 +14197,13 @@ SRSASN_CODE eutra_mbsfn_sf_cfg_s::sf_alloc1_c_::unpack(bit_ref& bref)
 
 std::string eutra_mbsfn_sf_cfg_s::sf_alloc1_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"oneFrame", "fourFrames"};
+  static const char* options[] = {"oneFrame", "fourFrames"};
   return convert_enum_idx(options, 2, value, "eutra_mbsfn_sf_cfg_s::sf_alloc1_c_::types");
 }
 uint8_t eutra_mbsfn_sf_cfg_s::sf_alloc1_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 4};
-  return convert_enum_idx(options, 2, value, "eutra_mbsfn_sf_cfg_s::sf_alloc1_c_::types");
+  static const uint8_t options[] = {1, 4};
+  return map_enum_number(options, 2, value, "eutra_mbsfn_sf_cfg_s::sf_alloc1_c_::types");
 }
 
 void eutra_mbsfn_sf_cfg_s::sf_alloc2_c_::destroy_()
@@ -14293,7 +14305,7 @@ SRSASN_CODE eutra_mbsfn_sf_cfg_s::sf_alloc2_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE eutra_mbsfn_sf_cfg_s::sf_alloc2_c_::unpack(bit_ref& bref)
+SRSASN_CODE eutra_mbsfn_sf_cfg_s::sf_alloc2_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -14314,13 +14326,13 @@ SRSASN_CODE eutra_mbsfn_sf_cfg_s::sf_alloc2_c_::unpack(bit_ref& bref)
 
 std::string eutra_mbsfn_sf_cfg_s::sf_alloc2_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"oneFrame", "fourFrames"};
+  static const char* options[] = {"oneFrame", "fourFrames"};
   return convert_enum_idx(options, 2, value, "eutra_mbsfn_sf_cfg_s::sf_alloc2_c_::types");
 }
 uint8_t eutra_mbsfn_sf_cfg_s::sf_alloc2_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 4};
-  return convert_enum_idx(options, 2, value, "eutra_mbsfn_sf_cfg_s::sf_alloc2_c_::types");
+  static const uint8_t options[] = {1, 4};
+  return map_enum_number(options, 2, value, "eutra_mbsfn_sf_cfg_s::sf_alloc2_c_::types");
 }
 
 // PUCCH-Config ::= SEQUENCE
@@ -14391,7 +14403,7 @@ SRSASN_CODE pucch_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE pucch_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(res_set_to_add_mod_list_present, 1));
@@ -14463,29 +14475,29 @@ void pucch_cfg_s::to_json(json_writer& j) const
   j.start_obj();
   if (res_set_to_add_mod_list_present) {
     j.start_array("resourceSetToAddModList");
-    for (uint32_t i1 = 0; i1 < res_set_to_add_mod_list.size(); ++i1) {
-      res_set_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : res_set_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (res_set_to_release_list_present) {
     j.start_array("resourceSetToReleaseList");
-    for (uint32_t i1 = 0; i1 < res_set_to_release_list.size(); ++i1) {
-      j.write_int(res_set_to_release_list[i1]);
+    for (const auto& e1 : res_set_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (res_to_add_mod_list_present) {
     j.start_array("resourceToAddModList");
-    for (uint32_t i1 = 0; i1 < res_to_add_mod_list.size(); ++i1) {
-      res_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : res_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (res_to_release_list_present) {
     j.start_array("resourceToReleaseList");
-    for (uint32_t i1 = 0; i1 < res_to_release_list.size(); ++i1) {
-      j.write_int(res_to_release_list[i1]);
+    for (const auto& e1 : res_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -14507,43 +14519,43 @@ void pucch_cfg_s::to_json(json_writer& j) const
   }
   if (sched_request_res_to_add_mod_list_present) {
     j.start_array("schedulingRequestResourceToAddModList");
-    for (uint32_t i1 = 0; i1 < sched_request_res_to_add_mod_list.size(); ++i1) {
-      sched_request_res_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : sched_request_res_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (sched_request_res_to_release_list_present) {
     j.start_array("schedulingRequestResourceToReleaseList");
-    for (uint32_t i1 = 0; i1 < sched_request_res_to_release_list.size(); ++i1) {
-      j.write_int(sched_request_res_to_release_list[i1]);
+    for (const auto& e1 : sched_request_res_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (multi_csi_pucch_res_list_present) {
     j.start_array("multi-CSI-PUCCH-ResourceList");
-    for (uint32_t i1 = 0; i1 < multi_csi_pucch_res_list.size(); ++i1) {
-      j.write_int(multi_csi_pucch_res_list[i1]);
+    for (const auto& e1 : multi_csi_pucch_res_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (dl_data_to_ul_ack_present) {
     j.start_array("dl-DataToUL-ACK");
-    for (uint32_t i1 = 0; i1 < dl_data_to_ul_ack.size(); ++i1) {
-      j.write_int(dl_data_to_ul_ack[i1]);
+    for (const auto& e1 : dl_data_to_ul_ack) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (spatial_relation_info_to_add_mod_list_present) {
     j.start_array("spatialRelationInfoToAddModList");
-    for (uint32_t i1 = 0; i1 < spatial_relation_info_to_add_mod_list.size(); ++i1) {
-      spatial_relation_info_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : spatial_relation_info_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (spatial_relation_info_to_release_list_present) {
     j.start_array("spatialRelationInfoToReleaseList");
-    for (uint32_t i1 = 0; i1 < spatial_relation_info_to_release_list.size(); ++i1) {
-      j.write_int(spatial_relation_info_to_release_list[i1]);
+    for (const auto& e1 : spatial_relation_info_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -14570,7 +14582,7 @@ SRSASN_CODE pucch_tpc_cmd_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_tpc_cmd_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE pucch_tpc_cmd_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(tpc_idx_pcell_present, 1));
@@ -14668,7 +14680,7 @@ SRSASN_CODE pusch_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pusch_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE pusch_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(data_scrambling_id_pusch_present, 1));
@@ -14764,8 +14776,8 @@ void pusch_cfg_s::to_json(json_writer& j) const
   }
   if (freq_hop_offset_lists_present) {
     j.start_array("frequencyHoppingOffsetLists");
-    for (uint32_t i1 = 0; i1 < freq_hop_offset_lists.size(); ++i1) {
-      j.write_int(freq_hop_offset_lists[i1]);
+    for (const auto& e1 : freq_hop_offset_lists) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -14807,69 +14819,69 @@ void pusch_cfg_s::to_json(json_writer& j) const
 
 std::string pusch_cfg_s::tx_cfg_opts::to_string() const
 {
-  static constexpr const char* options[] = {"codebook", "nonCodebook"};
+  static const char* options[] = {"codebook", "nonCodebook"};
   return convert_enum_idx(options, 2, value, "pusch_cfg_s::tx_cfg_e_");
 }
 
 std::string pusch_cfg_s::freq_hop_opts::to_string() const
 {
-  static constexpr const char* options[] = {"intraSlot", "interSlot"};
+  static const char* options[] = {"intraSlot", "interSlot"};
   return convert_enum_idx(options, 2, value, "pusch_cfg_s::freq_hop_e_");
 }
 
 std::string pusch_cfg_s::res_alloc_opts::to_string() const
 {
-  static constexpr const char* options[] = {"resourceAllocationType0", "resourceAllocationType1", "dynamicSwitch"};
+  static const char* options[] = {"resourceAllocationType0", "resourceAllocationType1", "dynamicSwitch"};
   return convert_enum_idx(options, 3, value, "pusch_cfg_s::res_alloc_e_");
 }
 uint8_t pusch_cfg_s::res_alloc_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1};
-  return convert_enum_idx(options, 2, value, "pusch_cfg_s::res_alloc_e_");
+  static const uint8_t options[] = {0, 1};
+  return map_enum_number(options, 2, value, "pusch_cfg_s::res_alloc_e_");
 }
 
 std::string pusch_cfg_s::pusch_aggregation_factor_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n4", "n8"};
+  static const char* options[] = {"n2", "n4", "n8"};
   return convert_enum_idx(options, 3, value, "pusch_cfg_s::pusch_aggregation_factor_e_");
 }
 uint8_t pusch_cfg_s::pusch_aggregation_factor_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 8};
-  return convert_enum_idx(options, 3, value, "pusch_cfg_s::pusch_aggregation_factor_e_");
+  static const uint8_t options[] = {2, 4, 8};
+  return map_enum_number(options, 3, value, "pusch_cfg_s::pusch_aggregation_factor_e_");
 }
 
 std::string pusch_cfg_s::mcs_table_opts::to_string() const
 {
-  static constexpr const char* options[] = {"qam256", "qam64LowSE"};
+  static const char* options[] = {"qam256", "qam64LowSE"};
   return convert_enum_idx(options, 2, value, "pusch_cfg_s::mcs_table_e_");
 }
 uint16_t pusch_cfg_s::mcs_table_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {256, 64};
-  return convert_enum_idx(options, 2, value, "pusch_cfg_s::mcs_table_e_");
+  static const uint16_t options[] = {256, 64};
+  return map_enum_number(options, 2, value, "pusch_cfg_s::mcs_table_e_");
 }
 
 std::string pusch_cfg_s::mcs_table_transform_precoder_opts::to_string() const
 {
-  static constexpr const char* options[] = {"qam256", "qam64LowSE"};
+  static const char* options[] = {"qam256", "qam64LowSE"};
   return convert_enum_idx(options, 2, value, "pusch_cfg_s::mcs_table_transform_precoder_e_");
 }
 uint16_t pusch_cfg_s::mcs_table_transform_precoder_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {256, 64};
-  return convert_enum_idx(options, 2, value, "pusch_cfg_s::mcs_table_transform_precoder_e_");
+  static const uint16_t options[] = {256, 64};
+  return map_enum_number(options, 2, value, "pusch_cfg_s::mcs_table_transform_precoder_e_");
 }
 
 std::string pusch_cfg_s::transform_precoder_opts::to_string() const
 {
-  static constexpr const char* options[] = {"enabled", "disabled"};
+  static const char* options[] = {"enabled", "disabled"};
   return convert_enum_idx(options, 2, value, "pusch_cfg_s::transform_precoder_e_");
 }
 
 std::string pusch_cfg_s::codebook_subset_opts::to_string() const
 {
-  static constexpr const char* options[] = {"fullyAndPartialAndNonCoherent", "partialAndNonCoherent", "nonCoherent"};
+  static const char* options[] = {"fullyAndPartialAndNonCoherent", "partialAndNonCoherent", "nonCoherent"};
   return convert_enum_idx(options, 3, value, "pusch_cfg_s::codebook_subset_e_");
 }
 
@@ -14893,7 +14905,7 @@ SRSASN_CODE pusch_tpc_cmd_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pusch_tpc_cmd_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE pusch_tpc_cmd_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(tpc_idx_present, 1));
@@ -14937,7 +14949,7 @@ SRSASN_CODE radio_link_monitoring_rs_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE radio_link_monitoring_rs_s::unpack(bit_ref& bref)
+SRSASN_CODE radio_link_monitoring_rs_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(radio_link_monitoring_rs_id, bref, (uint8_t)0u, (uint8_t)9u));
@@ -14958,7 +14970,7 @@ void radio_link_monitoring_rs_s::to_json(json_writer& j) const
 
 std::string radio_link_monitoring_rs_s::purpose_opts::to_string() const
 {
-  static constexpr const char* options[] = {"beamFailure", "rlf", "both"};
+  static const char* options[] = {"beamFailure", "rlf", "both"};
   return convert_enum_idx(options, 3, value, "radio_link_monitoring_rs_s::purpose_e_");
 }
 
@@ -15038,7 +15050,7 @@ SRSASN_CODE radio_link_monitoring_rs_s::detection_res_c_::pack(bit_ref& bref) co
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE radio_link_monitoring_rs_s::detection_res_c_::unpack(bit_ref& bref)
+SRSASN_CODE radio_link_monitoring_rs_s::detection_res_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -15059,7 +15071,7 @@ SRSASN_CODE radio_link_monitoring_rs_s::detection_res_c_::unpack(bit_ref& bref)
 
 std::string radio_link_monitoring_rs_s::detection_res_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ssb-Index", "csi-RS-Index"};
+  static const char* options[] = {"ssb-Index", "csi-RS-Index"};
   return convert_enum_idx(options, 2, value, "radio_link_monitoring_rs_s::detection_res_c_::types");
 }
 
@@ -15078,7 +15090,7 @@ SRSASN_CODE rate_match_pattern_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rate_match_pattern_s::unpack(bit_ref& bref)
+SRSASN_CODE rate_match_pattern_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(subcarrier_spacing_present, 1));
@@ -15215,7 +15227,7 @@ SRSASN_CODE rate_match_pattern_s::pattern_type_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rate_match_pattern_s::pattern_type_c_::unpack(bit_ref& bref)
+SRSASN_CODE rate_match_pattern_s::pattern_type_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -15341,7 +15353,7 @@ SRSASN_CODE rate_match_pattern_s::pattern_type_c_::bitmaps_s_::symbols_in_res_bl
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rate_match_pattern_s::pattern_type_c_::bitmaps_s_::symbols_in_res_block_c_::unpack(bit_ref& bref)
+SRSASN_CODE rate_match_pattern_s::pattern_type_c_::bitmaps_s_::symbols_in_res_block_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -15362,14 +15374,14 @@ SRSASN_CODE rate_match_pattern_s::pattern_type_c_::bitmaps_s_::symbols_in_res_bl
 
 std::string rate_match_pattern_s::pattern_type_c_::bitmaps_s_::symbols_in_res_block_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"oneSlot", "twoSlots"};
+  static const char* options[] = {"oneSlot", "twoSlots"};
   return convert_enum_idx(
       options, 2, value, "rate_match_pattern_s::pattern_type_c_::bitmaps_s_::symbols_in_res_block_c_::types");
 }
 uint8_t rate_match_pattern_s::pattern_type_c_::bitmaps_s_::symbols_in_res_block_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(
       options, 2, value, "rate_match_pattern_s::pattern_type_c_::bitmaps_s_::symbols_in_res_block_c_::types");
 }
 
@@ -15564,7 +15576,7 @@ SRSASN_CODE rate_match_pattern_s::pattern_type_c_::bitmaps_s_::periodicity_and_p
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rate_match_pattern_s::pattern_type_c_::bitmaps_s_::periodicity_and_pattern_c_::unpack(bit_ref& bref)
+SRSASN_CODE rate_match_pattern_s::pattern_type_c_::bitmaps_s_::periodicity_and_pattern_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -15600,26 +15612,26 @@ SRSASN_CODE rate_match_pattern_s::pattern_type_c_::bitmaps_s_::periodicity_and_p
 
 std::string rate_match_pattern_s::pattern_type_c_::bitmaps_s_::periodicity_and_pattern_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n4", "n5", "n8", "n10", "n20", "n40"};
+  static const char* options[] = {"n2", "n4", "n5", "n8", "n10", "n20", "n40"};
   return convert_enum_idx(
       options, 7, value, "rate_match_pattern_s::pattern_type_c_::bitmaps_s_::periodicity_and_pattern_c_::types");
 }
 uint8_t rate_match_pattern_s::pattern_type_c_::bitmaps_s_::periodicity_and_pattern_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 5, 8, 10, 20, 40};
-  return convert_enum_idx(
+  static const uint8_t options[] = {2, 4, 5, 8, 10, 20, 40};
+  return map_enum_number(
       options, 7, value, "rate_match_pattern_s::pattern_type_c_::bitmaps_s_::periodicity_and_pattern_c_::types");
 }
 
 std::string rate_match_pattern_s::pattern_type_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"bitmaps", "controlResourceSet"};
+  static const char* options[] = {"bitmaps", "controlResourceSet"};
   return convert_enum_idx(options, 2, value, "rate_match_pattern_s::pattern_type_c_::types");
 }
 
 std::string rate_match_pattern_s::dummy_opts::to_string() const
 {
-  static constexpr const char* options[] = {"dynamic", "semiStatic"};
+  static const char* options[] = {"dynamic", "semiStatic"};
   return convert_enum_idx(options, 2, value, "rate_match_pattern_s::dummy_e_");
 }
 
@@ -15698,7 +15710,7 @@ SRSASN_CODE rate_match_pattern_group_item_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rate_match_pattern_group_item_c_::unpack(bit_ref& bref)
+SRSASN_CODE rate_match_pattern_group_item_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -15719,7 +15731,7 @@ SRSASN_CODE rate_match_pattern_group_item_c_::unpack(bit_ref& bref)
 
 std::string rate_match_pattern_group_item_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"cellLevel", "bwpLevel"};
+  static const char* options[] = {"cellLevel", "bwpLevel"};
   return convert_enum_idx(options, 2, value, "rate_match_pattern_group_item_c_::types");
 }
 
@@ -15738,7 +15750,7 @@ SRSASN_CODE srs_cc_set_idx_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_cc_set_idx_s::unpack(bit_ref& bref)
+SRSASN_CODE srs_cc_set_idx_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(cc_set_idx_present, 1));
   HANDLE_CODE(bref.unpack(cc_idx_in_one_cc_set_present, 1));
@@ -15789,7 +15801,7 @@ SRSASN_CODE srs_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE srs_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(srs_res_set_to_release_list_present, 1));
@@ -15818,29 +15830,29 @@ void srs_cfg_s::to_json(json_writer& j) const
   j.start_obj();
   if (srs_res_set_to_release_list_present) {
     j.start_array("srs-ResourceSetToReleaseList");
-    for (uint32_t i1 = 0; i1 < srs_res_set_to_release_list.size(); ++i1) {
-      j.write_int(srs_res_set_to_release_list[i1]);
+    for (const auto& e1 : srs_res_set_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (srs_res_set_to_add_mod_list_present) {
     j.start_array("srs-ResourceSetToAddModList");
-    for (uint32_t i1 = 0; i1 < srs_res_set_to_add_mod_list.size(); ++i1) {
-      srs_res_set_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : srs_res_set_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (srs_res_to_release_list_present) {
     j.start_array("srs-ResourceToReleaseList");
-    for (uint32_t i1 = 0; i1 < srs_res_to_release_list.size(); ++i1) {
-      j.write_int(srs_res_to_release_list[i1]);
+    for (const auto& e1 : srs_res_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (srs_res_to_add_mod_list_present) {
     j.start_array("srs-ResourceToAddModList");
-    for (uint32_t i1 = 0; i1 < srs_res_to_add_mod_list.size(); ++i1) {
-      srs_res_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : srs_res_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -15880,7 +15892,7 @@ SRSASN_CODE srs_tpc_cmd_cfg_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_tpc_cmd_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE srs_tpc_cmd_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(start_bit_of_format2_minus3_present, 1));
@@ -15933,7 +15945,7 @@ SRSASN_CODE slot_format_combination_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE slot_format_combination_s::unpack(bit_ref& bref)
+SRSASN_CODE slot_format_combination_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(slot_format_combination_id, bref, (uint16_t)0u, (uint16_t)511u));
   HANDLE_CODE(unpack_dyn_seq_of(slot_formats, bref, 1, 256, integer_packer<uint16_t>(0, 255)));
@@ -15945,8 +15957,8 @@ void slot_format_combination_s::to_json(json_writer& j) const
   j.start_obj();
   j.write_int("slotFormatCombinationId", slot_format_combination_id);
   j.start_array("slotFormats");
-  for (uint32_t i1 = 0; i1 < slot_formats.size(); ++i1) {
-    j.write_int(slot_formats[i1]);
+  for (const auto& e1 : slot_formats) {
+    j.write_int(e1);
   }
   j.end_array();
   j.end_obj();
@@ -15966,7 +15978,7 @@ SRSASN_CODE tci_state_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE tci_state_s::unpack(bit_ref& bref)
+SRSASN_CODE tci_state_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(qcl_type2_present, 1));
@@ -16006,7 +16018,7 @@ SRSASN_CODE zp_csi_rs_res_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE zp_csi_rs_res_s::unpack(bit_ref& bref)
+SRSASN_CODE zp_csi_rs_res_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(periodicity_and_offset_present, 1));
@@ -16041,7 +16053,7 @@ SRSASN_CODE zp_csi_rs_res_set_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE zp_csi_rs_res_set_s::unpack(bit_ref& bref)
+SRSASN_CODE zp_csi_rs_res_set_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(zp_csi_rs_res_set_id, bref, (uint8_t)0u, (uint8_t)15u));
@@ -16054,8 +16066,8 @@ void zp_csi_rs_res_set_s::to_json(json_writer& j) const
   j.start_obj();
   j.write_int("zp-CSI-RS-ResourceSetId", zp_csi_rs_res_set_id);
   j.start_array("zp-CSI-RS-ResourceIdList");
-  for (uint32_t i1 = 0; i1 < zp_csi_rs_res_id_list.size(); ++i1) {
-    j.write_int(zp_csi_rs_res_id_list[i1]);
+  for (const auto& e1 : zp_csi_rs_res_id_list) {
+    j.write_int(e1);
   }
   j.end_array();
   j.end_obj();
@@ -16089,7 +16101,7 @@ SRSASN_CODE bwp_ul_ded_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE bwp_ul_ded_s::unpack(bit_ref& bref)
+SRSASN_CODE bwp_ul_ded_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(pucch_cfg_present, 1));
@@ -16152,7 +16164,7 @@ SRSASN_CODE cfra_csirs_res_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cfra_csirs_res_s::unpack(bit_ref& bref)
+SRSASN_CODE cfra_csirs_res_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(csi_rs, bref, (uint8_t)0u, (uint8_t)95u));
@@ -16166,8 +16178,8 @@ void cfra_csirs_res_s::to_json(json_writer& j) const
   j.start_obj();
   j.write_int("csi-RS", csi_rs);
   j.start_array("ra-OccasionList");
-  for (uint32_t i1 = 0; i1 < ra_occasion_list.size(); ++i1) {
-    j.write_int(ra_occasion_list[i1]);
+  for (const auto& e1 : ra_occasion_list) {
+    j.write_int(e1);
   }
   j.end_array();
   j.write_int("ra-PreambleIndex", ra_preamb_idx);
@@ -16183,7 +16195,7 @@ SRSASN_CODE cfra_ssb_res_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cfra_ssb_res_s::unpack(bit_ref& bref)
+SRSASN_CODE cfra_ssb_res_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(ssb, bref, (uint8_t)0u, (uint8_t)63u));
@@ -16207,7 +16219,7 @@ SRSASN_CODE csi_aperiodic_trigger_state_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_aperiodic_trigger_state_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_aperiodic_trigger_state_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_dyn_seq_of(associated_report_cfg_info_list, bref, 1, 16));
@@ -16218,8 +16230,8 @@ void csi_aperiodic_trigger_state_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("associatedReportConfigInfoList");
-  for (uint32_t i1 = 0; i1 < associated_report_cfg_info_list.size(); ++i1) {
-    associated_report_cfg_info_list[i1].to_json(j);
+  for (const auto& e1 : associated_report_cfg_info_list) {
+    e1.to_json(j);
   }
   j.end_array();
   j.end_obj();
@@ -16398,7 +16410,7 @@ SRSASN_CODE csi_report_periodicity_and_offset_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_report_periodicity_and_offset_c::unpack(bit_ref& bref)
+SRSASN_CODE csi_report_periodicity_and_offset_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -16443,14 +16455,14 @@ SRSASN_CODE csi_report_periodicity_and_offset_c::unpack(bit_ref& bref)
 
 std::string csi_report_periodicity_and_offset_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "slots4", "slots5", "slots8", "slots10", "slots16", "slots20", "slots40", "slots80", "slots160", "slots320"};
   return convert_enum_idx(options, 10, value, "csi_report_periodicity_and_offset_c::types");
 }
 uint16_t csi_report_periodicity_and_offset_c::types_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {4, 5, 8, 10, 16, 20, 40, 80, 160, 320};
-  return convert_enum_idx(options, 10, value, "csi_report_periodicity_and_offset_c::types");
+  static const uint16_t options[] = {4, 5, 8, 10, 16, 20, 40, 80, 160, 320};
+  return map_enum_number(options, 10, value, "csi_report_periodicity_and_offset_c::types");
 }
 
 // CSI-SemiPersistentOnPUSCH-TriggerState ::= SEQUENCE
@@ -16461,7 +16473,7 @@ SRSASN_CODE csi_semi_persistent_on_pusch_trigger_state_s::pack(bit_ref& bref) co
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_semi_persistent_on_pusch_trigger_state_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_semi_persistent_on_pusch_trigger_state_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(associated_report_cfg_info, bref, (uint8_t)0u, (uint8_t)47u));
@@ -16482,7 +16494,7 @@ SRSASN_CODE codebook_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE codebook_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE codebook_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(codebook_type.unpack(bref));
 
@@ -16611,7 +16623,7 @@ SRSASN_CODE codebook_cfg_s::codebook_type_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE codebook_cfg_s::codebook_type_c_::unpack(bit_ref& bref)
+SRSASN_CODE codebook_cfg_s::codebook_type_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -16747,7 +16759,7 @@ SRSASN_CODE codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::pack(bit_re
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::unpack(bit_ref& bref)
+SRSASN_CODE codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -16893,7 +16905,7 @@ SRSASN_CODE codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::type_i_sing
   return SRSASN_SUCCESS;
 }
 SRSASN_CODE codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::type_i_single_panel_s_::nr_of_ant_ports_c_::unpack(
-    bit_ref& bref)
+    cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -17235,7 +17247,7 @@ SRSASN_CODE codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::type_i_sing
   return SRSASN_SUCCESS;
 }
 SRSASN_CODE codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::type_i_single_panel_s_::nr_of_ant_ports_c_::
-    more_than_two_s_::n1_n2_c_::unpack(bit_ref& bref)
+    more_than_two_s_::n1_n2_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -17292,19 +17304,19 @@ SRSASN_CODE codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::type_i_sing
 std::string codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::type_i_single_panel_s_::nr_of_ant_ports_c_::
     more_than_two_s_::n1_n2_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"two-one-TypeI-SinglePanel-Restriction",
-                                            "two-two-TypeI-SinglePanel-Restriction",
-                                            "four-one-TypeI-SinglePanel-Restriction",
-                                            "three-two-TypeI-SinglePanel-Restriction",
-                                            "six-one-TypeI-SinglePanel-Restriction",
-                                            "four-two-TypeI-SinglePanel-Restriction",
-                                            "eight-one-TypeI-SinglePanel-Restriction",
-                                            "four-three-TypeI-SinglePanel-Restriction",
-                                            "six-two-TypeI-SinglePanel-Restriction",
-                                            "twelve-one-TypeI-SinglePanel-Restriction",
-                                            "four-four-TypeI-SinglePanel-Restriction",
-                                            "eight-two-TypeI-SinglePanel-Restriction",
-                                            "sixteen-one-TypeI-SinglePanel-Restriction"};
+  static const char* options[] = {"two-one-TypeI-SinglePanel-Restriction",
+                                  "two-two-TypeI-SinglePanel-Restriction",
+                                  "four-one-TypeI-SinglePanel-Restriction",
+                                  "three-two-TypeI-SinglePanel-Restriction",
+                                  "six-one-TypeI-SinglePanel-Restriction",
+                                  "four-two-TypeI-SinglePanel-Restriction",
+                                  "eight-one-TypeI-SinglePanel-Restriction",
+                                  "four-three-TypeI-SinglePanel-Restriction",
+                                  "six-two-TypeI-SinglePanel-Restriction",
+                                  "twelve-one-TypeI-SinglePanel-Restriction",
+                                  "four-four-TypeI-SinglePanel-Restriction",
+                                  "eight-two-TypeI-SinglePanel-Restriction",
+                                  "sixteen-one-TypeI-SinglePanel-Restriction"};
   return convert_enum_idx(options,
                           13,
                           value,
@@ -17315,7 +17327,7 @@ std::string codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::type_i_sing
 std::string codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::type_i_single_panel_s_::nr_of_ant_ports_c_::
     types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"two", "moreThanTwo"};
+  static const char* options[] = {"two", "moreThanTwo"};
   return convert_enum_idx(
       options,
       2,
@@ -17325,8 +17337,8 @@ std::string codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::type_i_sing
 uint8_t codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::type_i_single_panel_s_::nr_of_ant_ports_c_::
     types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2};
-  return convert_enum_idx(
+  static const uint8_t options[] = {2};
+  return map_enum_number(
       options,
       1,
       value,
@@ -17550,7 +17562,7 @@ codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::type_i_multi_panel_s_::
   return SRSASN_SUCCESS;
 }
 SRSASN_CODE
-codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::type_i_multi_panel_s_::ng_n1_n2_c_::unpack(bit_ref& bref)
+codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::type_i_multi_panel_s_::ng_n1_n2_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -17592,14 +17604,14 @@ std::string
 codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::type_i_multi_panel_s_::ng_n1_n2_c_::types_opts::to_string()
     const
 {
-  static constexpr const char* options[] = {"two-two-one-TypeI-MultiPanel-Restriction",
-                                            "two-four-one-TypeI-MultiPanel-Restriction",
-                                            "four-two-one-TypeI-MultiPanel-Restriction",
-                                            "two-two-two-TypeI-MultiPanel-Restriction",
-                                            "two-eight-one-TypeI-MultiPanel-Restriction",
-                                            "four-four-one-TypeI-MultiPanel-Restriction",
-                                            "two-four-two-TypeI-MultiPanel-Restriction",
-                                            "four-two-two-TypeI-MultiPanel-Restriction"};
+  static const char* options[] = {"two-two-one-TypeI-MultiPanel-Restriction",
+                                  "two-four-one-TypeI-MultiPanel-Restriction",
+                                  "four-two-one-TypeI-MultiPanel-Restriction",
+                                  "two-two-two-TypeI-MultiPanel-Restriction",
+                                  "two-eight-one-TypeI-MultiPanel-Restriction",
+                                  "four-four-one-TypeI-MultiPanel-Restriction",
+                                  "two-four-two-TypeI-MultiPanel-Restriction",
+                                  "four-two-two-TypeI-MultiPanel-Restriction"};
   return convert_enum_idx(
       options,
       8,
@@ -17609,7 +17621,7 @@ codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::type_i_multi_panel_s_::
 
 std::string codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"typeI-SinglePanel", "typeI-MultiPanel"};
+  static const char* options[] = {"typeI-SinglePanel", "typeI-MultiPanel"};
   return convert_enum_idx(options, 2, value, "codebook_cfg_s::codebook_type_c_::type1_s_::sub_type_c_::types");
 }
 
@@ -17730,7 +17742,7 @@ SRSASN_CODE codebook_cfg_s::codebook_type_c_::type2_s_::sub_type_c_::pack(bit_re
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE codebook_cfg_s::codebook_type_c_::type2_s_::sub_type_c_::unpack(bit_ref& bref)
+SRSASN_CODE codebook_cfg_s::codebook_type_c_::type2_s_::sub_type_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -18071,7 +18083,7 @@ codebook_cfg_s::codebook_type_c_::type2_s_::sub_type_c_::type_ii_s_::n1_n2_codeb
 }
 SRSASN_CODE
 codebook_cfg_s::codebook_type_c_::type2_s_::sub_type_c_::type_ii_s_::n1_n2_codebook_subset_restrict_c_::unpack(
-    bit_ref& bref)
+    cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -18128,19 +18140,19 @@ codebook_cfg_s::codebook_type_c_::type2_s_::sub_type_c_::type_ii_s_::n1_n2_codeb
 std::string codebook_cfg_s::codebook_type_c_::type2_s_::sub_type_c_::type_ii_s_::n1_n2_codebook_subset_restrict_c_::
     types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"two-one",
-                                            "two-two",
-                                            "four-one",
-                                            "three-two",
-                                            "six-one",
-                                            "four-two",
-                                            "eight-one",
-                                            "four-three",
-                                            "six-two",
-                                            "twelve-one",
-                                            "four-four",
-                                            "eight-two",
-                                            "sixteen-one"};
+  static const char* options[] = {"two-one",
+                                  "two-two",
+                                  "four-one",
+                                  "three-two",
+                                  "six-one",
+                                  "four-two",
+                                  "eight-one",
+                                  "four-three",
+                                  "six-two",
+                                  "twelve-one",
+                                  "four-four",
+                                  "eight-two",
+                                  "sixteen-one"};
   return convert_enum_idx(
       options,
       13,
@@ -18152,7 +18164,7 @@ std::string
 codebook_cfg_s::codebook_type_c_::type2_s_::sub_type_c_::type_ii_port_sel_s_::port_sel_sampling_size_opts::to_string()
     const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n3", "n4"};
+  static const char* options[] = {"n1", "n2", "n3", "n4"};
   return convert_enum_idx(
       options,
       4,
@@ -18163,8 +18175,8 @@ uint8_t
 codebook_cfg_s::codebook_type_c_::type2_s_::sub_type_c_::type_ii_port_sel_s_::port_sel_sampling_size_opts::to_number()
     const
 {
-  static constexpr uint8_t options[] = {1, 2, 3, 4};
-  return convert_enum_idx(
+  static const uint8_t options[] = {1, 2, 3, 4};
+  return map_enum_number(
       options,
       4,
       value,
@@ -18173,41 +18185,41 @@ codebook_cfg_s::codebook_type_c_::type2_s_::sub_type_c_::type_ii_port_sel_s_::po
 
 std::string codebook_cfg_s::codebook_type_c_::type2_s_::sub_type_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"typeII", "typeII-PortSelection"};
+  static const char* options[] = {"typeII", "typeII-PortSelection"};
   return convert_enum_idx(options, 2, value, "codebook_cfg_s::codebook_type_c_::type2_s_::sub_type_c_::types");
 }
 
 std::string codebook_cfg_s::codebook_type_c_::type2_s_::phase_alphabet_size_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n4", "n8"};
+  static const char* options[] = {"n4", "n8"};
   return convert_enum_idx(options, 2, value, "codebook_cfg_s::codebook_type_c_::type2_s_::phase_alphabet_size_e_");
 }
 uint8_t codebook_cfg_s::codebook_type_c_::type2_s_::phase_alphabet_size_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 8};
-  return convert_enum_idx(options, 2, value, "codebook_cfg_s::codebook_type_c_::type2_s_::phase_alphabet_size_e_");
+  static const uint8_t options[] = {4, 8};
+  return map_enum_number(options, 2, value, "codebook_cfg_s::codebook_type_c_::type2_s_::phase_alphabet_size_e_");
 }
 
 std::string codebook_cfg_s::codebook_type_c_::type2_s_::nof_beams_opts::to_string() const
 {
-  static constexpr const char* options[] = {"two", "three", "four"};
+  static const char* options[] = {"two", "three", "four"};
   return convert_enum_idx(options, 3, value, "codebook_cfg_s::codebook_type_c_::type2_s_::nof_beams_e_");
 }
 uint8_t codebook_cfg_s::codebook_type_c_::type2_s_::nof_beams_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 3, 4};
-  return convert_enum_idx(options, 3, value, "codebook_cfg_s::codebook_type_c_::type2_s_::nof_beams_e_");
+  static const uint8_t options[] = {2, 3, 4};
+  return map_enum_number(options, 3, value, "codebook_cfg_s::codebook_type_c_::type2_s_::nof_beams_e_");
 }
 
 std::string codebook_cfg_s::codebook_type_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"type1", "type2"};
+  static const char* options[] = {"type1", "type2"};
   return convert_enum_idx(options, 2, value, "codebook_cfg_s::codebook_type_c_::types");
 }
 uint8_t codebook_cfg_s::codebook_type_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options, 2, value, "codebook_cfg_s::codebook_type_c_::types");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options, 2, value, "codebook_cfg_s::codebook_type_c_::types");
 }
 
 // FrequencyInfoDL ::= SEQUENCE
@@ -18225,7 +18237,7 @@ SRSASN_CODE freq_info_dl_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE freq_info_dl_s::unpack(bit_ref& bref)
+SRSASN_CODE freq_info_dl_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(absolute_freq_ssb_present, 1));
@@ -18246,14 +18258,14 @@ void freq_info_dl_s::to_json(json_writer& j) const
     j.write_int("absoluteFrequencySSB", absolute_freq_ssb);
   }
   j.start_array("frequencyBandList");
-  for (uint32_t i1 = 0; i1 < freq_band_list.size(); ++i1) {
-    j.write_int(freq_band_list[i1]);
+  for (const auto& e1 : freq_band_list) {
+    j.write_int(e1);
   }
   j.end_array();
   j.write_int("absoluteFrequencyPointA", absolute_freq_point_a);
   j.start_array("scs-SpecificCarrierList");
-  for (uint32_t i1 = 0; i1 < scs_specific_carrier_list.size(); ++i1) {
-    scs_specific_carrier_list[i1].to_json(j);
+  for (const auto& e1 : scs_specific_carrier_list) {
+    e1.to_json(j);
   }
   j.end_array();
   j.end_obj();
@@ -18285,7 +18297,7 @@ SRSASN_CODE freq_info_ul_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE freq_info_ul_s::unpack(bit_ref& bref)
+SRSASN_CODE freq_info_ul_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(freq_band_list_present, 1));
@@ -18315,8 +18327,8 @@ void freq_info_ul_s::to_json(json_writer& j) const
   j.start_obj();
   if (freq_band_list_present) {
     j.start_array("frequencyBandList");
-    for (uint32_t i1 = 0; i1 < freq_band_list.size(); ++i1) {
-      j.write_int(freq_band_list[i1]);
+    for (const auto& e1 : freq_band_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -18324,8 +18336,8 @@ void freq_info_ul_s::to_json(json_writer& j) const
     j.write_int("absoluteFrequencyPointA", absolute_freq_point_a);
   }
   j.start_array("scs-SpecificCarrierList");
-  for (uint32_t i1 = 0; i1 < scs_specific_carrier_list.size(); ++i1) {
-    scs_specific_carrier_list[i1].to_json(j);
+  for (const auto& e1 : scs_specific_carrier_list) {
+    e1.to_json(j);
   }
   j.end_array();
   if (add_spec_emission_present) {
@@ -18380,7 +18392,7 @@ SRSASN_CODE pdcch_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pdcch_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE pdcch_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(ctrl_res_set_to_add_mod_list_present, 1));
@@ -18424,29 +18436,29 @@ void pdcch_cfg_s::to_json(json_writer& j) const
   j.start_obj();
   if (ctrl_res_set_to_add_mod_list_present) {
     j.start_array("controlResourceSetToAddModList");
-    for (uint32_t i1 = 0; i1 < ctrl_res_set_to_add_mod_list.size(); ++i1) {
-      ctrl_res_set_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : ctrl_res_set_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (ctrl_res_set_to_release_list_present) {
     j.start_array("controlResourceSetToReleaseList");
-    for (uint32_t i1 = 0; i1 < ctrl_res_set_to_release_list.size(); ++i1) {
-      j.write_int(ctrl_res_set_to_release_list[i1]);
+    for (const auto& e1 : ctrl_res_set_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (search_spaces_to_add_mod_list_present) {
     j.start_array("searchSpacesToAddModList");
-    for (uint32_t i1 = 0; i1 < search_spaces_to_add_mod_list.size(); ++i1) {
-      search_spaces_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : search_spaces_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (search_spaces_to_release_list_present) {
     j.start_array("searchSpacesToReleaseList");
-    for (uint32_t i1 = 0; i1 < search_spaces_to_release_list.size(); ++i1) {
-      j.write_int(search_spaces_to_release_list[i1]);
+    for (const auto& e1 : search_spaces_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -18565,7 +18577,7 @@ SRSASN_CODE pdsch_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pdsch_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE pdsch_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(data_scrambling_id_pdsch_present, 1));
@@ -18676,15 +18688,15 @@ void pdsch_cfg_s::to_json(json_writer& j) const
   }
   if (tci_states_to_add_mod_list_present) {
     j.start_array("tci-StatesToAddModList");
-    for (uint32_t i1 = 0; i1 < tci_states_to_add_mod_list.size(); ++i1) {
-      tci_states_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : tci_states_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (tci_states_to_release_list_present) {
     j.start_array("tci-StatesToReleaseList");
-    for (uint32_t i1 = 0; i1 < tci_states_to_release_list.size(); ++i1) {
-      j.write_int(tci_states_to_release_list[i1]);
+    for (const auto& e1 : tci_states_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -18701,29 +18713,29 @@ void pdsch_cfg_s::to_json(json_writer& j) const
   }
   if (rate_match_pattern_to_add_mod_list_present) {
     j.start_array("rateMatchPatternToAddModList");
-    for (uint32_t i1 = 0; i1 < rate_match_pattern_to_add_mod_list.size(); ++i1) {
-      rate_match_pattern_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : rate_match_pattern_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (rate_match_pattern_to_release_list_present) {
     j.start_array("rateMatchPatternToReleaseList");
-    for (uint32_t i1 = 0; i1 < rate_match_pattern_to_release_list.size(); ++i1) {
-      j.write_int(rate_match_pattern_to_release_list[i1]);
+    for (const auto& e1 : rate_match_pattern_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (rate_match_pattern_group1_present) {
     j.start_array("rateMatchPatternGroup1");
-    for (uint32_t i1 = 0; i1 < rate_match_pattern_group1.size(); ++i1) {
-      rate_match_pattern_group1[i1].to_json(j);
+    for (const auto& e1 : rate_match_pattern_group1) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (rate_match_pattern_group2_present) {
     j.start_array("rateMatchPatternGroup2");
-    for (uint32_t i1 = 0; i1 < rate_match_pattern_group2.size(); ++i1) {
-      rate_match_pattern_group2[i1].to_json(j);
+    for (const auto& e1 : rate_match_pattern_group2) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -18738,43 +18750,43 @@ void pdsch_cfg_s::to_json(json_writer& j) const
   prb_bundling_type.to_json(j);
   if (zp_csi_rs_res_to_add_mod_list_present) {
     j.start_array("zp-CSI-RS-ResourceToAddModList");
-    for (uint32_t i1 = 0; i1 < zp_csi_rs_res_to_add_mod_list.size(); ++i1) {
-      zp_csi_rs_res_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : zp_csi_rs_res_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (zp_csi_rs_res_to_release_list_present) {
     j.start_array("zp-CSI-RS-ResourceToReleaseList");
-    for (uint32_t i1 = 0; i1 < zp_csi_rs_res_to_release_list.size(); ++i1) {
-      j.write_int(zp_csi_rs_res_to_release_list[i1]);
+    for (const auto& e1 : zp_csi_rs_res_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (aperiodic_zp_csi_rs_res_sets_to_add_mod_list_present) {
     j.start_array("aperiodic-ZP-CSI-RS-ResourceSetsToAddModList");
-    for (uint32_t i1 = 0; i1 < aperiodic_zp_csi_rs_res_sets_to_add_mod_list.size(); ++i1) {
-      aperiodic_zp_csi_rs_res_sets_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : aperiodic_zp_csi_rs_res_sets_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (aperiodic_zp_csi_rs_res_sets_to_release_list_present) {
     j.start_array("aperiodic-ZP-CSI-RS-ResourceSetsToReleaseList");
-    for (uint32_t i1 = 0; i1 < aperiodic_zp_csi_rs_res_sets_to_release_list.size(); ++i1) {
-      j.write_int(aperiodic_zp_csi_rs_res_sets_to_release_list[i1]);
+    for (const auto& e1 : aperiodic_zp_csi_rs_res_sets_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (sp_zp_csi_rs_res_sets_to_add_mod_list_present) {
     j.start_array("sp-ZP-CSI-RS-ResourceSetsToAddModList");
-    for (uint32_t i1 = 0; i1 < sp_zp_csi_rs_res_sets_to_add_mod_list.size(); ++i1) {
-      sp_zp_csi_rs_res_sets_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : sp_zp_csi_rs_res_sets_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (sp_zp_csi_rs_res_sets_to_release_list_present) {
     j.start_array("sp-ZP-CSI-RS-ResourceSetsToReleaseList");
-    for (uint32_t i1 = 0; i1 < sp_zp_csi_rs_res_sets_to_release_list.size(); ++i1) {
-      j.write_int(sp_zp_csi_rs_res_sets_to_release_list[i1]);
+    for (const auto& e1 : sp_zp_csi_rs_res_sets_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -18787,68 +18799,68 @@ void pdsch_cfg_s::to_json(json_writer& j) const
 
 std::string pdsch_cfg_s::vrb_to_prb_interleaver_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n4"};
+  static const char* options[] = {"n2", "n4"};
   return convert_enum_idx(options, 2, value, "pdsch_cfg_s::vrb_to_prb_interleaver_e_");
 }
 uint8_t pdsch_cfg_s::vrb_to_prb_interleaver_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4};
-  return convert_enum_idx(options, 2, value, "pdsch_cfg_s::vrb_to_prb_interleaver_e_");
+  static const uint8_t options[] = {2, 4};
+  return map_enum_number(options, 2, value, "pdsch_cfg_s::vrb_to_prb_interleaver_e_");
 }
 
 std::string pdsch_cfg_s::res_alloc_opts::to_string() const
 {
-  static constexpr const char* options[] = {"resourceAllocationType0", "resourceAllocationType1", "dynamicSwitch"};
+  static const char* options[] = {"resourceAllocationType0", "resourceAllocationType1", "dynamicSwitch"};
   return convert_enum_idx(options, 3, value, "pdsch_cfg_s::res_alloc_e_");
 }
 uint8_t pdsch_cfg_s::res_alloc_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1};
-  return convert_enum_idx(options, 2, value, "pdsch_cfg_s::res_alloc_e_");
+  static const uint8_t options[] = {0, 1};
+  return map_enum_number(options, 2, value, "pdsch_cfg_s::res_alloc_e_");
 }
 
 std::string pdsch_cfg_s::pdsch_aggregation_factor_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n4", "n8"};
+  static const char* options[] = {"n2", "n4", "n8"};
   return convert_enum_idx(options, 3, value, "pdsch_cfg_s::pdsch_aggregation_factor_e_");
 }
 uint8_t pdsch_cfg_s::pdsch_aggregation_factor_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 8};
-  return convert_enum_idx(options, 3, value, "pdsch_cfg_s::pdsch_aggregation_factor_e_");
+  static const uint8_t options[] = {2, 4, 8};
+  return map_enum_number(options, 3, value, "pdsch_cfg_s::pdsch_aggregation_factor_e_");
 }
 
 std::string pdsch_cfg_s::rbg_size_opts::to_string() const
 {
-  static constexpr const char* options[] = {"config1", "config2"};
+  static const char* options[] = {"config1", "config2"};
   return convert_enum_idx(options, 2, value, "pdsch_cfg_s::rbg_size_e_");
 }
 uint8_t pdsch_cfg_s::rbg_size_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options, 2, value, "pdsch_cfg_s::rbg_size_e_");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options, 2, value, "pdsch_cfg_s::rbg_size_e_");
 }
 
 std::string pdsch_cfg_s::mcs_table_opts::to_string() const
 {
-  static constexpr const char* options[] = {"qam256", "qam64LowSE"};
+  static const char* options[] = {"qam256", "qam64LowSE"};
   return convert_enum_idx(options, 2, value, "pdsch_cfg_s::mcs_table_e_");
 }
 uint16_t pdsch_cfg_s::mcs_table_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {256, 64};
-  return convert_enum_idx(options, 2, value, "pdsch_cfg_s::mcs_table_e_");
+  static const uint16_t options[] = {256, 64};
+  return map_enum_number(options, 2, value, "pdsch_cfg_s::mcs_table_e_");
 }
 
 std::string pdsch_cfg_s::max_nrof_code_words_sched_by_dci_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2"};
+  static const char* options[] = {"n1", "n2"};
   return convert_enum_idx(options, 2, value, "pdsch_cfg_s::max_nrof_code_words_sched_by_dci_e_");
 }
 uint8_t pdsch_cfg_s::max_nrof_code_words_sched_by_dci_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options, 2, value, "pdsch_cfg_s::max_nrof_code_words_sched_by_dci_e_");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options, 2, value, "pdsch_cfg_s::max_nrof_code_words_sched_by_dci_e_");
 }
 
 void pdsch_cfg_s::prb_bundling_type_c_::destroy_()
@@ -18973,7 +18985,7 @@ SRSASN_CODE pdsch_cfg_s::prb_bundling_type_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pdsch_cfg_s::prb_bundling_type_c_::unpack(bit_ref& bref)
+SRSASN_CODE pdsch_cfg_s::prb_bundling_type_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -19004,38 +19016,38 @@ SRSASN_CODE pdsch_cfg_s::prb_bundling_type_c_::unpack(bit_ref& bref)
 
 std::string pdsch_cfg_s::prb_bundling_type_c_::static_bundling_s_::bundle_size_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n4", "wideband"};
+  static const char* options[] = {"n4", "wideband"};
   return convert_enum_idx(options, 2, value, "pdsch_cfg_s::prb_bundling_type_c_::static_bundling_s_::bundle_size_e_");
 }
 uint8_t pdsch_cfg_s::prb_bundling_type_c_::static_bundling_s_::bundle_size_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4};
-  return convert_enum_idx(options, 1, value, "pdsch_cfg_s::prb_bundling_type_c_::static_bundling_s_::bundle_size_e_");
+  static const uint8_t options[] = {4};
+  return map_enum_number(options, 1, value, "pdsch_cfg_s::prb_bundling_type_c_::static_bundling_s_::bundle_size_e_");
 }
 
 std::string pdsch_cfg_s::prb_bundling_type_c_::dynamic_bundling_s_::bundle_size_set1_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n4", "wideband", "n2-wideband", "n4-wideband"};
+  static const char* options[] = {"n4", "wideband", "n2-wideband", "n4-wideband"};
   return convert_enum_idx(
       options, 4, value, "pdsch_cfg_s::prb_bundling_type_c_::dynamic_bundling_s_::bundle_size_set1_e_");
 }
 
 std::string pdsch_cfg_s::prb_bundling_type_c_::dynamic_bundling_s_::bundle_size_set2_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n4", "wideband"};
+  static const char* options[] = {"n4", "wideband"};
   return convert_enum_idx(
       options, 2, value, "pdsch_cfg_s::prb_bundling_type_c_::dynamic_bundling_s_::bundle_size_set2_e_");
 }
 uint8_t pdsch_cfg_s::prb_bundling_type_c_::dynamic_bundling_s_::bundle_size_set2_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4};
-  return convert_enum_idx(
+  static const uint8_t options[] = {4};
+  return map_enum_number(
       options, 1, value, "pdsch_cfg_s::prb_bundling_type_c_::dynamic_bundling_s_::bundle_size_set2_e_");
 }
 
 std::string pdsch_cfg_s::prb_bundling_type_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"staticBundling", "dynamicBundling"};
+  static const char* options[] = {"staticBundling", "dynamicBundling"};
   return convert_enum_idx(options, 2, value, "pdsch_cfg_s::prb_bundling_type_c_::types");
 }
 
@@ -19047,7 +19059,7 @@ SRSASN_CODE pucch_csi_res_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pucch_csi_res_s::unpack(bit_ref& bref)
+SRSASN_CODE pucch_csi_res_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(ul_bw_part_id, bref, (uint8_t)0u, (uint8_t)4u));
   HANDLE_CODE(unpack_integer(pucch_res, bref, (uint8_t)0u, (uint8_t)127u));
@@ -19070,7 +19082,7 @@ SRSASN_CODE pusch_code_block_group_tx_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pusch_code_block_group_tx_s::unpack(bit_ref& bref)
+SRSASN_CODE pusch_code_block_group_tx_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(max_code_block_groups_per_transport_block.unpack(bref));
@@ -19086,14 +19098,14 @@ void pusch_code_block_group_tx_s::to_json(json_writer& j) const
 
 std::string pusch_code_block_group_tx_s::max_code_block_groups_per_transport_block_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n4", "n6", "n8"};
+  static const char* options[] = {"n2", "n4", "n6", "n8"};
   return convert_enum_idx(
       options, 4, value, "pusch_code_block_group_tx_s::max_code_block_groups_per_transport_block_e_");
 }
 uint8_t pusch_code_block_group_tx_s::max_code_block_groups_per_transport_block_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 6, 8};
-  return convert_enum_idx(
+  static const uint8_t options[] = {2, 4, 6, 8};
+  return map_enum_number(
       options, 4, value, "pusch_code_block_group_tx_s::max_code_block_groups_per_transport_block_e_");
 }
 
@@ -19195,50 +19207,50 @@ void port_idx_for8_ranks_c::to_json(json_writer& j) const
       }
       if (c.get<port_idx8_s_>().rank2_minus8_present) {
         j.start_array("rank2-8");
-        for (uint32_t i1 = 0; i1 < c.get<port_idx8_s_>().rank2_minus8.size(); ++i1) {
-          j.write_int(c.get<port_idx8_s_>().rank2_minus8[i1]);
+        for (const auto& e1 : c.get<port_idx8_s_>().rank2_minus8) {
+          j.write_int(e1);
         }
         j.end_array();
       }
       if (c.get<port_idx8_s_>().rank3_minus8_present) {
         j.start_array("rank3-8");
-        for (uint32_t i1 = 0; i1 < c.get<port_idx8_s_>().rank3_minus8.size(); ++i1) {
-          j.write_int(c.get<port_idx8_s_>().rank3_minus8[i1]);
+        for (const auto& e1 : c.get<port_idx8_s_>().rank3_minus8) {
+          j.write_int(e1);
         }
         j.end_array();
       }
       if (c.get<port_idx8_s_>().rank4_minus8_present) {
         j.start_array("rank4-8");
-        for (uint32_t i1 = 0; i1 < c.get<port_idx8_s_>().rank4_minus8.size(); ++i1) {
-          j.write_int(c.get<port_idx8_s_>().rank4_minus8[i1]);
+        for (const auto& e1 : c.get<port_idx8_s_>().rank4_minus8) {
+          j.write_int(e1);
         }
         j.end_array();
       }
       if (c.get<port_idx8_s_>().rank5_minus8_present) {
         j.start_array("rank5-8");
-        for (uint32_t i1 = 0; i1 < c.get<port_idx8_s_>().rank5_minus8.size(); ++i1) {
-          j.write_int(c.get<port_idx8_s_>().rank5_minus8[i1]);
+        for (const auto& e1 : c.get<port_idx8_s_>().rank5_minus8) {
+          j.write_int(e1);
         }
         j.end_array();
       }
       if (c.get<port_idx8_s_>().rank6_minus8_present) {
         j.start_array("rank6-8");
-        for (uint32_t i1 = 0; i1 < c.get<port_idx8_s_>().rank6_minus8.size(); ++i1) {
-          j.write_int(c.get<port_idx8_s_>().rank6_minus8[i1]);
+        for (const auto& e1 : c.get<port_idx8_s_>().rank6_minus8) {
+          j.write_int(e1);
         }
         j.end_array();
       }
       if (c.get<port_idx8_s_>().rank7_minus8_present) {
         j.start_array("rank7-8");
-        for (uint32_t i1 = 0; i1 < c.get<port_idx8_s_>().rank7_minus8.size(); ++i1) {
-          j.write_int(c.get<port_idx8_s_>().rank7_minus8[i1]);
+        for (const auto& e1 : c.get<port_idx8_s_>().rank7_minus8) {
+          j.write_int(e1);
         }
         j.end_array();
       }
       if (c.get<port_idx8_s_>().rank8_minus8_present) {
         j.start_array("rank8-8");
-        for (uint32_t i1 = 0; i1 < c.get<port_idx8_s_>().rank8_minus8.size(); ++i1) {
-          j.write_int(c.get<port_idx8_s_>().rank8_minus8[i1]);
+        for (const auto& e1 : c.get<port_idx8_s_>().rank8_minus8) {
+          j.write_int(e1);
         }
         j.end_array();
       }
@@ -19252,22 +19264,22 @@ void port_idx_for8_ranks_c::to_json(json_writer& j) const
       }
       if (c.get<port_idx4_s_>().rank2_minus4_present) {
         j.start_array("rank2-4");
-        for (uint32_t i1 = 0; i1 < c.get<port_idx4_s_>().rank2_minus4.size(); ++i1) {
-          j.write_int(c.get<port_idx4_s_>().rank2_minus4[i1]);
+        for (const auto& e1 : c.get<port_idx4_s_>().rank2_minus4) {
+          j.write_int(e1);
         }
         j.end_array();
       }
       if (c.get<port_idx4_s_>().rank3_minus4_present) {
         j.start_array("rank3-4");
-        for (uint32_t i1 = 0; i1 < c.get<port_idx4_s_>().rank3_minus4.size(); ++i1) {
-          j.write_int(c.get<port_idx4_s_>().rank3_minus4[i1]);
+        for (const auto& e1 : c.get<port_idx4_s_>().rank3_minus4) {
+          j.write_int(e1);
         }
         j.end_array();
       }
       if (c.get<port_idx4_s_>().rank4_minus4_present) {
         j.start_array("rank4-4");
-        for (uint32_t i1 = 0; i1 < c.get<port_idx4_s_>().rank4_minus4.size(); ++i1) {
-          j.write_int(c.get<port_idx4_s_>().rank4_minus4[i1]);
+        for (const auto& e1 : c.get<port_idx4_s_>().rank4_minus4) {
+          j.write_int(e1);
         }
         j.end_array();
       }
@@ -19281,8 +19293,8 @@ void port_idx_for8_ranks_c::to_json(json_writer& j) const
       }
       if (c.get<port_idx2_s_>().rank2_minus2_present) {
         j.start_array("rank2-2");
-        for (uint32_t i1 = 0; i1 < c.get<port_idx2_s_>().rank2_minus2.size(); ++i1) {
-          j.write_int(c.get<port_idx2_s_>().rank2_minus2[i1]);
+        for (const auto& e1 : c.get<port_idx2_s_>().rank2_minus2) {
+          j.write_int(e1);
         }
         j.end_array();
       }
@@ -19402,7 +19414,7 @@ SRSASN_CODE port_idx_for8_ranks_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE port_idx_for8_ranks_c::unpack(bit_ref& bref)
+SRSASN_CODE port_idx_for8_ranks_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -19514,13 +19526,13 @@ SRSASN_CODE port_idx_for8_ranks_c::unpack(bit_ref& bref)
 
 std::string port_idx_for8_ranks_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"portIndex8", "portIndex4", "portIndex2", "portIndex1"};
+  static const char* options[] = {"portIndex8", "portIndex4", "portIndex2", "portIndex1"};
   return convert_enum_idx(options, 4, value, "port_idx_for8_ranks_c::types");
 }
 uint8_t port_idx_for8_ranks_c::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {8, 4, 2, 1};
-  return convert_enum_idx(options, 4, value, "port_idx_for8_ranks_c::types");
+  static const uint8_t options[] = {8, 4, 2, 1};
+  return map_enum_number(options, 4, value, "port_idx_for8_ranks_c::types");
 }
 
 // RadioLinkMonitoringConfig ::= SEQUENCE
@@ -19547,7 +19559,7 @@ SRSASN_CODE radio_link_monitoring_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE radio_link_monitoring_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE radio_link_monitoring_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(fail_detection_res_to_add_mod_list_present, 1));
@@ -19575,15 +19587,15 @@ void radio_link_monitoring_cfg_s::to_json(json_writer& j) const
   j.start_obj();
   if (fail_detection_res_to_add_mod_list_present) {
     j.start_array("failureDetectionResourcesToAddModList");
-    for (uint32_t i1 = 0; i1 < fail_detection_res_to_add_mod_list.size(); ++i1) {
-      fail_detection_res_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : fail_detection_res_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (fail_detection_res_to_release_list_present) {
     j.start_array("failureDetectionResourcesToReleaseList");
-    for (uint32_t i1 = 0; i1 < fail_detection_res_to_release_list.size(); ++i1) {
-      j.write_int(fail_detection_res_to_release_list[i1]);
+    for (const auto& e1 : fail_detection_res_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -19598,24 +19610,24 @@ void radio_link_monitoring_cfg_s::to_json(json_writer& j) const
 
 std::string radio_link_monitoring_cfg_s::beam_fail_instance_max_count_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n3", "n4", "n5", "n6", "n8", "n10"};
+  static const char* options[] = {"n1", "n2", "n3", "n4", "n5", "n6", "n8", "n10"};
   return convert_enum_idx(options, 8, value, "radio_link_monitoring_cfg_s::beam_fail_instance_max_count_e_");
 }
 uint8_t radio_link_monitoring_cfg_s::beam_fail_instance_max_count_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3, 4, 5, 6, 8, 10};
-  return convert_enum_idx(options, 8, value, "radio_link_monitoring_cfg_s::beam_fail_instance_max_count_e_");
+  static const uint8_t options[] = {1, 2, 3, 4, 5, 6, 8, 10};
+  return map_enum_number(options, 8, value, "radio_link_monitoring_cfg_s::beam_fail_instance_max_count_e_");
 }
 
 std::string radio_link_monitoring_cfg_s::beam_fail_detection_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {"pbfd1", "pbfd2", "pbfd3", "pbfd4", "pbfd5", "pbfd6", "pbfd8", "pbfd10"};
+  static const char* options[] = {"pbfd1", "pbfd2", "pbfd3", "pbfd4", "pbfd5", "pbfd6", "pbfd8", "pbfd10"};
   return convert_enum_idx(options, 8, value, "radio_link_monitoring_cfg_s::beam_fail_detection_timer_e_");
 }
 uint8_t radio_link_monitoring_cfg_s::beam_fail_detection_timer_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3, 4, 5, 6, 8, 10};
-  return convert_enum_idx(options, 8, value, "radio_link_monitoring_cfg_s::beam_fail_detection_timer_e_");
+  static const uint8_t options[] = {1, 2, 3, 4, 5, 6, 8, 10};
+  return map_enum_number(options, 8, value, "radio_link_monitoring_cfg_s::beam_fail_detection_timer_e_");
 }
 
 // SPS-Config ::= SEQUENCE
@@ -19633,7 +19645,7 @@ SRSASN_CODE sps_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sps_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE sps_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(n1_pucch_an_present, 1));
@@ -19663,28 +19675,28 @@ void sps_cfg_s::to_json(json_writer& j) const
 
 std::string sps_cfg_s::periodicity_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms10",
-                                            "ms20",
-                                            "ms32",
-                                            "ms40",
-                                            "ms64",
-                                            "ms80",
-                                            "ms128",
-                                            "ms160",
-                                            "ms320",
-                                            "ms640",
-                                            "spare6",
-                                            "spare5",
-                                            "spare4",
-                                            "spare3",
-                                            "spare2",
-                                            "spare1"};
+  static const char* options[] = {"ms10",
+                                  "ms20",
+                                  "ms32",
+                                  "ms40",
+                                  "ms64",
+                                  "ms80",
+                                  "ms128",
+                                  "ms160",
+                                  "ms320",
+                                  "ms640",
+                                  "spare6",
+                                  "spare5",
+                                  "spare4",
+                                  "spare3",
+                                  "spare2",
+                                  "spare1"};
   return convert_enum_idx(options, 16, value, "sps_cfg_s::periodicity_e_");
 }
 uint16_t sps_cfg_s::periodicity_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {10, 20, 32, 40, 64, 80, 128, 160, 320, 640};
-  return convert_enum_idx(options, 10, value, "sps_cfg_s::periodicity_e_");
+  static const uint16_t options[] = {10, 20, 32, 40, 64, 80, 128, 160, 320, 640};
+  return map_enum_number(options, 10, value, "sps_cfg_s::periodicity_e_");
 }
 
 // SRS-TPC-PDCCH-Config ::= SEQUENCE
@@ -19698,7 +19710,7 @@ SRSASN_CODE srs_tpc_pdcch_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_tpc_pdcch_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE srs_tpc_pdcch_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(srs_cc_set_idxlist_present, 1));
 
@@ -19713,8 +19725,8 @@ void srs_tpc_pdcch_cfg_s::to_json(json_writer& j) const
   j.start_obj();
   if (srs_cc_set_idxlist_present) {
     j.start_array("srs-CC-SetIndexlist");
-    for (uint32_t i1 = 0; i1 < srs_cc_set_idxlist.size(); ++i1) {
-      srs_cc_set_idxlist[i1].to_json(j);
+    for (const auto& e1 : srs_cc_set_idxlist) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -19743,7 +19755,7 @@ SRSASN_CODE slot_format_combinations_per_cell_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE slot_format_combinations_per_cell_s::unpack(bit_ref& bref)
+SRSASN_CODE slot_format_combinations_per_cell_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(subcarrier_spacing2_present, 1));
@@ -19774,8 +19786,8 @@ void slot_format_combinations_per_cell_s::to_json(json_writer& j) const
   }
   if (slot_format_combinations_present) {
     j.start_array("slotFormatCombinations");
-    for (uint32_t i1 = 0; i1 < slot_format_combinations.size(); ++i1) {
-      slot_format_combinations[i1].to_json(j);
+    for (const auto& e1 : slot_format_combinations) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -19809,7 +19821,7 @@ SRSASN_CODE bwp_dl_ded_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE bwp_dl_ded_s::unpack(bit_ref& bref)
+SRSASN_CODE bwp_dl_ded_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(pdcch_cfg_present, 1));
@@ -19871,7 +19883,7 @@ SRSASN_CODE bwp_ul_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE bwp_ul_s::unpack(bit_ref& bref)
+SRSASN_CODE bwp_ul_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(bwp_common_present, 1));
@@ -19933,7 +19945,7 @@ SRSASN_CODE cfra_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cfra_s::unpack(bit_ref& bref)
+SRSASN_CODE cfra_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(occasions_present, 1));
@@ -19987,18 +19999,17 @@ void cfra_s::to_json(json_writer& j) const
 
 std::string cfra_s::occasions_s_::ssb_per_rach_occasion_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "oneEighth", "oneFourth", "oneHalf", "one", "two", "four", "eight", "sixteen"};
+  static const char* options[] = {"oneEighth", "oneFourth", "oneHalf", "one", "two", "four", "eight", "sixteen"};
   return convert_enum_idx(options, 8, value, "cfra_s::occasions_s_::ssb_per_rach_occasion_e_");
 }
 float cfra_s::occasions_s_::ssb_per_rach_occasion_opts::to_number() const
 {
-  static constexpr float options[] = {0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 6.0};
-  return convert_enum_idx(options, 8, value, "cfra_s::occasions_s_::ssb_per_rach_occasion_e_");
+  static const float options[] = {0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 6.0};
+  return map_enum_number(options, 8, value, "cfra_s::occasions_s_::ssb_per_rach_occasion_e_");
 }
 std::string cfra_s::occasions_s_::ssb_per_rach_occasion_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"1/8", "1/4", "1/2", "1", "2", "4", "8", "6"};
+  static const char* options[] = {"1/8", "1/4", "1/2", "1", "2", "4", "8", "6"};
   return convert_enum_idx(options, 8, value, "cfra_s::occasions_s_::ssb_per_rach_occasion_e_");
 }
 
@@ -20077,8 +20088,8 @@ void cfra_s::res_c_::to_json(json_writer& j) const
       j.write_fieldname("ssb");
       j.start_obj();
       j.start_array("ssb-ResourceList");
-      for (uint32_t i1 = 0; i1 < c.get<ssb_s_>().ssb_res_list.size(); ++i1) {
-        c.get<ssb_s_>().ssb_res_list[i1].to_json(j);
+      for (const auto& e1 : c.get<ssb_s_>().ssb_res_list) {
+        e1.to_json(j);
       }
       j.end_array();
       j.write_int("ra-ssb-OccasionMaskIndex", c.get<ssb_s_>().ra_ssb_occasion_mask_idx);
@@ -20088,8 +20099,8 @@ void cfra_s::res_c_::to_json(json_writer& j) const
       j.write_fieldname("csirs");
       j.start_obj();
       j.start_array("csirs-ResourceList");
-      for (uint32_t i1 = 0; i1 < c.get<csirs_s_>().csirs_res_list.size(); ++i1) {
-        c.get<csirs_s_>().csirs_res_list[i1].to_json(j);
+      for (const auto& e1 : c.get<csirs_s_>().csirs_res_list) {
+        e1.to_json(j);
       }
       j.end_array();
       j.write_int("rsrp-ThresholdCSI-RS", c.get<csirs_s_>().rsrp_thres_csi_rs);
@@ -20118,7 +20129,7 @@ SRSASN_CODE cfra_s::res_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cfra_s::res_c_::unpack(bit_ref& bref)
+SRSASN_CODE cfra_s::res_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -20141,7 +20152,7 @@ SRSASN_CODE cfra_s::res_c_::unpack(bit_ref& bref)
 
 std::string cfra_s::res_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ssb", "csirs"};
+  static const char* options[] = {"ssb", "csirs"};
   return convert_enum_idx(options, 2, value, "cfra_s::res_c_::types");
 }
 
@@ -20166,7 +20177,7 @@ SRSASN_CODE csi_im_res_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_im_res_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_im_res_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(csi_im_res_elem_pattern_present, 1));
@@ -20315,7 +20326,7 @@ SRSASN_CODE csi_im_res_s::csi_im_res_elem_pattern_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_im_res_s::csi_im_res_elem_pattern_c_::unpack(bit_ref& bref)
+SRSASN_CODE csi_im_res_s::csi_im_res_elem_pattern_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -20338,39 +20349,39 @@ SRSASN_CODE csi_im_res_s::csi_im_res_elem_pattern_c_::unpack(bit_ref& bref)
 
 std::string csi_im_res_s::csi_im_res_elem_pattern_c_::pattern0_s_::subcarrier_location_p0_opts::to_string() const
 {
-  static constexpr const char* options[] = {"s0", "s2", "s4", "s6", "s8", "s10"};
+  static const char* options[] = {"s0", "s2", "s4", "s6", "s8", "s10"};
   return convert_enum_idx(
       options, 6, value, "csi_im_res_s::csi_im_res_elem_pattern_c_::pattern0_s_::subcarrier_location_p0_e_");
 }
 uint8_t csi_im_res_s::csi_im_res_elem_pattern_c_::pattern0_s_::subcarrier_location_p0_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 2, 4, 6, 8, 10};
-  return convert_enum_idx(
+  static const uint8_t options[] = {0, 2, 4, 6, 8, 10};
+  return map_enum_number(
       options, 6, value, "csi_im_res_s::csi_im_res_elem_pattern_c_::pattern0_s_::subcarrier_location_p0_e_");
 }
 
 std::string csi_im_res_s::csi_im_res_elem_pattern_c_::pattern1_s_::subcarrier_location_p1_opts::to_string() const
 {
-  static constexpr const char* options[] = {"s0", "s4", "s8"};
+  static const char* options[] = {"s0", "s4", "s8"};
   return convert_enum_idx(
       options, 3, value, "csi_im_res_s::csi_im_res_elem_pattern_c_::pattern1_s_::subcarrier_location_p1_e_");
 }
 uint8_t csi_im_res_s::csi_im_res_elem_pattern_c_::pattern1_s_::subcarrier_location_p1_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 4, 8};
-  return convert_enum_idx(
+  static const uint8_t options[] = {0, 4, 8};
+  return map_enum_number(
       options, 3, value, "csi_im_res_s::csi_im_res_elem_pattern_c_::pattern1_s_::subcarrier_location_p1_e_");
 }
 
 std::string csi_im_res_s::csi_im_res_elem_pattern_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"pattern0", "pattern1"};
+  static const char* options[] = {"pattern0", "pattern1"};
   return convert_enum_idx(options, 2, value, "csi_im_res_s::csi_im_res_elem_pattern_c_::types");
 }
 uint8_t csi_im_res_s::csi_im_res_elem_pattern_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1};
-  return convert_enum_idx(options, 2, value, "csi_im_res_s::csi_im_res_elem_pattern_c_::types");
+  static const uint8_t options[] = {0, 1};
+  return map_enum_number(options, 2, value, "csi_im_res_s::csi_im_res_elem_pattern_c_::types");
 }
 
 // CSI-IM-ResourceSet ::= SEQUENCE
@@ -20382,7 +20393,7 @@ SRSASN_CODE csi_im_res_set_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_im_res_set_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_im_res_set_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(csi_im_res_set_id, bref, (uint8_t)0u, (uint8_t)63u));
@@ -20395,8 +20406,8 @@ void csi_im_res_set_s::to_json(json_writer& j) const
   j.start_obj();
   j.write_int("csi-IM-ResourceSetId", csi_im_res_set_id);
   j.start_array("csi-IM-Resources");
-  for (uint32_t i1 = 0; i1 < csi_im_res.size(); ++i1) {
-    j.write_int(csi_im_res[i1]);
+  for (const auto& e1 : csi_im_res) {
+    j.write_int(e1);
   }
   j.end_array();
   j.end_obj();
@@ -20475,7 +20486,7 @@ SRSASN_CODE csi_report_cfg_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_report_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_report_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(carrier_present, 1));
@@ -20598,8 +20609,8 @@ void csi_report_cfg_s::to_json(json_writer& j) const
   j.write_str("subbandSize", subband_size.to_string());
   if (non_pmi_port_ind_present) {
     j.start_array("non-PMI-PortIndication");
-    for (uint32_t i1 = 0; i1 < non_pmi_port_ind.size(); ++i1) {
-      non_pmi_port_ind[i1].to_json(j);
+    for (const auto& e1 : non_pmi_port_ind) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -20716,8 +20727,8 @@ void csi_report_cfg_s::report_cfg_type_c_::to_json(json_writer& j) const
       j.write_fieldname("reportSlotConfig");
       c.get<periodic_s_>().report_slot_cfg.to_json(j);
       j.start_array("pucch-CSI-ResourceList");
-      for (uint32_t i1 = 0; i1 < c.get<periodic_s_>().pucch_csi_res_list.size(); ++i1) {
-        c.get<periodic_s_>().pucch_csi_res_list[i1].to_json(j);
+      for (const auto& e1 : c.get<periodic_s_>().pucch_csi_res_list) {
+        e1.to_json(j);
       }
       j.end_array();
       j.end_obj();
@@ -20728,8 +20739,8 @@ void csi_report_cfg_s::report_cfg_type_c_::to_json(json_writer& j) const
       j.write_fieldname("reportSlotConfig");
       c.get<semi_persistent_on_pucch_s_>().report_slot_cfg.to_json(j);
       j.start_array("pucch-CSI-ResourceList");
-      for (uint32_t i1 = 0; i1 < c.get<semi_persistent_on_pucch_s_>().pucch_csi_res_list.size(); ++i1) {
-        c.get<semi_persistent_on_pucch_s_>().pucch_csi_res_list[i1].to_json(j);
+      for (const auto& e1 : c.get<semi_persistent_on_pucch_s_>().pucch_csi_res_list) {
+        e1.to_json(j);
       }
       j.end_array();
       j.end_obj();
@@ -20739,8 +20750,8 @@ void csi_report_cfg_s::report_cfg_type_c_::to_json(json_writer& j) const
       j.start_obj();
       j.write_str("reportSlotConfig", c.get<semi_persistent_on_pusch_s_>().report_slot_cfg.to_string());
       j.start_array("reportSlotOffsetList");
-      for (uint32_t i1 = 0; i1 < c.get<semi_persistent_on_pusch_s_>().report_slot_offset_list.size(); ++i1) {
-        j.write_int(c.get<semi_persistent_on_pusch_s_>().report_slot_offset_list[i1]);
+      for (const auto& e1 : c.get<semi_persistent_on_pusch_s_>().report_slot_offset_list) {
+        j.write_int(e1);
       }
       j.end_array();
       j.write_int("p0alpha", c.get<semi_persistent_on_pusch_s_>().p0alpha);
@@ -20750,8 +20761,8 @@ void csi_report_cfg_s::report_cfg_type_c_::to_json(json_writer& j) const
       j.write_fieldname("aperiodic");
       j.start_obj();
       j.start_array("reportSlotOffsetList");
-      for (uint32_t i1 = 0; i1 < c.get<aperiodic_s_>().report_slot_offset_list.size(); ++i1) {
-        j.write_int(c.get<aperiodic_s_>().report_slot_offset_list[i1]);
+      for (const auto& e1 : c.get<aperiodic_s_>().report_slot_offset_list) {
+        j.write_int(e1);
       }
       j.end_array();
       j.end_obj();
@@ -20789,7 +20800,7 @@ SRSASN_CODE csi_report_cfg_s::report_cfg_type_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_report_cfg_s::report_cfg_type_c_::unpack(bit_ref& bref)
+SRSASN_CODE csi_report_cfg_s::report_cfg_type_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -20822,20 +20833,20 @@ SRSASN_CODE csi_report_cfg_s::report_cfg_type_c_::unpack(bit_ref& bref)
 
 std::string csi_report_cfg_s::report_cfg_type_c_::semi_persistent_on_pusch_s_::report_slot_cfg_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sl5", "sl10", "sl20", "sl40", "sl80", "sl160", "sl320"};
+  static const char* options[] = {"sl5", "sl10", "sl20", "sl40", "sl80", "sl160", "sl320"};
   return convert_enum_idx(
       options, 7, value, "csi_report_cfg_s::report_cfg_type_c_::semi_persistent_on_pusch_s_::report_slot_cfg_e_");
 }
 uint16_t csi_report_cfg_s::report_cfg_type_c_::semi_persistent_on_pusch_s_::report_slot_cfg_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {5, 10, 20, 40, 80, 160, 320};
-  return convert_enum_idx(
+  static const uint16_t options[] = {5, 10, 20, 40, 80, 160, 320};
+  return map_enum_number(
       options, 7, value, "csi_report_cfg_s::report_cfg_type_c_::semi_persistent_on_pusch_s_::report_slot_cfg_e_");
 }
 
 std::string csi_report_cfg_s::report_cfg_type_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"periodic", "semiPersistentOnPUCCH", "semiPersistentOnPUSCH", "aperiodic"};
+  static const char* options[] = {"periodic", "semiPersistentOnPUCCH", "semiPersistentOnPUSCH", "aperiodic"};
   return convert_enum_idx(options, 4, value, "csi_report_cfg_s::report_cfg_type_c_::types");
 }
 
@@ -20904,7 +20915,7 @@ SRSASN_CODE csi_report_cfg_s::report_quant_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_report_cfg_s::report_quant_c_::unpack(bit_ref& bref)
+SRSASN_CODE csi_report_cfg_s::report_quant_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -20939,39 +20950,39 @@ SRSASN_CODE csi_report_cfg_s::report_quant_c_::unpack(bit_ref& bref)
 
 std::string csi_report_cfg_s::report_quant_c_::cri_ri_i1_cqi_s_::pdsch_bundle_size_for_csi_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n4"};
+  static const char* options[] = {"n2", "n4"};
   return convert_enum_idx(
       options, 2, value, "csi_report_cfg_s::report_quant_c_::cri_ri_i1_cqi_s_::pdsch_bundle_size_for_csi_e_");
 }
 uint8_t csi_report_cfg_s::report_quant_c_::cri_ri_i1_cqi_s_::pdsch_bundle_size_for_csi_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4};
-  return convert_enum_idx(
+  static const uint8_t options[] = {2, 4};
+  return map_enum_number(
       options, 2, value, "csi_report_cfg_s::report_quant_c_::cri_ri_i1_cqi_s_::pdsch_bundle_size_for_csi_e_");
 }
 
 std::string csi_report_cfg_s::report_quant_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"none",
-                                            "cri-RI-PMI-CQI",
-                                            "cri-RI-i1",
-                                            "cri-RI-i1-CQI",
-                                            "cri-RI-CQI",
-                                            "cri-RSRP",
-                                            "ssb-Index-RSRP",
-                                            "cri-RI-LI-PMI-CQI"};
+  static const char* options[] = {"none",
+                                  "cri-RI-PMI-CQI",
+                                  "cri-RI-i1",
+                                  "cri-RI-i1-CQI",
+                                  "cri-RI-CQI",
+                                  "cri-RSRP",
+                                  "ssb-Index-RSRP",
+                                  "cri-RI-LI-PMI-CQI"};
   return convert_enum_idx(options, 8, value, "csi_report_cfg_s::report_quant_c_::types");
 }
 
 std::string csi_report_cfg_s::report_freq_cfg_s_::cqi_format_ind_opts::to_string() const
 {
-  static constexpr const char* options[] = {"widebandCQI", "subbandCQI"};
+  static const char* options[] = {"widebandCQI", "subbandCQI"};
   return convert_enum_idx(options, 2, value, "csi_report_cfg_s::report_freq_cfg_s_::cqi_format_ind_e_");
 }
 
 std::string csi_report_cfg_s::report_freq_cfg_s_::pmi_format_ind_opts::to_string() const
 {
-  static constexpr const char* options[] = {"widebandPMI", "subbandPMI"};
+  static const char* options[] = {"widebandPMI", "subbandPMI"};
   return convert_enum_idx(options, 2, value, "csi_report_cfg_s::report_freq_cfg_s_::pmi_format_ind_e_");
 }
 
@@ -21346,7 +21357,7 @@ SRSASN_CODE csi_report_cfg_s::report_freq_cfg_s_::csi_report_band_c_::pack(bit_r
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_report_cfg_s::report_freq_cfg_s_::csi_report_band_c_::unpack(bit_ref& bref)
+SRSASN_CODE csi_report_cfg_s::report_freq_cfg_s_::csi_report_band_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -21413,52 +21424,52 @@ SRSASN_CODE csi_report_cfg_s::report_freq_cfg_s_::csi_report_band_c_::unpack(bit
 
 std::string csi_report_cfg_s::report_freq_cfg_s_::csi_report_band_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"subbands3",
-                                            "subbands4",
-                                            "subbands5",
-                                            "subbands6",
-                                            "subbands7",
-                                            "subbands8",
-                                            "subbands9",
-                                            "subbands10",
-                                            "subbands11",
-                                            "subbands12",
-                                            "subbands13",
-                                            "subbands14",
-                                            "subbands15",
-                                            "subbands16",
-                                            "subbands17",
-                                            "subbands18",
-                                            "subbands19-v1530"};
+  static const char* options[] = {"subbands3",
+                                  "subbands4",
+                                  "subbands5",
+                                  "subbands6",
+                                  "subbands7",
+                                  "subbands8",
+                                  "subbands9",
+                                  "subbands10",
+                                  "subbands11",
+                                  "subbands12",
+                                  "subbands13",
+                                  "subbands14",
+                                  "subbands15",
+                                  "subbands16",
+                                  "subbands17",
+                                  "subbands18",
+                                  "subbands19-v1530"};
   return convert_enum_idx(options, 17, value, "csi_report_cfg_s::report_freq_cfg_s_::csi_report_band_c_::types");
 }
 uint8_t csi_report_cfg_s::report_freq_cfg_s_::csi_report_band_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19};
-  return convert_enum_idx(options, 17, value, "csi_report_cfg_s::report_freq_cfg_s_::csi_report_band_c_::types");
+  static const uint8_t options[] = {3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19};
+  return map_enum_number(options, 17, value, "csi_report_cfg_s::report_freq_cfg_s_::csi_report_band_c_::types");
 }
 
 std::string csi_report_cfg_s::time_restrict_for_ch_meass_opts::to_string() const
 {
-  static constexpr const char* options[] = {"configured", "notConfigured"};
+  static const char* options[] = {"configured", "notConfigured"};
   return convert_enum_idx(options, 2, value, "csi_report_cfg_s::time_restrict_for_ch_meass_e_");
 }
 
 std::string csi_report_cfg_s::time_restrict_for_interference_meass_opts::to_string() const
 {
-  static constexpr const char* options[] = {"configured", "notConfigured"};
+  static const char* options[] = {"configured", "notConfigured"};
   return convert_enum_idx(options, 2, value, "csi_report_cfg_s::time_restrict_for_interference_meass_e_");
 }
 
 std::string csi_report_cfg_s::dummy_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2"};
+  static const char* options[] = {"n1", "n2"};
   return convert_enum_idx(options, 2, value, "csi_report_cfg_s::dummy_e_");
 }
 uint8_t csi_report_cfg_s::dummy_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options, 2, value, "csi_report_cfg_s::dummy_e_");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options, 2, value, "csi_report_cfg_s::dummy_e_");
 }
 
 void csi_report_cfg_s::group_based_beam_report_c_::set(types::options e)
@@ -21502,7 +21513,7 @@ SRSASN_CODE csi_report_cfg_s::group_based_beam_report_c_::pack(bit_ref& bref) co
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_report_cfg_s::group_based_beam_report_c_::unpack(bit_ref& bref)
+SRSASN_CODE csi_report_cfg_s::group_based_beam_report_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -21525,55 +21536,55 @@ SRSASN_CODE csi_report_cfg_s::group_based_beam_report_c_::unpack(bit_ref& bref)
 
 std::string csi_report_cfg_s::group_based_beam_report_c_::disabled_s_::nrof_reported_rs_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n3", "n4"};
+  static const char* options[] = {"n1", "n2", "n3", "n4"};
   return convert_enum_idx(
       options, 4, value, "csi_report_cfg_s::group_based_beam_report_c_::disabled_s_::nrof_reported_rs_e_");
 }
 uint8_t csi_report_cfg_s::group_based_beam_report_c_::disabled_s_::nrof_reported_rs_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3, 4};
-  return convert_enum_idx(
+  static const uint8_t options[] = {1, 2, 3, 4};
+  return map_enum_number(
       options, 4, value, "csi_report_cfg_s::group_based_beam_report_c_::disabled_s_::nrof_reported_rs_e_");
 }
 
 std::string csi_report_cfg_s::group_based_beam_report_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"enabled", "disabled"};
+  static const char* options[] = {"enabled", "disabled"};
   return convert_enum_idx(options, 2, value, "csi_report_cfg_s::group_based_beam_report_c_::types");
 }
 
 std::string csi_report_cfg_s::cqi_table_opts::to_string() const
 {
-  static constexpr const char* options[] = {"table1", "table2", "table3", "spare1"};
+  static const char* options[] = {"table1", "table2", "table3", "spare1"};
   return convert_enum_idx(options, 4, value, "csi_report_cfg_s::cqi_table_e_");
 }
 uint8_t csi_report_cfg_s::cqi_table_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3};
-  return convert_enum_idx(options, 3, value, "csi_report_cfg_s::cqi_table_e_");
+  static const uint8_t options[] = {1, 2, 3};
+  return map_enum_number(options, 3, value, "csi_report_cfg_s::cqi_table_e_");
 }
 
 std::string csi_report_cfg_s::subband_size_opts::to_string() const
 {
-  static constexpr const char* options[] = {"value1", "value2"};
+  static const char* options[] = {"value1", "value2"};
   return convert_enum_idx(options, 2, value, "csi_report_cfg_s::subband_size_e_");
 }
 uint8_t csi_report_cfg_s::subband_size_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options, 2, value, "csi_report_cfg_s::subband_size_e_");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options, 2, value, "csi_report_cfg_s::subband_size_e_");
 }
 
 std::string csi_report_cfg_s::semi_persistent_on_pusch_v1530_s_::report_slot_cfg_v1530_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sl4", "sl8", "sl16"};
+  static const char* options[] = {"sl4", "sl8", "sl16"};
   return convert_enum_idx(
       options, 3, value, "csi_report_cfg_s::semi_persistent_on_pusch_v1530_s_::report_slot_cfg_v1530_e_");
 }
 uint8_t csi_report_cfg_s::semi_persistent_on_pusch_v1530_s_::report_slot_cfg_v1530_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 8, 16};
-  return convert_enum_idx(
+  static const uint8_t options[] = {4, 8, 16};
+  return map_enum_number(
       options, 3, value, "csi_report_cfg_s::semi_persistent_on_pusch_v1530_s_::report_slot_cfg_v1530_e_");
 }
 
@@ -21588,7 +21599,7 @@ SRSASN_CODE csi_res_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_res_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_res_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(csi_res_cfg_id, bref, (uint8_t)0u, (uint8_t)111u));
@@ -21686,15 +21697,15 @@ void csi_res_cfg_s::csi_rs_res_set_list_c_::to_json(json_writer& j) const
       j.start_obj();
       if (c.get<nzp_csi_rs_ssb_s_>().nzp_csi_rs_res_set_list_present) {
         j.start_array("nzp-CSI-RS-ResourceSetList");
-        for (uint32_t i1 = 0; i1 < c.get<nzp_csi_rs_ssb_s_>().nzp_csi_rs_res_set_list.size(); ++i1) {
-          j.write_int(c.get<nzp_csi_rs_ssb_s_>().nzp_csi_rs_res_set_list[i1]);
+        for (const auto& e1 : c.get<nzp_csi_rs_ssb_s_>().nzp_csi_rs_res_set_list) {
+          j.write_int(e1);
         }
         j.end_array();
       }
       if (c.get<nzp_csi_rs_ssb_s_>().csi_ssb_res_set_list_present) {
         j.start_array("csi-SSB-ResourceSetList");
-        for (uint32_t i1 = 0; i1 < c.get<nzp_csi_rs_ssb_s_>().csi_ssb_res_set_list.size(); ++i1) {
-          j.write_int(c.get<nzp_csi_rs_ssb_s_>().csi_ssb_res_set_list[i1]);
+        for (const auto& e1 : c.get<nzp_csi_rs_ssb_s_>().csi_ssb_res_set_list) {
+          j.write_int(e1);
         }
         j.end_array();
       }
@@ -21702,8 +21713,8 @@ void csi_res_cfg_s::csi_rs_res_set_list_c_::to_json(json_writer& j) const
       break;
     case types::csi_im_res_set_list:
       j.start_array("csi-IM-ResourceSetList");
-      for (uint32_t i1 = 0; i1 < c.get<csi_im_res_set_list_l_>().size(); ++i1) {
-        j.write_int(c.get<csi_im_res_set_list_l_>()[i1]);
+      for (const auto& e1 : c.get<csi_im_res_set_list_l_>()) {
+        j.write_int(e1);
       }
       j.end_array();
       break;
@@ -21739,7 +21750,7 @@ SRSASN_CODE csi_res_cfg_s::csi_rs_res_set_list_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_res_cfg_s::csi_rs_res_set_list_c_::unpack(bit_ref& bref)
+SRSASN_CODE csi_res_cfg_s::csi_rs_res_set_list_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -21771,13 +21782,13 @@ SRSASN_CODE csi_res_cfg_s::csi_rs_res_set_list_c_::unpack(bit_ref& bref)
 
 std::string csi_res_cfg_s::csi_rs_res_set_list_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"nzp-CSI-RS-SSB", "csi-IM-ResourceSetList"};
+  static const char* options[] = {"nzp-CSI-RS-SSB", "csi-IM-ResourceSetList"};
   return convert_enum_idx(options, 2, value, "csi_res_cfg_s::csi_rs_res_set_list_c_::types");
 }
 
 std::string csi_res_cfg_s::res_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"aperiodic", "semiPersistent", "periodic"};
+  static const char* options[] = {"aperiodic", "semiPersistent", "periodic"};
   return convert_enum_idx(options, 3, value, "csi_res_cfg_s::res_type_e_");
 }
 
@@ -21790,7 +21801,7 @@ SRSASN_CODE csi_ssb_res_set_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_ssb_res_set_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_ssb_res_set_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(csi_ssb_res_set_id, bref, (uint8_t)0u, (uint8_t)63u));
@@ -21803,8 +21814,8 @@ void csi_ssb_res_set_s::to_json(json_writer& j) const
   j.start_obj();
   j.write_int("csi-SSB-ResourceSetId", csi_ssb_res_set_id);
   j.start_array("csi-SSB-ResourceList");
-  for (uint32_t i1 = 0; i1 < csi_ssb_res_list.size(); ++i1) {
-    j.write_int(csi_ssb_res_list[i1]);
+  for (const auto& e1 : csi_ssb_res_list) {
+    j.write_int(e1);
   }
   j.end_array();
   j.end_obj();
@@ -21826,7 +21837,7 @@ SRSASN_CODE dl_cfg_common_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dl_cfg_common_s::unpack(bit_ref& bref)
+SRSASN_CODE dl_cfg_common_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(freq_info_dl_present, 1));
@@ -21879,7 +21890,7 @@ SRSASN_CODE nzp_csi_rs_res_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE nzp_csi_rs_res_s::unpack(bit_ref& bref)
+SRSASN_CODE nzp_csi_rs_res_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(pwr_ctrl_offset_ss_present, 1));
@@ -21925,13 +21936,13 @@ void nzp_csi_rs_res_s::to_json(json_writer& j) const
 
 std::string nzp_csi_rs_res_s::pwr_ctrl_offset_ss_opts::to_string() const
 {
-  static constexpr const char* options[] = {"db-3", "db0", "db3", "db6"};
+  static const char* options[] = {"db-3", "db0", "db3", "db6"};
   return convert_enum_idx(options, 4, value, "nzp_csi_rs_res_s::pwr_ctrl_offset_ss_e_");
 }
 int8_t nzp_csi_rs_res_s::pwr_ctrl_offset_ss_opts::to_number() const
 {
-  static constexpr int8_t options[] = {-3, 0, 3, 6};
-  return convert_enum_idx(options, 4, value, "nzp_csi_rs_res_s::pwr_ctrl_offset_ss_e_");
+  static const int8_t options[] = {-3, 0, 3, 6};
+  return map_enum_number(options, 4, value, "nzp_csi_rs_res_s::pwr_ctrl_offset_ss_e_");
 }
 
 // NZP-CSI-RS-ResourceSet ::= SEQUENCE
@@ -21953,7 +21964,7 @@ SRSASN_CODE nzp_csi_rs_res_set_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE nzp_csi_rs_res_set_s::unpack(bit_ref& bref)
+SRSASN_CODE nzp_csi_rs_res_set_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(repeat_present, 1));
@@ -21976,8 +21987,8 @@ void nzp_csi_rs_res_set_s::to_json(json_writer& j) const
   j.start_obj();
   j.write_int("nzp-CSI-ResourceSetId", nzp_csi_res_set_id);
   j.start_array("nzp-CSI-RS-Resources");
-  for (uint32_t i1 = 0; i1 < nzp_csi_rs_res.size(); ++i1) {
-    j.write_int(nzp_csi_rs_res[i1]);
+  for (const auto& e1 : nzp_csi_rs_res) {
+    j.write_int(e1);
   }
   j.end_array();
   if (repeat_present) {
@@ -21994,7 +22005,7 @@ void nzp_csi_rs_res_set_s::to_json(json_writer& j) const
 
 std::string nzp_csi_rs_res_set_s::repeat_opts::to_string() const
 {
-  static constexpr const char* options[] = {"on", "off"};
+  static const char* options[] = {"on", "off"};
   return convert_enum_idx(options, 2, value, "nzp_csi_rs_res_set_s::repeat_e_");
 }
 
@@ -22007,7 +22018,7 @@ SRSASN_CODE pdsch_code_block_group_tx_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pdsch_code_block_group_tx_s::unpack(bit_ref& bref)
+SRSASN_CODE pdsch_code_block_group_tx_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(max_code_block_groups_per_transport_block.unpack(bref));
@@ -22025,14 +22036,14 @@ void pdsch_code_block_group_tx_s::to_json(json_writer& j) const
 
 std::string pdsch_code_block_group_tx_s::max_code_block_groups_per_transport_block_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n4", "n6", "n8"};
+  static const char* options[] = {"n2", "n4", "n6", "n8"};
   return convert_enum_idx(
       options, 4, value, "pdsch_code_block_group_tx_s::max_code_block_groups_per_transport_block_e_");
 }
 uint8_t pdsch_code_block_group_tx_s::max_code_block_groups_per_transport_block_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 6, 8};
-  return convert_enum_idx(
+  static const uint8_t options[] = {2, 4, 6, 8};
+  return map_enum_number(
       options, 4, value, "pdsch_code_block_group_tx_s::max_code_block_groups_per_transport_block_e_");
 }
 
@@ -22072,7 +22083,7 @@ SRSASN_CODE pusch_serving_cell_cfg_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pusch_serving_cell_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE pusch_serving_cell_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(code_block_group_tx_present, 1));
@@ -22131,19 +22142,19 @@ void pusch_serving_cell_cfg_s::to_json(json_writer& j) const
 
 std::string pusch_serving_cell_cfg_s::xoverhead_opts::to_string() const
 {
-  static constexpr const char* options[] = {"xoh6", "xoh12", "xoh18"};
+  static const char* options[] = {"xoh6", "xoh12", "xoh18"};
   return convert_enum_idx(options, 3, value, "pusch_serving_cell_cfg_s::xoverhead_e_");
 }
 uint8_t pusch_serving_cell_cfg_s::xoverhead_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {6, 12, 18};
-  return convert_enum_idx(options, 3, value, "pusch_serving_cell_cfg_s::xoverhead_e_");
+  static const uint8_t options[] = {6, 12, 18};
+  return map_enum_number(options, 3, value, "pusch_serving_cell_cfg_s::xoverhead_e_");
 }
 
 // PollByte ::= ENUMERATED
 std::string poll_byte_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "kB1",     "kB2",     "kB5",     "kB8",      "kB10",    "kB15",    "kB25",    "kB50",    "kB75",    "kB100",
       "kB125",   "kB250",   "kB375",   "kB500",    "kB750",   "kB1000",  "kB1250",  "kB1500",  "kB2000",  "kB3000",
       "kB4000",  "kB4500",  "kB5000",  "kB5500",   "kB6000",  "kB6500",  "kB7000",  "kB7500",  "mB8",     "mB9",
@@ -22157,18 +22168,17 @@ std::string poll_byte_opts::to_string() const
 // PollPDU ::= ENUMERATED
 std::string poll_pdu_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "p4",     "p8",       "p16",    "p32",    "p64",    "p128",   "p256",   "p512",   "p1024",  "p2048",  "p4096",
-      "p6144",  "p8192",    "p12288", "p16384", "p20480", "p24576", "p28672", "p32768", "p40960", "p49152", "p57344",
-      "p65536", "infinity", "spare8", "spare7", "spare6", "spare5", "spare4", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"p4",     "p8",     "p16",    "p32",    "p64",    "p128",   "p256",   "p512",
+                                  "p1024",  "p2048",  "p4096",  "p6144",  "p8192",  "p12288", "p16384", "p20480",
+                                  "p24576", "p28672", "p32768", "p40960", "p49152", "p57344", "p65536", "infinity",
+                                  "spare8", "spare7", "spare6", "spare5", "spare4", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 32, value, "poll_pdu_e");
 }
 int32_t poll_pdu_opts::to_number() const
 {
-  static constexpr int32_t options[] = {4,     8,     16,    32,    64,    128,   256,   512,
-                                        1024,  2048,  4096,  6144,  8192,  12288, 16384, 20480,
-                                        24576, 28672, 32768, 40960, 49152, 57344, 65536, -1};
-  return convert_enum_idx(options, 24, value, "poll_pdu_e");
+  static const int32_t options[] = {4,    8,     16,    32,    64,    128,   256,   512,   1024,  2048,  4096,  6144,
+                                    8192, 12288, 16384, 20480, 24576, 28672, 32768, 40960, 49152, 57344, 65536, -1};
+  return map_enum_number(options, 24, value, "poll_pdu_e");
 }
 
 // RateMatchPatternLTE-CRS ::= SEQUENCE
@@ -22186,7 +22196,7 @@ SRSASN_CODE rate_match_pattern_lte_crs_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rate_match_pattern_lte_crs_s::unpack(bit_ref& bref)
+SRSASN_CODE rate_match_pattern_lte_crs_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(mbsfn_sf_cfg_list_present, 1));
 
@@ -22207,8 +22217,8 @@ void rate_match_pattern_lte_crs_s::to_json(json_writer& j) const
   j.write_str("carrierBandwidthDL", carrier_bw_dl.to_string());
   if (mbsfn_sf_cfg_list_present) {
     j.start_array("mbsfn-SubframeConfigList");
-    for (uint32_t i1 = 0; i1 < mbsfn_sf_cfg_list.size(); ++i1) {
-      mbsfn_sf_cfg_list[i1].to_json(j);
+    for (const auto& e1 : mbsfn_sf_cfg_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -22219,59 +22229,59 @@ void rate_match_pattern_lte_crs_s::to_json(json_writer& j) const
 
 std::string rate_match_pattern_lte_crs_s::carrier_bw_dl_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n6", "n15", "n25", "n50", "n75", "n100", "spare2", "spare1"};
+  static const char* options[] = {"n6", "n15", "n25", "n50", "n75", "n100", "spare2", "spare1"};
   return convert_enum_idx(options, 8, value, "rate_match_pattern_lte_crs_s::carrier_bw_dl_e_");
 }
 uint8_t rate_match_pattern_lte_crs_s::carrier_bw_dl_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {6, 15, 25, 50, 75, 100};
-  return convert_enum_idx(options, 6, value, "rate_match_pattern_lte_crs_s::carrier_bw_dl_e_");
+  static const uint8_t options[] = {6, 15, 25, 50, 75, 100};
+  return map_enum_number(options, 6, value, "rate_match_pattern_lte_crs_s::carrier_bw_dl_e_");
 }
 
 std::string rate_match_pattern_lte_crs_s::nrof_crs_ports_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n4"};
+  static const char* options[] = {"n1", "n2", "n4"};
   return convert_enum_idx(options, 3, value, "rate_match_pattern_lte_crs_s::nrof_crs_ports_e_");
 }
 uint8_t rate_match_pattern_lte_crs_s::nrof_crs_ports_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4};
-  return convert_enum_idx(options, 3, value, "rate_match_pattern_lte_crs_s::nrof_crs_ports_e_");
+  static const uint8_t options[] = {1, 2, 4};
+  return map_enum_number(options, 3, value, "rate_match_pattern_lte_crs_s::nrof_crs_ports_e_");
 }
 
 std::string rate_match_pattern_lte_crs_s::v_shift_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0", "n1", "n2", "n3", "n4", "n5"};
+  static const char* options[] = {"n0", "n1", "n2", "n3", "n4", "n5"};
   return convert_enum_idx(options, 6, value, "rate_match_pattern_lte_crs_s::v_shift_e_");
 }
 uint8_t rate_match_pattern_lte_crs_s::v_shift_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1, 2, 3, 4, 5};
-  return convert_enum_idx(options, 6, value, "rate_match_pattern_lte_crs_s::v_shift_e_");
+  static const uint8_t options[] = {0, 1, 2, 3, 4, 5};
+  return map_enum_number(options, 6, value, "rate_match_pattern_lte_crs_s::v_shift_e_");
 }
 
 // SN-FieldLengthAM ::= ENUMERATED
 std::string sn_field_len_am_opts::to_string() const
 {
-  static constexpr const char* options[] = {"size12", "size18"};
+  static const char* options[] = {"size12", "size18"};
   return convert_enum_idx(options, 2, value, "sn_field_len_am_e");
 }
 uint8_t sn_field_len_am_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {12, 18};
-  return convert_enum_idx(options, 2, value, "sn_field_len_am_e");
+  static const uint8_t options[] = {12, 18};
+  return map_enum_number(options, 2, value, "sn_field_len_am_e");
 }
 
 // SN-FieldLengthUM ::= ENUMERATED
 std::string sn_field_len_um_opts::to_string() const
 {
-  static constexpr const char* options[] = {"size6", "size12"};
+  static const char* options[] = {"size6", "size12"};
   return convert_enum_idx(options, 2, value, "sn_field_len_um_e");
 }
 uint8_t sn_field_len_um_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {6, 12};
-  return convert_enum_idx(options, 2, value, "sn_field_len_um_e");
+  static const uint8_t options[] = {6, 12};
+  return map_enum_number(options, 2, value, "sn_field_len_um_e");
 }
 
 // SRS-CarrierSwitching ::= SEQUENCE
@@ -22295,7 +22305,7 @@ SRSASN_CODE srs_carrier_switching_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_carrier_switching_s::unpack(bit_ref& bref)
+SRSASN_CODE srs_carrier_switching_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(srs_switch_from_serv_cell_idx_present, 1));
@@ -22328,8 +22338,8 @@ void srs_carrier_switching_s::to_json(json_writer& j) const
   }
   if (monitoring_cells_present) {
     j.start_array("monitoringCells");
-    for (uint32_t i1 = 0; i1 < monitoring_cells.size(); ++i1) {
-      j.write_int(monitoring_cells[i1]);
+    for (const auto& e1 : monitoring_cells) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -22338,7 +22348,7 @@ void srs_carrier_switching_s::to_json(json_writer& j) const
 
 std::string srs_carrier_switching_s::srs_switch_from_carrier_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sUL", "nUL"};
+  static const char* options[] = {"sUL", "nUL"};
   return convert_enum_idx(options, 2, value, "srs_carrier_switching_s::srs_switch_from_carrier_e_");
 }
 
@@ -22417,8 +22427,8 @@ void srs_carrier_switching_s::srs_tpc_pdcch_group_c_::to_json(json_writer& j) co
   switch (type_) {
     case types::type_a:
       j.start_array("typeA");
-      for (uint32_t i1 = 0; i1 < c.get<type_a_l_>().size(); ++i1) {
-        c.get<type_a_l_>()[i1].to_json(j);
+      for (const auto& e1 : c.get<type_a_l_>()) {
+        e1.to_json(j);
       }
       j.end_array();
       break;
@@ -22447,7 +22457,7 @@ SRSASN_CODE srs_carrier_switching_s::srs_tpc_pdcch_group_c_::pack(bit_ref& bref)
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_carrier_switching_s::srs_tpc_pdcch_group_c_::unpack(bit_ref& bref)
+SRSASN_CODE srs_carrier_switching_s::srs_tpc_pdcch_group_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -22468,7 +22478,7 @@ SRSASN_CODE srs_carrier_switching_s::srs_tpc_pdcch_group_c_::unpack(bit_ref& bre
 
 std::string srs_carrier_switching_s::srs_tpc_pdcch_group_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"typeA", "typeB"};
+  static const char* options[] = {"typeA", "typeB"};
   return convert_enum_idx(options, 2, value, "srs_carrier_switching_s::srs_tpc_pdcch_group_c_::types");
 }
 
@@ -22490,7 +22500,7 @@ SRSASN_CODE slot_format_ind_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE slot_format_ind_s::unpack(bit_ref& bref)
+SRSASN_CODE slot_format_ind_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(slot_format_comb_to_add_mod_list_present, 1));
@@ -22514,15 +22524,15 @@ void slot_format_ind_s::to_json(json_writer& j) const
   j.write_int("dci-PayloadSize", dci_payload_size);
   if (slot_format_comb_to_add_mod_list_present) {
     j.start_array("slotFormatCombToAddModList");
-    for (uint32_t i1 = 0; i1 < slot_format_comb_to_add_mod_list.size(); ++i1) {
-      slot_format_comb_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : slot_format_comb_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (slot_format_comb_to_release_list_present) {
     j.start_array("slotFormatCombToReleaseList");
-    for (uint32_t i1 = 0; i1 < slot_format_comb_to_release_list.size(); ++i1) {
-      j.write_int(slot_format_comb_to_release_list[i1]);
+    for (const auto& e1 : slot_format_comb_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -22532,7 +22542,7 @@ void slot_format_ind_s::to_json(json_writer& j) const
 // T-PollRetransmit ::= ENUMERATED
 std::string t_poll_retx_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "ms5",   "ms10",   "ms15",   "ms20",   "ms25",   "ms30",   "ms35",   "ms40",   "ms45",  "ms50",  "ms55",
       "ms60",  "ms65",   "ms70",   "ms75",   "ms80",   "ms85",   "ms90",   "ms95",   "ms100", "ms105", "ms110",
       "ms115", "ms120",  "ms125",  "ms130",  "ms135",  "ms140",  "ms145",  "ms150",  "ms155", "ms160", "ms165",
@@ -22543,33 +22553,33 @@ std::string t_poll_retx_opts::to_string() const
 }
 uint16_t t_poll_retx_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {5,   10,  15,  20,  25,  30,  35,  40,  45,  50,  55,  60,   65,   70,  75,
-                                         80,  85,  90,  95,  100, 105, 110, 115, 120, 125, 130, 135,  140,  145, 150,
-                                         155, 160, 165, 170, 175, 180, 185, 190, 195, 200, 205, 210,  215,  220, 225,
-                                         230, 235, 240, 245, 250, 300, 350, 400, 450, 500, 800, 1000, 2000, 4000};
-  return convert_enum_idx(options, 59, value, "t_poll_retx_e");
+  static const uint16_t options[] = {5,   10,  15,  20,  25,  30,  35,  40,  45,  50,  55,  60,   65,   70,  75,
+                                     80,  85,  90,  95,  100, 105, 110, 115, 120, 125, 130, 135,  140,  145, 150,
+                                     155, 160, 165, 170, 175, 180, 185, 190, 195, 200, 205, 210,  215,  220, 225,
+                                     230, 235, 240, 245, 250, 300, 350, 400, 450, 500, 800, 1000, 2000, 4000};
+  return map_enum_number(options, 59, value, "t_poll_retx_e");
 }
 
 // T-Reassembly ::= ENUMERATED
 std::string t_reassembly_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms0",   "ms5",   "ms10",  "ms15",  "ms20",  "ms25",  "ms30",  "ms35",
-                                            "ms40",  "ms45",  "ms50",  "ms55",  "ms60",  "ms65",  "ms70",  "ms75",
-                                            "ms80",  "ms85",  "ms90",  "ms95",  "ms100", "ms110", "ms120", "ms130",
-                                            "ms140", "ms150", "ms160", "ms170", "ms180", "ms190", "ms200", "spare1"};
+  static const char* options[] = {"ms0",   "ms5",   "ms10",  "ms15",  "ms20",  "ms25",  "ms30",  "ms35",
+                                  "ms40",  "ms45",  "ms50",  "ms55",  "ms60",  "ms65",  "ms70",  "ms75",
+                                  "ms80",  "ms85",  "ms90",  "ms95",  "ms100", "ms110", "ms120", "ms130",
+                                  "ms140", "ms150", "ms160", "ms170", "ms180", "ms190", "ms200", "spare1"};
   return convert_enum_idx(options, 32, value, "t_reassembly_e");
 }
 uint8_t t_reassembly_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0,  5,  10, 15, 20,  25,  30,  35,  40,  45,  50,  55,  60,  65,  70, 75,
-                                        80, 85, 90, 95, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200};
-  return convert_enum_idx(options, 31, value, "t_reassembly_e");
+  static const uint8_t options[] = {0,  5,  10, 15, 20,  25,  30,  35,  40,  45,  50,  55,  60,  65,  70, 75,
+                                    80, 85, 90, 95, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200};
+  return map_enum_number(options, 31, value, "t_reassembly_e");
 }
 
 // T-StatusProhibit ::= ENUMERATED
 std::string t_status_prohibit_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "ms0",   "ms5",   "ms10",   "ms15",   "ms20",   "ms25",   "ms30",   "ms35",   "ms40",  "ms45",  "ms50",
       "ms55",  "ms60",  "ms65",   "ms70",   "ms75",   "ms80",   "ms85",   "ms90",   "ms95",  "ms100", "ms105",
       "ms110", "ms115", "ms120",  "ms125",  "ms130",  "ms135",  "ms140",  "ms145",  "ms150", "ms155", "ms160",
@@ -22580,11 +22590,11 @@ std::string t_status_prohibit_opts::to_string() const
 }
 uint16_t t_status_prohibit_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {
-      0,   5,   10,  15,  20,  25,  30,  35,  40,  45,  50,  55,  60,  65,  70,  75,   80,   85,   90,   95,  100,
-      105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180,  185,  190,  195,  200, 205,
-      210, 215, 220, 225, 230, 235, 240, 245, 250, 300, 350, 400, 450, 500, 800, 1000, 1200, 1600, 2000, 2400};
-  return convert_enum_idx(options, 62, value, "t_status_prohibit_e");
+  static const uint16_t options[] = {0,   5,   10,  15,  20,  25,  30,  35,  40,  45,   50,   55,   60,   65,  70,  75,
+                                     80,  85,  90,  95,  100, 105, 110, 115, 120, 125,  130,  135,  140,  145, 150, 155,
+                                     160, 165, 170, 175, 180, 185, 190, 195, 200, 205,  210,  215,  220,  225, 230, 235,
+                                     240, 245, 250, 300, 350, 400, 450, 500, 800, 1000, 1200, 1600, 2000, 2400};
+  return map_enum_number(options, 62, value, "t_status_prohibit_e");
 }
 
 // TDD-UL-DL-SlotConfig ::= SEQUENCE
@@ -22595,7 +22605,7 @@ SRSASN_CODE tdd_ul_dl_slot_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE tdd_ul_dl_slot_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE tdd_ul_dl_slot_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(slot_idx, bref, (uint16_t)0u, (uint16_t)319u));
   HANDLE_CODE(symbols.unpack(bref));
@@ -22624,7 +22634,7 @@ void tdd_ul_dl_slot_cfg_s::symbols_c_::to_json(json_writer& j) const
     case types::all_ul:
       break;
     case types::explicit_type:
-      j.write_fieldname("explicit_type");
+      j.write_fieldname("explicit");
       j.start_obj();
       if (c.nrof_dl_symbols_present) {
         j.write_int("nrofDownlinkSymbols", c.nrof_dl_symbols);
@@ -22663,7 +22673,7 @@ SRSASN_CODE tdd_ul_dl_slot_cfg_s::symbols_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE tdd_ul_dl_slot_cfg_s::symbols_c_::unpack(bit_ref& bref)
+SRSASN_CODE tdd_ul_dl_slot_cfg_s::symbols_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -22692,26 +22702,26 @@ SRSASN_CODE tdd_ul_dl_slot_cfg_s::symbols_c_::unpack(bit_ref& bref)
 
 std::string tdd_ul_dl_slot_cfg_s::symbols_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"allDownlink", "allUplink", "explicit_type"};
+  static const char* options[] = {"allDownlink", "allUplink", "explicit"};
   return convert_enum_idx(options, 3, value, "tdd_ul_dl_slot_cfg_s::symbols_c_::types");
 }
 
 // UL-DataSplitThreshold ::= ENUMERATED
 std::string ul_data_split_thres_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "b0",       "b100",     "b200",     "b400",     "b800",     "b1600",    "b3200",    "b6400",
-      "b12800",   "b25600",   "b51200",   "b102400",  "b204800",  "b409600",  "b819200",  "b1228800",
-      "b1638400", "b2457600", "b3276800", "b4096000", "b4915200", "b5734400", "b6553600", "infinity",
-      "spare8",   "spare7",   "spare6",   "spare5",   "spare4",   "spare3",   "spare2",   "spare1"};
+  static const char* options[] = {"b0",       "b100",     "b200",     "b400",     "b800",     "b1600",    "b3200",
+                                  "b6400",    "b12800",   "b25600",   "b51200",   "b102400",  "b204800",  "b409600",
+                                  "b819200",  "b1228800", "b1638400", "b2457600", "b3276800", "b4096000", "b4915200",
+                                  "b5734400", "b6553600", "infinity", "spare8",   "spare7",   "spare6",   "spare5",
+                                  "spare4",   "spare3",   "spare2",   "spare1"};
   return convert_enum_idx(options, 32, value, "ul_data_split_thres_e");
 }
 int32_t ul_data_split_thres_opts::to_number() const
 {
-  static constexpr int32_t options[] = {0,       100,     200,     400,     800,     1600,    3200,    6400,
-                                        12800,   25600,   51200,   102400,  204800,  409600,  819200,  1228800,
-                                        1638400, 2457600, 3276800, 4096000, 4915200, 5734400, 6553600, -1};
-  return convert_enum_idx(options, 24, value, "ul_data_split_thres_e");
+  static const int32_t options[] = {0,       100,     200,     400,     800,     1600,    3200,    6400,
+                                    12800,   25600,   51200,   102400,  204800,  409600,  819200,  1228800,
+                                    1638400, 2457600, 3276800, 4096000, 4915200, 5734400, 6553600, -1};
+  return map_enum_number(options, 24, value, "ul_data_split_thres_e");
 }
 
 // UplinkConfigCommon ::= SEQUENCE
@@ -22730,7 +22740,7 @@ SRSASN_CODE ul_cfg_common_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_cfg_common_s::unpack(bit_ref& bref)
+SRSASN_CODE ul_cfg_common_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(freq_info_ul_present, 1));
   HANDLE_CODE(bref.unpack(init_ul_bwp_present, 1));
@@ -22777,7 +22787,7 @@ SRSASN_CODE bwp_dl_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE bwp_dl_s::unpack(bit_ref& bref)
+SRSASN_CODE bwp_dl_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(bwp_common_present, 1));
@@ -22884,7 +22894,7 @@ SRSASN_CODE csi_meas_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_meas_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_meas_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(nzp_csi_rs_res_to_add_mod_list_present, 1));
@@ -22964,99 +22974,99 @@ void csi_meas_cfg_s::to_json(json_writer& j) const
   j.start_obj();
   if (nzp_csi_rs_res_to_add_mod_list_present) {
     j.start_array("nzp-CSI-RS-ResourceToAddModList");
-    for (uint32_t i1 = 0; i1 < nzp_csi_rs_res_to_add_mod_list.size(); ++i1) {
-      nzp_csi_rs_res_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : nzp_csi_rs_res_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (nzp_csi_rs_res_to_release_list_present) {
     j.start_array("nzp-CSI-RS-ResourceToReleaseList");
-    for (uint32_t i1 = 0; i1 < nzp_csi_rs_res_to_release_list.size(); ++i1) {
-      j.write_int(nzp_csi_rs_res_to_release_list[i1]);
+    for (const auto& e1 : nzp_csi_rs_res_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (nzp_csi_rs_res_set_to_add_mod_list_present) {
     j.start_array("nzp-CSI-RS-ResourceSetToAddModList");
-    for (uint32_t i1 = 0; i1 < nzp_csi_rs_res_set_to_add_mod_list.size(); ++i1) {
-      nzp_csi_rs_res_set_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : nzp_csi_rs_res_set_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (nzp_csi_rs_res_set_to_release_list_present) {
     j.start_array("nzp-CSI-RS-ResourceSetToReleaseList");
-    for (uint32_t i1 = 0; i1 < nzp_csi_rs_res_set_to_release_list.size(); ++i1) {
-      j.write_int(nzp_csi_rs_res_set_to_release_list[i1]);
+    for (const auto& e1 : nzp_csi_rs_res_set_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (csi_im_res_to_add_mod_list_present) {
     j.start_array("csi-IM-ResourceToAddModList");
-    for (uint32_t i1 = 0; i1 < csi_im_res_to_add_mod_list.size(); ++i1) {
-      csi_im_res_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : csi_im_res_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (csi_im_res_to_release_list_present) {
     j.start_array("csi-IM-ResourceToReleaseList");
-    for (uint32_t i1 = 0; i1 < csi_im_res_to_release_list.size(); ++i1) {
-      j.write_int(csi_im_res_to_release_list[i1]);
+    for (const auto& e1 : csi_im_res_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (csi_im_res_set_to_add_mod_list_present) {
     j.start_array("csi-IM-ResourceSetToAddModList");
-    for (uint32_t i1 = 0; i1 < csi_im_res_set_to_add_mod_list.size(); ++i1) {
-      csi_im_res_set_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : csi_im_res_set_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (csi_im_res_set_to_release_list_present) {
     j.start_array("csi-IM-ResourceSetToReleaseList");
-    for (uint32_t i1 = 0; i1 < csi_im_res_set_to_release_list.size(); ++i1) {
-      j.write_int(csi_im_res_set_to_release_list[i1]);
+    for (const auto& e1 : csi_im_res_set_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (csi_ssb_res_set_to_add_mod_list_present) {
     j.start_array("csi-SSB-ResourceSetToAddModList");
-    for (uint32_t i1 = 0; i1 < csi_ssb_res_set_to_add_mod_list.size(); ++i1) {
-      csi_ssb_res_set_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : csi_ssb_res_set_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (csi_ssb_res_set_to_add_release_list_present) {
     j.start_array("csi-SSB-ResourceSetToAddReleaseList");
-    for (uint32_t i1 = 0; i1 < csi_ssb_res_set_to_add_release_list.size(); ++i1) {
-      j.write_int(csi_ssb_res_set_to_add_release_list[i1]);
+    for (const auto& e1 : csi_ssb_res_set_to_add_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (csi_res_cfg_to_add_mod_list_present) {
     j.start_array("csi-ResourceConfigToAddModList");
-    for (uint32_t i1 = 0; i1 < csi_res_cfg_to_add_mod_list.size(); ++i1) {
-      csi_res_cfg_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : csi_res_cfg_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (csi_res_cfg_to_release_list_present) {
     j.start_array("csi-ResourceConfigToReleaseList");
-    for (uint32_t i1 = 0; i1 < csi_res_cfg_to_release_list.size(); ++i1) {
-      j.write_int(csi_res_cfg_to_release_list[i1]);
+    for (const auto& e1 : csi_res_cfg_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (csi_report_cfg_to_add_mod_list_present) {
     j.start_array("csi-ReportConfigToAddModList");
-    for (uint32_t i1 = 0; i1 < csi_report_cfg_to_add_mod_list.size(); ++i1) {
-      csi_report_cfg_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : csi_report_cfg_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (csi_report_cfg_to_release_list_present) {
     j.start_array("csi-ReportConfigToReleaseList");
-    for (uint32_t i1 = 0; i1 < csi_report_cfg_to_release_list.size(); ++i1) {
-      j.write_int(csi_report_cfg_to_release_list[i1]);
+    for (const auto& e1 : csi_report_cfg_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -23077,13 +23087,13 @@ void csi_meas_cfg_s::to_json(json_writer& j) const
 // CipheringAlgorithm ::= ENUMERATED
 std::string ciphering_algorithm_opts::to_string() const
 {
-  static constexpr const char* options[] = {"nea0", "nea1", "nea2", "nea3", "spare4", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"nea0", "nea1", "nea2", "nea3", "spare4", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 8, value, "ciphering_algorithm_e");
 }
 uint8_t ciphering_algorithm_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1, 2, 3};
-  return convert_enum_idx(options, 4, value, "ciphering_algorithm_e");
+  static const uint8_t options[] = {0, 1, 2, 3};
+  return map_enum_number(options, 4, value, "ciphering_algorithm_e");
 }
 
 // CrossCarrierSchedulingConfig ::= SEQUENCE
@@ -23094,7 +23104,7 @@ SRSASN_CODE cross_carrier_sched_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cross_carrier_sched_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE cross_carrier_sched_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(sched_cell_info.unpack(bref));
@@ -23217,7 +23227,7 @@ SRSASN_CODE cross_carrier_sched_cfg_s::sched_cell_info_c_::pack(bit_ref& bref) c
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cross_carrier_sched_cfg_s::sched_cell_info_c_::unpack(bit_ref& bref)
+SRSASN_CODE cross_carrier_sched_cfg_s::sched_cell_info_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -23239,7 +23249,7 @@ SRSASN_CODE cross_carrier_sched_cfg_s::sched_cell_info_c_::unpack(bit_ref& bref)
 
 std::string cross_carrier_sched_cfg_s::sched_cell_info_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"own", "other"};
+  static const char* options[] = {"own", "other"};
   return convert_enum_idx(options, 2, value, "cross_carrier_sched_cfg_s::sched_cell_info_c_::types");
 }
 
@@ -23256,7 +23266,7 @@ SRSASN_CODE dl_am_rlc_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dl_am_rlc_s::unpack(bit_ref& bref)
+SRSASN_CODE dl_am_rlc_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(sn_field_len_present, 1));
 
@@ -23291,7 +23301,7 @@ SRSASN_CODE dl_um_rlc_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dl_um_rlc_s::unpack(bit_ref& bref)
+SRSASN_CODE dl_um_rlc_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(sn_field_len_present, 1));
 
@@ -23315,13 +23325,13 @@ void dl_um_rlc_s::to_json(json_writer& j) const
 // IntegrityProtAlgorithm ::= ENUMERATED
 std::string integrity_prot_algorithm_opts::to_string() const
 {
-  static constexpr const char* options[] = {"nia0", "nia1", "nia2", "nia3", "spare4", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"nia0", "nia1", "nia2", "nia3", "spare4", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 8, value, "integrity_prot_algorithm_e");
 }
 uint8_t integrity_prot_algorithm_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1, 2, 3};
-  return convert_enum_idx(options, 4, value, "integrity_prot_algorithm_e");
+  static const uint8_t options[] = {0, 1, 2, 3};
+  return map_enum_number(options, 4, value, "integrity_prot_algorithm_e");
 }
 
 // PDCCH-ServingCellConfig ::= SEQUENCE
@@ -23336,7 +23346,7 @@ SRSASN_CODE pdcch_serving_cell_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pdcch_serving_cell_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE pdcch_serving_cell_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(slot_format_ind_present, 1));
@@ -23418,7 +23428,7 @@ SRSASN_CODE pdcp_cfg_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pdcp_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE pdcp_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(drb_present, 1));
@@ -23538,50 +23548,50 @@ void pdcp_cfg_s::to_json(json_writer& j) const
 
 std::string pdcp_cfg_s::drb_s_::discard_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms10",
-                                            "ms20",
-                                            "ms30",
-                                            "ms40",
-                                            "ms50",
-                                            "ms60",
-                                            "ms75",
-                                            "ms100",
-                                            "ms150",
-                                            "ms200",
-                                            "ms250",
-                                            "ms300",
-                                            "ms500",
-                                            "ms750",
-                                            "ms1500",
-                                            "infinity"};
+  static const char* options[] = {"ms10",
+                                  "ms20",
+                                  "ms30",
+                                  "ms40",
+                                  "ms50",
+                                  "ms60",
+                                  "ms75",
+                                  "ms100",
+                                  "ms150",
+                                  "ms200",
+                                  "ms250",
+                                  "ms300",
+                                  "ms500",
+                                  "ms750",
+                                  "ms1500",
+                                  "infinity"};
   return convert_enum_idx(options, 16, value, "pdcp_cfg_s::drb_s_::discard_timer_e_");
 }
 int16_t pdcp_cfg_s::drb_s_::discard_timer_opts::to_number() const
 {
-  static constexpr int16_t options[] = {10, 20, 30, 40, 50, 60, 75, 100, 150, 200, 250, 300, 500, 750, 1500, -1};
-  return convert_enum_idx(options, 16, value, "pdcp_cfg_s::drb_s_::discard_timer_e_");
+  static const int16_t options[] = {10, 20, 30, 40, 50, 60, 75, 100, 150, 200, 250, 300, 500, 750, 1500, -1};
+  return map_enum_number(options, 16, value, "pdcp_cfg_s::drb_s_::discard_timer_e_");
 }
 
 std::string pdcp_cfg_s::drb_s_::pdcp_sn_size_ul_opts::to_string() const
 {
-  static constexpr const char* options[] = {"len12bits", "len18bits"};
+  static const char* options[] = {"len12bits", "len18bits"};
   return convert_enum_idx(options, 2, value, "pdcp_cfg_s::drb_s_::pdcp_sn_size_ul_e_");
 }
 uint8_t pdcp_cfg_s::drb_s_::pdcp_sn_size_ul_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {12, 18};
-  return convert_enum_idx(options, 2, value, "pdcp_cfg_s::drb_s_::pdcp_sn_size_ul_e_");
+  static const uint8_t options[] = {12, 18};
+  return map_enum_number(options, 2, value, "pdcp_cfg_s::drb_s_::pdcp_sn_size_ul_e_");
 }
 
 std::string pdcp_cfg_s::drb_s_::pdcp_sn_size_dl_opts::to_string() const
 {
-  static constexpr const char* options[] = {"len12bits", "len18bits"};
+  static const char* options[] = {"len12bits", "len18bits"};
   return convert_enum_idx(options, 2, value, "pdcp_cfg_s::drb_s_::pdcp_sn_size_dl_e_");
 }
 uint8_t pdcp_cfg_s::drb_s_::pdcp_sn_size_dl_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {12, 18};
-  return convert_enum_idx(options, 2, value, "pdcp_cfg_s::drb_s_::pdcp_sn_size_dl_e_");
+  static const uint8_t options[] = {12, 18};
+  return map_enum_number(options, 2, value, "pdcp_cfg_s::drb_s_::pdcp_sn_size_dl_e_");
 }
 
 void pdcp_cfg_s::drb_s_::hdr_compress_c_::destroy_()
@@ -23743,7 +23753,7 @@ SRSASN_CODE pdcp_cfg_s::drb_s_::hdr_compress_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pdcp_cfg_s::drb_s_::hdr_compress_c_::unpack(bit_ref& bref)
+SRSASN_CODE pdcp_cfg_s::drb_s_::hdr_compress_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -23784,13 +23794,13 @@ SRSASN_CODE pdcp_cfg_s::drb_s_::hdr_compress_c_::unpack(bit_ref& bref)
 
 std::string pdcp_cfg_s::drb_s_::hdr_compress_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"notUsed", "rohc", "uplinkOnlyROHC"};
+  static const char* options[] = {"notUsed", "rohc", "uplinkOnlyROHC"};
   return convert_enum_idx(options, 3, value, "pdcp_cfg_s::drb_s_::hdr_compress_c_::types");
 }
 
 std::string pdcp_cfg_s::t_reordering_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "ms0",     "ms1",     "ms2",     "ms4",     "ms5",     "ms8",     "ms10",    "ms15",    "ms20",    "ms30",
       "ms40",    "ms50",    "ms60",    "ms80",    "ms100",   "ms120",   "ms140",   "ms160",   "ms180",   "ms200",
       "ms220",   "ms240",   "ms260",   "ms280",   "ms300",   "ms500",   "ms750",   "ms1000",  "ms1250",  "ms1500",
@@ -23802,10 +23812,10 @@ std::string pdcp_cfg_s::t_reordering_opts::to_string() const
 }
 uint16_t pdcp_cfg_s::t_reordering_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {0,   1,   2,   4,    5,    8,    10,   15,   20,   30,   40,   50,
-                                         60,  80,  100, 120,  140,  160,  180,  200,  220,  240,  260,  280,
-                                         300, 500, 750, 1000, 1250, 1500, 1750, 2000, 2250, 2500, 2750, 3000};
-  return convert_enum_idx(options, 36, value, "pdcp_cfg_s::t_reordering_e_");
+  static const uint16_t options[] = {0,   1,   2,   4,    5,    8,    10,   15,   20,   30,   40,   50,
+                                     60,  80,  100, 120,  140,  160,  180,  200,  220,  240,  260,  280,
+                                     300, 500, 750, 1000, 1250, 1500, 1750, 2000, 2250, 2500, 2750, 3000};
+  return map_enum_number(options, 36, value, "pdcp_cfg_s::t_reordering_e_");
 }
 
 // PDSCH-ServingCellConfig ::= SEQUENCE
@@ -23851,7 +23861,7 @@ SRSASN_CODE pdsch_serving_cell_cfg_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pdsch_serving_cell_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE pdsch_serving_cell_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(code_block_group_tx_present, 1));
@@ -23920,24 +23930,24 @@ void pdsch_serving_cell_cfg_s::to_json(json_writer& j) const
 
 std::string pdsch_serving_cell_cfg_s::xoverhead_opts::to_string() const
 {
-  static constexpr const char* options[] = {"xOh6", "xOh12", "xOh18"};
+  static const char* options[] = {"xOh6", "xOh12", "xOh18"};
   return convert_enum_idx(options, 3, value, "pdsch_serving_cell_cfg_s::xoverhead_e_");
 }
 uint8_t pdsch_serving_cell_cfg_s::xoverhead_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {6, 12, 18};
-  return convert_enum_idx(options, 3, value, "pdsch_serving_cell_cfg_s::xoverhead_e_");
+  static const uint8_t options[] = {6, 12, 18};
+  return map_enum_number(options, 3, value, "pdsch_serving_cell_cfg_s::xoverhead_e_");
 }
 
 std::string pdsch_serving_cell_cfg_s::nrof_harq_processes_for_pdsch_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n4", "n6", "n10", "n12", "n16"};
+  static const char* options[] = {"n2", "n4", "n6", "n10", "n12", "n16"};
   return convert_enum_idx(options, 6, value, "pdsch_serving_cell_cfg_s::nrof_harq_processes_for_pdsch_e_");
 }
 uint8_t pdsch_serving_cell_cfg_s::nrof_harq_processes_for_pdsch_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 6, 10, 12, 16};
-  return convert_enum_idx(options, 6, value, "pdsch_serving_cell_cfg_s::nrof_harq_processes_for_pdsch_e_");
+  static const uint8_t options[] = {2, 4, 6, 10, 12, 16};
+  return map_enum_number(options, 6, value, "pdsch_serving_cell_cfg_s::nrof_harq_processes_for_pdsch_e_");
 }
 
 // RACH-ConfigDedicated ::= SEQUENCE
@@ -23956,7 +23966,7 @@ SRSASN_CODE rach_cfg_ded_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rach_cfg_ded_s::unpack(bit_ref& bref)
+SRSASN_CODE rach_cfg_ded_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(cfra_present, 1));
@@ -23989,37 +23999,37 @@ void rach_cfg_ded_s::to_json(json_writer& j) const
 SRSASN_CODE sdap_cfg_s::pack(bit_ref& bref) const
 {
   bref.pack(ext, 1);
-  HANDLE_CODE(bref.pack(mapped_qo_s_flows_to_add_present, 1));
-  HANDLE_CODE(bref.pack(mapped_qo_s_flows_to_release_present, 1));
+  HANDLE_CODE(bref.pack(mapped_qos_flows_to_add_present, 1));
+  HANDLE_CODE(bref.pack(mapped_qos_flows_to_release_present, 1));
 
   HANDLE_CODE(pack_integer(bref, pdu_session, (uint16_t)0u, (uint16_t)255u));
   HANDLE_CODE(sdap_hdr_dl.pack(bref));
   HANDLE_CODE(sdap_hdr_ul.pack(bref));
   HANDLE_CODE(bref.pack(default_drb, 1));
-  if (mapped_qo_s_flows_to_add_present) {
-    HANDLE_CODE(pack_dyn_seq_of(bref, mapped_qo_s_flows_to_add, 1, 64, integer_packer<uint8_t>(0, 63)));
+  if (mapped_qos_flows_to_add_present) {
+    HANDLE_CODE(pack_dyn_seq_of(bref, mapped_qos_flows_to_add, 1, 64, integer_packer<uint8_t>(0, 63)));
   }
-  if (mapped_qo_s_flows_to_release_present) {
-    HANDLE_CODE(pack_dyn_seq_of(bref, mapped_qo_s_flows_to_release, 1, 64, integer_packer<uint8_t>(0, 63)));
+  if (mapped_qos_flows_to_release_present) {
+    HANDLE_CODE(pack_dyn_seq_of(bref, mapped_qos_flows_to_release, 1, 64, integer_packer<uint8_t>(0, 63)));
   }
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sdap_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE sdap_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
-  HANDLE_CODE(bref.unpack(mapped_qo_s_flows_to_add_present, 1));
-  HANDLE_CODE(bref.unpack(mapped_qo_s_flows_to_release_present, 1));
+  HANDLE_CODE(bref.unpack(mapped_qos_flows_to_add_present, 1));
+  HANDLE_CODE(bref.unpack(mapped_qos_flows_to_release_present, 1));
 
   HANDLE_CODE(unpack_integer(pdu_session, bref, (uint16_t)0u, (uint16_t)255u));
   HANDLE_CODE(sdap_hdr_dl.unpack(bref));
   HANDLE_CODE(sdap_hdr_ul.unpack(bref));
   HANDLE_CODE(bref.unpack(default_drb, 1));
-  if (mapped_qo_s_flows_to_add_present) {
-    HANDLE_CODE(unpack_dyn_seq_of(mapped_qo_s_flows_to_add, bref, 1, 64, integer_packer<uint8_t>(0, 63)));
+  if (mapped_qos_flows_to_add_present) {
+    HANDLE_CODE(unpack_dyn_seq_of(mapped_qos_flows_to_add, bref, 1, 64, integer_packer<uint8_t>(0, 63)));
   }
-  if (mapped_qo_s_flows_to_release_present) {
-    HANDLE_CODE(unpack_dyn_seq_of(mapped_qo_s_flows_to_release, bref, 1, 64, integer_packer<uint8_t>(0, 63)));
+  if (mapped_qos_flows_to_release_present) {
+    HANDLE_CODE(unpack_dyn_seq_of(mapped_qos_flows_to_release, bref, 1, 64, integer_packer<uint8_t>(0, 63)));
   }
 
   return SRSASN_SUCCESS;
@@ -24031,17 +24041,17 @@ void sdap_cfg_s::to_json(json_writer& j) const
   j.write_str("sdap-HeaderDL", sdap_hdr_dl.to_string());
   j.write_str("sdap-HeaderUL", sdap_hdr_ul.to_string());
   j.write_bool("defaultDRB", default_drb);
-  if (mapped_qo_s_flows_to_add_present) {
+  if (mapped_qos_flows_to_add_present) {
     j.start_array("mappedQoS-FlowsToAdd");
-    for (uint32_t i1 = 0; i1 < mapped_qo_s_flows_to_add.size(); ++i1) {
-      j.write_int(mapped_qo_s_flows_to_add[i1]);
+    for (const auto& e1 : mapped_qos_flows_to_add) {
+      j.write_int(e1);
     }
     j.end_array();
   }
-  if (mapped_qo_s_flows_to_release_present) {
+  if (mapped_qos_flows_to_release_present) {
     j.start_array("mappedQoS-FlowsToRelease");
-    for (uint32_t i1 = 0; i1 < mapped_qo_s_flows_to_release.size(); ++i1) {
-      j.write_int(mapped_qo_s_flows_to_release[i1]);
+    for (const auto& e1 : mapped_qos_flows_to_release) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -24050,13 +24060,13 @@ void sdap_cfg_s::to_json(json_writer& j) const
 
 std::string sdap_cfg_s::sdap_hdr_dl_opts::to_string() const
 {
-  static constexpr const char* options[] = {"present", "absent"};
+  static const char* options[] = {"present", "absent"};
   return convert_enum_idx(options, 2, value, "sdap_cfg_s::sdap_hdr_dl_e_");
 }
 
 std::string sdap_cfg_s::sdap_hdr_ul_opts::to_string() const
 {
-  static constexpr const char* options[] = {"present", "absent"};
+  static const char* options[] = {"present", "absent"};
   return convert_enum_idx(options, 2, value, "sdap_cfg_s::sdap_hdr_ul_e_");
 }
 
@@ -24073,7 +24083,7 @@ SRSASN_CODE sched_request_to_add_mod_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sched_request_to_add_mod_s::unpack(bit_ref& bref)
+SRSASN_CODE sched_request_to_add_mod_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(sr_prohibit_timer_present, 1));
 
@@ -24098,24 +24108,24 @@ void sched_request_to_add_mod_s::to_json(json_writer& j) const
 
 std::string sched_request_to_add_mod_s::sr_prohibit_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms1", "ms2", "ms4", "ms8", "ms16", "ms32", "ms64", "ms128"};
+  static const char* options[] = {"ms1", "ms2", "ms4", "ms8", "ms16", "ms32", "ms64", "ms128"};
   return convert_enum_idx(options, 8, value, "sched_request_to_add_mod_s::sr_prohibit_timer_e_");
 }
 uint8_t sched_request_to_add_mod_s::sr_prohibit_timer_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4, 8, 16, 32, 64, 128};
-  return convert_enum_idx(options, 8, value, "sched_request_to_add_mod_s::sr_prohibit_timer_e_");
+  static const uint8_t options[] = {1, 2, 4, 8, 16, 32, 64, 128};
+  return map_enum_number(options, 8, value, "sched_request_to_add_mod_s::sr_prohibit_timer_e_");
 }
 
 std::string sched_request_to_add_mod_s::sr_trans_max_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n4", "n8", "n16", "n32", "n64", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"n4", "n8", "n16", "n32", "n64", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 8, value, "sched_request_to_add_mod_s::sr_trans_max_e_");
 }
 uint8_t sched_request_to_add_mod_s::sr_trans_max_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 8, 16, 32, 64};
-  return convert_enum_idx(options, 5, value, "sched_request_to_add_mod_s::sr_trans_max_e_");
+  static const uint8_t options[] = {4, 8, 16, 32, 64};
+  return map_enum_number(options, 5, value, "sched_request_to_add_mod_s::sr_trans_max_e_");
 }
 
 // ServingCellConfigCommon ::= SEQUENCE
@@ -24176,7 +24186,7 @@ SRSASN_CODE serving_cell_cfg_common_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE serving_cell_cfg_common_s::unpack(bit_ref& bref)
+SRSASN_CODE serving_cell_cfg_common_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(pci_present, 1));
@@ -24268,15 +24278,15 @@ void serving_cell_cfg_common_s::to_json(json_writer& j) const
   }
   if (rate_match_pattern_to_add_mod_list_present) {
     j.start_array("rateMatchPatternToAddModList");
-    for (uint32_t i1 = 0; i1 < rate_match_pattern_to_add_mod_list.size(); ++i1) {
-      rate_match_pattern_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : rate_match_pattern_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (rate_match_pattern_to_release_list_present) {
     j.start_array("rateMatchPatternToReleaseList");
-    for (uint32_t i1 = 0; i1 < rate_match_pattern_to_release_list.size(); ++i1) {
-      j.write_int(rate_match_pattern_to_release_list[i1]);
+    for (const auto& e1 : rate_match_pattern_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -24293,13 +24303,13 @@ void serving_cell_cfg_common_s::to_json(json_writer& j) const
 
 std::string serving_cell_cfg_common_s::n_timing_advance_offset_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0", "n25600", "n39936"};
+  static const char* options[] = {"n0", "n25600", "n39936"};
   return convert_enum_idx(options, 3, value, "serving_cell_cfg_common_s::n_timing_advance_offset_e_");
 }
 uint16_t serving_cell_cfg_common_s::n_timing_advance_offset_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {0, 25600, 39936};
-  return convert_enum_idx(options, 3, value, "serving_cell_cfg_common_s::n_timing_advance_offset_e_");
+  static const uint16_t options[] = {0, 25600, 39936};
+  return map_enum_number(options, 3, value, "serving_cell_cfg_common_s::n_timing_advance_offset_e_");
 }
 
 void serving_cell_cfg_common_s::ssb_positions_in_burst_c_::destroy_()
@@ -24420,7 +24430,7 @@ SRSASN_CODE serving_cell_cfg_common_s::ssb_positions_in_burst_c_::pack(bit_ref& 
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE serving_cell_cfg_common_s::ssb_positions_in_burst_c_::unpack(bit_ref& bref)
+SRSASN_CODE serving_cell_cfg_common_s::ssb_positions_in_burst_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -24444,30 +24454,30 @@ SRSASN_CODE serving_cell_cfg_common_s::ssb_positions_in_burst_c_::unpack(bit_ref
 
 std::string serving_cell_cfg_common_s::ssb_positions_in_burst_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"shortBitmap", "mediumBitmap", "longBitmap"};
+  static const char* options[] = {"shortBitmap", "mediumBitmap", "longBitmap"};
   return convert_enum_idx(options, 3, value, "serving_cell_cfg_common_s::ssb_positions_in_burst_c_::types");
 }
 
 std::string serving_cell_cfg_common_s::ssb_periodicity_serving_cell_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms5", "ms10", "ms20", "ms40", "ms80", "ms160", "spare2", "spare1"};
+  static const char* options[] = {"ms5", "ms10", "ms20", "ms40", "ms80", "ms160", "spare2", "spare1"};
   return convert_enum_idx(options, 8, value, "serving_cell_cfg_common_s::ssb_periodicity_serving_cell_e_");
 }
 uint8_t serving_cell_cfg_common_s::ssb_periodicity_serving_cell_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {5, 10, 20, 40, 80, 160};
-  return convert_enum_idx(options, 6, value, "serving_cell_cfg_common_s::ssb_periodicity_serving_cell_e_");
+  static const uint8_t options[] = {5, 10, 20, 40, 80, 160};
+  return map_enum_number(options, 6, value, "serving_cell_cfg_common_s::ssb_periodicity_serving_cell_e_");
 }
 
 std::string serving_cell_cfg_common_s::dmrs_type_a_position_opts::to_string() const
 {
-  static constexpr const char* options[] = {"pos2", "pos3"};
+  static const char* options[] = {"pos2", "pos3"};
   return convert_enum_idx(options, 2, value, "serving_cell_cfg_common_s::dmrs_type_a_position_e_");
 }
 uint8_t serving_cell_cfg_common_s::dmrs_type_a_position_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 3};
-  return convert_enum_idx(options, 2, value, "serving_cell_cfg_common_s::dmrs_type_a_position_e_");
+  static const uint8_t options[] = {2, 3};
+  return map_enum_number(options, 2, value, "serving_cell_cfg_common_s::dmrs_type_a_position_e_");
 }
 
 // TAG ::= SEQUENCE
@@ -24479,7 +24489,7 @@ SRSASN_CODE tag_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE tag_s::unpack(bit_ref& bref)
+SRSASN_CODE tag_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(tag_id, bref, (uint8_t)0u, (uint8_t)3u));
@@ -24511,7 +24521,7 @@ SRSASN_CODE tdd_ul_dl_cfg_ded_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE tdd_ul_dl_cfg_ded_s::unpack(bit_ref& bref)
+SRSASN_CODE tdd_ul_dl_cfg_ded_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(slot_specific_cfgs_to_add_mod_list_present, 1));
@@ -24531,15 +24541,15 @@ void tdd_ul_dl_cfg_ded_s::to_json(json_writer& j) const
   j.start_obj();
   if (slot_specific_cfgs_to_add_mod_list_present) {
     j.start_array("slotSpecificConfigurationsToAddModList");
-    for (uint32_t i1 = 0; i1 < slot_specific_cfgs_to_add_mod_list.size(); ++i1) {
-      slot_specific_cfgs_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : slot_specific_cfgs_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (slot_specific_cfgs_torelease_list_present) {
     j.start_array("slotSpecificConfigurationsToreleaseList");
-    for (uint32_t i1 = 0; i1 < slot_specific_cfgs_torelease_list.size(); ++i1) {
-      j.write_int(slot_specific_cfgs_torelease_list[i1]);
+    for (const auto& e1 : slot_specific_cfgs_torelease_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -24561,7 +24571,7 @@ SRSASN_CODE ul_am_rlc_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_am_rlc_s::unpack(bit_ref& bref)
+SRSASN_CODE ul_am_rlc_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(sn_field_len_present, 1));
 
@@ -24590,13 +24600,13 @@ void ul_am_rlc_s::to_json(json_writer& j) const
 
 std::string ul_am_rlc_s::max_retx_thres_opts::to_string() const
 {
-  static constexpr const char* options[] = {"t1", "t2", "t3", "t4", "t6", "t8", "t16", "t32"};
+  static const char* options[] = {"t1", "t2", "t3", "t4", "t6", "t8", "t16", "t32"};
   return convert_enum_idx(options, 8, value, "ul_am_rlc_s::max_retx_thres_e_");
 }
 uint8_t ul_am_rlc_s::max_retx_thres_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3, 4, 6, 8, 16, 32};
-  return convert_enum_idx(options, 8, value, "ul_am_rlc_s::max_retx_thres_e_");
+  static const uint8_t options[] = {1, 2, 3, 4, 6, 8, 16, 32};
+  return map_enum_number(options, 8, value, "ul_am_rlc_s::max_retx_thres_e_");
 }
 
 // UL-UM-RLC ::= SEQUENCE
@@ -24610,7 +24620,7 @@ SRSASN_CODE ul_um_rlc_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_um_rlc_s::unpack(bit_ref& bref)
+SRSASN_CODE ul_um_rlc_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(sn_field_len_present, 1));
 
@@ -24680,7 +24690,7 @@ SRSASN_CODE ul_cfg_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE ul_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(init_ul_bwp_present, 1));
@@ -24739,15 +24749,15 @@ void ul_cfg_s::to_json(json_writer& j) const
   }
   if (ul_bwp_to_release_list_present) {
     j.start_array("uplinkBWP-ToReleaseList");
-    for (uint32_t i1 = 0; i1 < ul_bwp_to_release_list.size(); ++i1) {
-      j.write_int(ul_bwp_to_release_list[i1]);
+    for (const auto& e1 : ul_bwp_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (ul_bwp_to_add_mod_list_present) {
     j.start_array("uplinkBWP-ToAddModList");
-    for (uint32_t i1 = 0; i1 < ul_bwp_to_add_mod_list.size(); ++i1) {
-      ul_bwp_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : ul_bwp_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -24768,8 +24778,8 @@ void ul_cfg_s::to_json(json_writer& j) const
     }
     if (ul_ch_bw_per_scs_list.is_present()) {
       j.start_array("uplinkChannelBW-PerSCS-List");
-      for (uint32_t i1 = 0; i1 < ul_ch_bw_per_scs_list->size(); ++i1) {
-        ((*ul_ch_bw_per_scs_list)[i1]).to_json(j);
+      for (const auto& e1 : *ul_ch_bw_per_scs_list) {
+        e1.to_json(j);
       }
       j.end_array();
     }
@@ -24791,7 +24801,7 @@ SRSASN_CODE bsr_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE bsr_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE bsr_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(lc_ch_sr_delay_timer_present, 1));
@@ -24817,65 +24827,65 @@ void bsr_cfg_s::to_json(json_writer& j) const
 
 std::string bsr_cfg_s::periodic_bsr_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sf1",
-                                            "sf5",
-                                            "sf10",
-                                            "sf16",
-                                            "sf20",
-                                            "sf32",
-                                            "sf40",
-                                            "sf64",
-                                            "sf80",
-                                            "sf128",
-                                            "sf160",
-                                            "sf320",
-                                            "sf640",
-                                            "sf1280",
-                                            "sf2560",
-                                            "infinity"};
+  static const char* options[] = {"sf1",
+                                  "sf5",
+                                  "sf10",
+                                  "sf16",
+                                  "sf20",
+                                  "sf32",
+                                  "sf40",
+                                  "sf64",
+                                  "sf80",
+                                  "sf128",
+                                  "sf160",
+                                  "sf320",
+                                  "sf640",
+                                  "sf1280",
+                                  "sf2560",
+                                  "infinity"};
   return convert_enum_idx(options, 16, value, "bsr_cfg_s::periodic_bsr_timer_e_");
 }
 int16_t bsr_cfg_s::periodic_bsr_timer_opts::to_number() const
 {
-  static constexpr int16_t options[] = {1, 5, 10, 16, 20, 32, 40, 64, 80, 128, 160, 320, 640, 1280, 2560, -1};
-  return convert_enum_idx(options, 16, value, "bsr_cfg_s::periodic_bsr_timer_e_");
+  static const int16_t options[] = {1, 5, 10, 16, 20, 32, 40, 64, 80, 128, 160, 320, 640, 1280, 2560, -1};
+  return map_enum_number(options, 16, value, "bsr_cfg_s::periodic_bsr_timer_e_");
 }
 
 std::string bsr_cfg_s::retx_bsr_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sf10",
-                                            "sf20",
-                                            "sf40",
-                                            "sf80",
-                                            "sf160",
-                                            "sf320",
-                                            "sf640",
-                                            "sf1280",
-                                            "sf2560",
-                                            "sf5120",
-                                            "sf10240",
-                                            "spare5",
-                                            "spare4",
-                                            "spare3",
-                                            "spare2",
-                                            "spare1"};
+  static const char* options[] = {"sf10",
+                                  "sf20",
+                                  "sf40",
+                                  "sf80",
+                                  "sf160",
+                                  "sf320",
+                                  "sf640",
+                                  "sf1280",
+                                  "sf2560",
+                                  "sf5120",
+                                  "sf10240",
+                                  "spare5",
+                                  "spare4",
+                                  "spare3",
+                                  "spare2",
+                                  "spare1"};
   return convert_enum_idx(options, 16, value, "bsr_cfg_s::retx_bsr_timer_e_");
 }
 uint16_t bsr_cfg_s::retx_bsr_timer_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120, 10240};
-  return convert_enum_idx(options, 11, value, "bsr_cfg_s::retx_bsr_timer_e_");
+  static const uint16_t options[] = {10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120, 10240};
+  return map_enum_number(options, 11, value, "bsr_cfg_s::retx_bsr_timer_e_");
 }
 
 std::string bsr_cfg_s::lc_ch_sr_delay_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sf20", "sf40", "sf64", "sf128", "sf512", "sf1024", "sf2560", "spare1"};
+  static const char* options[] = {"sf20", "sf40", "sf64", "sf128", "sf512", "sf1024", "sf2560", "spare1"};
   return convert_enum_idx(options, 8, value, "bsr_cfg_s::lc_ch_sr_delay_timer_e_");
 }
 uint16_t bsr_cfg_s::lc_ch_sr_delay_timer_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {20, 40, 64, 128, 512, 1024, 2560};
-  return convert_enum_idx(options, 7, value, "bsr_cfg_s::lc_ch_sr_delay_timer_e_");
+  static const uint16_t options[] = {20, 40, 64, 128, 512, 1024, 2560};
+  return map_enum_number(options, 7, value, "bsr_cfg_s::lc_ch_sr_delay_timer_e_");
 }
 
 // DRB-ToAddMod ::= SEQUENCE
@@ -24897,7 +24907,7 @@ SRSASN_CODE drb_to_add_mod_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE drb_to_add_mod_s::unpack(bit_ref& bref)
+SRSASN_CODE drb_to_add_mod_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(cn_assoc_present, 1));
@@ -25031,7 +25041,7 @@ SRSASN_CODE drb_to_add_mod_s::cn_assoc_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE drb_to_add_mod_s::cn_assoc_c_::unpack(bit_ref& bref)
+SRSASN_CODE drb_to_add_mod_s::cn_assoc_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -25052,7 +25062,7 @@ SRSASN_CODE drb_to_add_mod_s::cn_assoc_c_::unpack(bit_ref& bref)
 
 std::string drb_to_add_mod_s::cn_assoc_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"eps-BearerIdentity", "sdap-Config"};
+  static const char* options[] = {"eps-BearerIdentity", "sdap-Config"};
   return convert_enum_idx(options, 2, value, "drb_to_add_mod_s::cn_assoc_c_::types");
 }
 
@@ -25076,7 +25086,7 @@ SRSASN_CODE drx_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE drx_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE drx_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(short_drx_present, 1));
 
@@ -25192,7 +25202,7 @@ SRSASN_CODE drx_cfg_s::drx_on_dur_timer_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE drx_cfg_s::drx_on_dur_timer_c_::unpack(bit_ref& bref)
+SRSASN_CODE drx_cfg_s::drx_on_dur_timer_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -25213,68 +25223,66 @@ SRSASN_CODE drx_cfg_s::drx_on_dur_timer_c_::unpack(bit_ref& bref)
 
 std::string drx_cfg_s::drx_on_dur_timer_c_::milli_seconds_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "ms1",    "ms2",    "ms3",    "ms4",    "ms5",    "ms6",    "ms8",    "ms10",   "ms20",   "ms30",  "ms40",
-      "ms50",   "ms60",   "ms80",   "ms100",  "ms200",  "ms300",  "ms400",  "ms500",  "ms600",  "ms800", "ms1000",
-      "ms1200", "ms1600", "spare8", "spare7", "spare6", "spare5", "spare4", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"ms1",    "ms2",    "ms3",    "ms4",    "ms5",    "ms6",    "ms8",    "ms10",
+                                  "ms20",   "ms30",   "ms40",   "ms50",   "ms60",   "ms80",   "ms100",  "ms200",
+                                  "ms300",  "ms400",  "ms500",  "ms600",  "ms800",  "ms1000", "ms1200", "ms1600",
+                                  "spare8", "spare7", "spare6", "spare5", "spare4", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 32, value, "drx_cfg_s::drx_on_dur_timer_c_::milli_seconds_e_");
 }
 uint16_t drx_cfg_s::drx_on_dur_timer_c_::milli_seconds_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {1,  2,  3,   4,   5,   6,   8,   10,  20,  30,   40,   50,
-                                         60, 80, 100, 200, 300, 400, 500, 600, 800, 1000, 1200, 1600};
-  return convert_enum_idx(options, 24, value, "drx_cfg_s::drx_on_dur_timer_c_::milli_seconds_e_");
+  static const uint16_t options[] = {1,  2,  3,   4,   5,   6,   8,   10,  20,  30,   40,   50,
+                                     60, 80, 100, 200, 300, 400, 500, 600, 800, 1000, 1200, 1600};
+  return map_enum_number(options, 24, value, "drx_cfg_s::drx_on_dur_timer_c_::milli_seconds_e_");
 }
 
 std::string drx_cfg_s::drx_on_dur_timer_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"subMilliSeconds", "milliSeconds"};
+  static const char* options[] = {"subMilliSeconds", "milliSeconds"};
   return convert_enum_idx(options, 2, value, "drx_cfg_s::drx_on_dur_timer_c_::types");
 }
 
 std::string drx_cfg_s::drx_inactivity_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "ms0",    "ms1",    "ms2",    "ms3",    "ms4",    "ms5",    "ms6",    "ms8",    "ms10",   "ms20",   "ms30",
-      "ms40",   "ms50",   "ms60",   "ms80",   "ms100",  "ms200",  "ms300",  "ms500",  "ms750",  "ms1280", "ms1920",
-      "ms2560", "spare9", "spare8", "spare7", "spare6", "spare5", "spare4", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"ms0",    "ms1",    "ms2",    "ms3",    "ms4",    "ms5",    "ms6",    "ms8",
+                                  "ms10",   "ms20",   "ms30",   "ms40",   "ms50",   "ms60",   "ms80",   "ms100",
+                                  "ms200",  "ms300",  "ms500",  "ms750",  "ms1280", "ms1920", "ms2560", "spare9",
+                                  "spare8", "spare7", "spare6", "spare5", "spare4", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 32, value, "drx_cfg_s::drx_inactivity_timer_e_");
 }
 uint16_t drx_cfg_s::drx_inactivity_timer_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {0,  1,  2,  3,   4,   5,   6,   8,   10,   20,   30,  40,
-                                         50, 60, 80, 100, 200, 300, 500, 750, 1280, 1920, 2560};
-  return convert_enum_idx(options, 23, value, "drx_cfg_s::drx_inactivity_timer_e_");
+  static const uint16_t options[] = {0,  1,  2,  3,   4,   5,   6,   8,   10,   20,   30,  40,
+                                     50, 60, 80, 100, 200, 300, 500, 750, 1280, 1920, 2560};
+  return map_enum_number(options, 23, value, "drx_cfg_s::drx_inactivity_timer_e_");
 }
 
 std::string drx_cfg_s::drx_retx_timer_dl_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sl0",     "sl1",     "sl2",    "sl4",     "sl6",     "sl8",     "sl16",
-                                            "sl24",    "sl33",    "sl40",   "sl64",    "sl80",    "sl96",    "sl112",
-                                            "sl128",   "sl160",   "sl320",  "spare15", "spare14", "spare13", "spare12",
-                                            "spare11", "spare10", "spare9", "spare8",  "spare7",  "spare6",  "spare5",
-                                            "spare4",  "spare3",  "spare2", "spare1"};
+  static const char* options[] = {"sl0",    "sl1",     "sl2",     "sl4",     "sl6",     "sl8",     "sl16",    "sl24",
+                                  "sl33",   "sl40",    "sl64",    "sl80",    "sl96",    "sl112",   "sl128",   "sl160",
+                                  "sl320",  "spare15", "spare14", "spare13", "spare12", "spare11", "spare10", "spare9",
+                                  "spare8", "spare7",  "spare6",  "spare5",  "spare4",  "spare3",  "spare2",  "spare1"};
   return convert_enum_idx(options, 32, value, "drx_cfg_s::drx_retx_timer_dl_e_");
 }
 uint16_t drx_cfg_s::drx_retx_timer_dl_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {0, 1, 2, 4, 6, 8, 16, 24, 33, 40, 64, 80, 96, 112, 128, 160, 320};
-  return convert_enum_idx(options, 17, value, "drx_cfg_s::drx_retx_timer_dl_e_");
+  static const uint16_t options[] = {0, 1, 2, 4, 6, 8, 16, 24, 33, 40, 64, 80, 96, 112, 128, 160, 320};
+  return map_enum_number(options, 17, value, "drx_cfg_s::drx_retx_timer_dl_e_");
 }
 
 std::string drx_cfg_s::drx_retx_timer_ul_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sl0",     "sl1",     "sl2",    "sl4",     "sl6",     "sl8",     "sl16",
-                                            "sl24",    "sl33",    "sl40",   "sl64",    "sl80",    "sl96",    "sl112",
-                                            "sl128",   "sl160",   "sl320",  "spare15", "spare14", "spare13", "spare12",
-                                            "spare11", "spare10", "spare9", "spare8",  "spare7",  "spare6",  "spare5",
-                                            "spare4",  "spare3",  "spare2", "spare1"};
+  static const char* options[] = {"sl0",    "sl1",     "sl2",     "sl4",     "sl6",     "sl8",     "sl16",    "sl24",
+                                  "sl33",   "sl40",    "sl64",    "sl80",    "sl96",    "sl112",   "sl128",   "sl160",
+                                  "sl320",  "spare15", "spare14", "spare13", "spare12", "spare11", "spare10", "spare9",
+                                  "spare8", "spare7",  "spare6",  "spare5",  "spare4",  "spare3",  "spare2",  "spare1"};
   return convert_enum_idx(options, 32, value, "drx_cfg_s::drx_retx_timer_ul_e_");
 }
 uint16_t drx_cfg_s::drx_retx_timer_ul_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {0, 1, 2, 4, 6, 8, 16, 24, 33, 40, 64, 80, 96, 112, 128, 160, 320};
-  return convert_enum_idx(options, 17, value, "drx_cfg_s::drx_retx_timer_ul_e_");
+  static const uint16_t options[] = {0, 1, 2, 4, 6, 8, 16, 24, 33, 40, 64, 80, 96, 112, 128, 160, 320};
+  return map_enum_number(options, 17, value, "drx_cfg_s::drx_retx_timer_ul_e_");
 }
 
 void drx_cfg_s::drx_long_cycle_start_offset_c_::destroy_() {}
@@ -25569,7 +25577,7 @@ SRSASN_CODE drx_cfg_s::drx_long_cycle_start_offset_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE drx_cfg_s::drx_long_cycle_start_offset_c_::unpack(bit_ref& bref)
+SRSASN_CODE drx_cfg_s::drx_long_cycle_start_offset_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -25644,44 +25652,44 @@ SRSASN_CODE drx_cfg_s::drx_long_cycle_start_offset_c_::unpack(bit_ref& bref)
 
 std::string drx_cfg_s::drx_long_cycle_start_offset_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms10",   "ms20",   "ms32",   "ms40",   "ms60",   "ms64",   "ms70",
-                                            "ms80",   "ms128",  "ms160",  "ms256",  "ms320",  "ms512",  "ms640",
-                                            "ms1024", "ms1280", "ms2048", "ms2560", "ms5120", "ms10240"};
+  static const char* options[] = {"ms10",   "ms20",   "ms32",   "ms40",   "ms60",   "ms64",   "ms70",
+                                  "ms80",   "ms128",  "ms160",  "ms256",  "ms320",  "ms512",  "ms640",
+                                  "ms1024", "ms1280", "ms2048", "ms2560", "ms5120", "ms10240"};
   return convert_enum_idx(options, 20, value, "drx_cfg_s::drx_long_cycle_start_offset_c_::types");
 }
 uint16_t drx_cfg_s::drx_long_cycle_start_offset_c_::types_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {10,  20,  32,  40,  60,   64,   70,   80,   128,  160,
-                                         256, 320, 512, 640, 1024, 1280, 2048, 2560, 5120, 10240};
-  return convert_enum_idx(options, 20, value, "drx_cfg_s::drx_long_cycle_start_offset_c_::types");
+  static const uint16_t options[] = {10,  20,  32,  40,  60,   64,   70,   80,   128,  160,
+                                     256, 320, 512, 640, 1024, 1280, 2048, 2560, 5120, 10240};
+  return map_enum_number(options, 20, value, "drx_cfg_s::drx_long_cycle_start_offset_c_::types");
 }
 
 std::string drx_cfg_s::short_drx_s_::drx_short_cycle_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "ms2",   "ms3",    "ms4",    "ms5",    "ms6",    "ms7",    "ms8",    "ms10",   "ms14",   "ms16",  "ms20",
-      "ms30",  "ms32",   "ms35",   "ms40",   "ms64",   "ms80",   "ms128",  "ms160",  "ms256",  "ms320", "ms512",
-      "ms640", "spare9", "spare8", "spare7", "spare6", "spare5", "spare4", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"ms2",    "ms3",    "ms4",    "ms5",    "ms6",    "ms7",    "ms8",    "ms10",
+                                  "ms14",   "ms16",   "ms20",   "ms30",   "ms32",   "ms35",   "ms40",   "ms64",
+                                  "ms80",   "ms128",  "ms160",  "ms256",  "ms320",  "ms512",  "ms640",  "spare9",
+                                  "spare8", "spare7", "spare6", "spare5", "spare4", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 32, value, "drx_cfg_s::short_drx_s_::drx_short_cycle_e_");
 }
 uint16_t drx_cfg_s::short_drx_s_::drx_short_cycle_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {2,  3,  4,  5,  6,  7,   8,   10,  14,  16,  20, 30,
-                                         32, 35, 40, 64, 80, 128, 160, 256, 320, 512, 640};
-  return convert_enum_idx(options, 23, value, "drx_cfg_s::short_drx_s_::drx_short_cycle_e_");
+  static const uint16_t options[] = {2,  3,  4,  5,  6,  7,   8,   10,  14,  16,  20, 30,
+                                     32, 35, 40, 64, 80, 128, 160, 256, 320, 512, 640};
+  return map_enum_number(options, 23, value, "drx_cfg_s::short_drx_s_::drx_short_cycle_e_");
 }
 
 // DataInactivityTimer ::= ENUMERATED
 std::string data_inactivity_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "s1", "s2", "s3", "s5", "s7", "s10", "s15", "s20", "s40", "s50", "s60", "s80", "s100", "s120", "s150", "s180"};
   return convert_enum_idx(options, 16, value, "data_inactivity_timer_e");
 }
 uint8_t data_inactivity_timer_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3, 5, 7, 10, 15, 20, 40, 50, 60, 80, 100, 120, 150, 180};
-  return convert_enum_idx(options, 16, value, "data_inactivity_timer_e");
+  static const uint8_t options[] = {1, 2, 3, 5, 7, 10, 15, 20, 40, 50, 60, 80, 100, 120, 150, 180};
+  return map_enum_number(options, 16, value, "data_inactivity_timer_e");
 }
 
 // LogicalChannelConfig ::= SEQUENCE
@@ -25696,7 +25704,7 @@ SRSASN_CODE lc_ch_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE lc_ch_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE lc_ch_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(ul_specific_params_present, 1));
@@ -25757,7 +25765,7 @@ SRSASN_CODE lc_ch_cfg_s::ul_specific_params_s_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE lc_ch_cfg_s::ul_specific_params_s_::unpack(bit_ref& bref)
+SRSASN_CODE lc_ch_cfg_s::ul_specific_params_s_::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(allowed_serving_cells_present, 1));
@@ -25805,15 +25813,15 @@ void lc_ch_cfg_s::ul_specific_params_s_::to_json(json_writer& j) const
   j.write_str("bucketSizeDuration", bucket_size_dur.to_string());
   if (allowed_serving_cells_present) {
     j.start_array("allowedServingCells");
-    for (uint32_t i1 = 0; i1 < allowed_serving_cells.size(); ++i1) {
-      j.write_int(allowed_serving_cells[i1]);
+    for (const auto& e1 : allowed_serving_cells) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (allowed_scs_list_present) {
     j.start_array("allowedSCS-List");
-    for (uint32_t i1 = 0; i1 < allowed_scs_list.size(); ++i1) {
-      j.write_str(allowed_scs_list[i1].to_string());
+    for (const auto& e1 : allowed_scs_list) {
+      j.write_str(e1.to_string());
     }
     j.end_array();
   }
@@ -25841,77 +25849,75 @@ void lc_ch_cfg_s::ul_specific_params_s_::to_json(json_writer& j) const
 
 std::string lc_ch_cfg_s::ul_specific_params_s_::prioritised_bit_rate_opts::to_string() const
 {
-  static constexpr const char* options[] = {"kBps0",
-                                            "kBps8",
-                                            "kBps16",
-                                            "kBps32",
-                                            "kBps64",
-                                            "kBps128",
-                                            "kBps256",
-                                            "kBps512",
-                                            "kBps1024",
-                                            "kBps2048",
-                                            "kBps4096",
-                                            "kBps8192",
-                                            "kBps16384",
-                                            "kBps32768",
-                                            "kBps65536",
-                                            "infinity"};
+  static const char* options[] = {"kBps0",
+                                  "kBps8",
+                                  "kBps16",
+                                  "kBps32",
+                                  "kBps64",
+                                  "kBps128",
+                                  "kBps256",
+                                  "kBps512",
+                                  "kBps1024",
+                                  "kBps2048",
+                                  "kBps4096",
+                                  "kBps8192",
+                                  "kBps16384",
+                                  "kBps32768",
+                                  "kBps65536",
+                                  "infinity"};
   return convert_enum_idx(options, 16, value, "lc_ch_cfg_s::ul_specific_params_s_::prioritised_bit_rate_e_");
 }
 int32_t lc_ch_cfg_s::ul_specific_params_s_::prioritised_bit_rate_opts::to_number() const
 {
-  static constexpr int32_t options[] = {
-      0, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, -1};
-  return convert_enum_idx(options, 16, value, "lc_ch_cfg_s::ul_specific_params_s_::prioritised_bit_rate_e_");
+  static const int32_t options[] = {0, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, -1};
+  return map_enum_number(options, 16, value, "lc_ch_cfg_s::ul_specific_params_s_::prioritised_bit_rate_e_");
 }
 
 std::string lc_ch_cfg_s::ul_specific_params_s_::bucket_size_dur_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms5",
-                                            "ms10",
-                                            "ms20",
-                                            "ms50",
-                                            "ms100",
-                                            "ms150",
-                                            "ms300",
-                                            "ms500",
-                                            "ms1000",
-                                            "spare7",
-                                            "spare6",
-                                            "spare5",
-                                            "spare4",
-                                            "spare3",
-                                            "spare2",
-                                            "spare1"};
+  static const char* options[] = {"ms5",
+                                  "ms10",
+                                  "ms20",
+                                  "ms50",
+                                  "ms100",
+                                  "ms150",
+                                  "ms300",
+                                  "ms500",
+                                  "ms1000",
+                                  "spare7",
+                                  "spare6",
+                                  "spare5",
+                                  "spare4",
+                                  "spare3",
+                                  "spare2",
+                                  "spare1"};
   return convert_enum_idx(options, 16, value, "lc_ch_cfg_s::ul_specific_params_s_::bucket_size_dur_e_");
 }
 uint16_t lc_ch_cfg_s::ul_specific_params_s_::bucket_size_dur_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {5, 10, 20, 50, 100, 150, 300, 500, 1000};
-  return convert_enum_idx(options, 9, value, "lc_ch_cfg_s::ul_specific_params_s_::bucket_size_dur_e_");
+  static const uint16_t options[] = {5, 10, 20, 50, 100, 150, 300, 500, 1000};
+  return map_enum_number(options, 9, value, "lc_ch_cfg_s::ul_specific_params_s_::bucket_size_dur_e_");
 }
 
 std::string lc_ch_cfg_s::ul_specific_params_s_::max_pusch_dur_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "ms0p02", "ms0p04", "ms0p0625", "ms0p125", "ms0p25", "ms0p5", "spare2", "spare1"};
+  static const char* options[] = {"ms0p02", "ms0p04", "ms0p0625", "ms0p125", "ms0p25", "ms0p5", "spare2", "spare1"};
   return convert_enum_idx(options, 8, value, "lc_ch_cfg_s::ul_specific_params_s_::max_pusch_dur_e_");
 }
 
 std::string lc_ch_cfg_s::ul_specific_params_s_::bit_rate_query_prohibit_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {"s0", "s0dot4", "s0dot8", "s1dot6", "s3", "s6", "s12", "s30"};
+  static const char* options[] = {"s0", "s0dot4", "s0dot8", "s1dot6", "s3", "s6", "s12", "s30"};
   return convert_enum_idx(options, 8, value, "lc_ch_cfg_s::ul_specific_params_s_::bit_rate_query_prohibit_timer_e_");
 }
 float lc_ch_cfg_s::ul_specific_params_s_::bit_rate_query_prohibit_timer_opts::to_number() const
 {
-  static constexpr float options[] = {0.0, 0.4, 0.8, 1.6, 3.0, 6.0, 12.0, 30.0};
-  return convert_enum_idx(options, 8, value, "lc_ch_cfg_s::ul_specific_params_s_::bit_rate_query_prohibit_timer_e_");
+  static const float options[] = {0.0, 0.4, 0.8, 1.6, 3.0, 6.0, 12.0, 30.0};
+  return map_enum_number(options, 8, value, "lc_ch_cfg_s::ul_specific_params_s_::bit_rate_query_prohibit_timer_e_");
 }
 std::string lc_ch_cfg_s::ul_specific_params_s_::bit_rate_query_prohibit_timer_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"0", "0.4", "0.8", "1.6", "3", "6", "12", "30"};
+  static const char* options[] = {"0", "0.4", "0.8", "1.6", "3", "6", "12", "30"};
   return convert_enum_idx(options, 8, value, "lc_ch_cfg_s::ul_specific_params_s_::bit_rate_query_prohibit_timer_e_");
 }
 
@@ -25929,7 +25935,7 @@ SRSASN_CODE phr_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE phr_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE phr_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(phr_periodic_timer.unpack(bref));
@@ -25957,40 +25963,40 @@ void phr_cfg_s::to_json(json_writer& j) const
 
 std::string phr_cfg_s::phr_periodic_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sf10", "sf20", "sf50", "sf100", "sf200", "sf500", "sf1000", "infinity"};
+  static const char* options[] = {"sf10", "sf20", "sf50", "sf100", "sf200", "sf500", "sf1000", "infinity"};
   return convert_enum_idx(options, 8, value, "phr_cfg_s::phr_periodic_timer_e_");
 }
 int16_t phr_cfg_s::phr_periodic_timer_opts::to_number() const
 {
-  static constexpr int16_t options[] = {10, 20, 50, 100, 200, 500, 1000, -1};
-  return convert_enum_idx(options, 8, value, "phr_cfg_s::phr_periodic_timer_e_");
+  static const int16_t options[] = {10, 20, 50, 100, 200, 500, 1000, -1};
+  return map_enum_number(options, 8, value, "phr_cfg_s::phr_periodic_timer_e_");
 }
 
 std::string phr_cfg_s::phr_prohibit_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sf0", "sf10", "sf20", "sf50", "sf100", "sf200", "sf500", "sf1000"};
+  static const char* options[] = {"sf0", "sf10", "sf20", "sf50", "sf100", "sf200", "sf500", "sf1000"};
   return convert_enum_idx(options, 8, value, "phr_cfg_s::phr_prohibit_timer_e_");
 }
 uint16_t phr_cfg_s::phr_prohibit_timer_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {0, 10, 20, 50, 100, 200, 500, 1000};
-  return convert_enum_idx(options, 8, value, "phr_cfg_s::phr_prohibit_timer_e_");
+  static const uint16_t options[] = {0, 10, 20, 50, 100, 200, 500, 1000};
+  return map_enum_number(options, 8, value, "phr_cfg_s::phr_prohibit_timer_e_");
 }
 
 std::string phr_cfg_s::phr_tx_pwr_factor_change_opts::to_string() const
 {
-  static constexpr const char* options[] = {"dB1", "dB3", "dB6", "infinity"};
+  static const char* options[] = {"dB1", "dB3", "dB6", "infinity"};
   return convert_enum_idx(options, 4, value, "phr_cfg_s::phr_tx_pwr_factor_change_e_");
 }
 int8_t phr_cfg_s::phr_tx_pwr_factor_change_opts::to_number() const
 {
-  static constexpr int8_t options[] = {1, 3, 6, -1};
-  return convert_enum_idx(options, 4, value, "phr_cfg_s::phr_tx_pwr_factor_change_e_");
+  static const int8_t options[] = {1, 3, 6, -1};
+  return map_enum_number(options, 4, value, "phr_cfg_s::phr_tx_pwr_factor_change_e_");
 }
 
 std::string phr_cfg_s::phr_mode_other_cg_opts::to_string() const
 {
-  static constexpr const char* options[] = {"real", "virtual"};
+  static const char* options[] = {"real", "virtual"};
   return convert_enum_idx(options, 2, value, "phr_cfg_s::phr_mode_other_cg_e_");
 }
 
@@ -26151,7 +26157,7 @@ SRSASN_CODE rlc_cfg_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rlc_cfg_c::unpack(bit_ref& bref)
+SRSASN_CODE rlc_cfg_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -26180,8 +26186,7 @@ SRSASN_CODE rlc_cfg_c::unpack(bit_ref& bref)
 
 std::string rlc_cfg_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "am", "um-Bi-Directional", "um-Uni-Directional-UL", "um-Uni-Directional-DL"};
+  static const char* options[] = {"am", "um-Bi-Directional", "um-Uni-Directional-UL", "um-Uni-Directional-DL"};
   return convert_enum_idx(options, 4, value, "rlc_cfg_c::types");
 }
 
@@ -26206,7 +26211,7 @@ SRSASN_CODE rlf_timers_and_consts_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rlf_timers_and_consts_s::unpack(bit_ref& bref)
+SRSASN_CODE rlf_timers_and_consts_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(t310.unpack(bref));
@@ -26239,47 +26244,46 @@ void rlf_timers_and_consts_s::to_json(json_writer& j) const
 
 std::string rlf_timers_and_consts_s::t310_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "ms0", "ms50", "ms100", "ms200", "ms500", "ms1000", "ms2000", "ms4000", "ms6000"};
+  static const char* options[] = {"ms0", "ms50", "ms100", "ms200", "ms500", "ms1000", "ms2000", "ms4000", "ms6000"};
   return convert_enum_idx(options, 9, value, "rlf_timers_and_consts_s::t310_e_");
 }
 uint16_t rlf_timers_and_consts_s::t310_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {0, 50, 100, 200, 500, 1000, 2000, 4000, 6000};
-  return convert_enum_idx(options, 9, value, "rlf_timers_and_consts_s::t310_e_");
+  static const uint16_t options[] = {0, 50, 100, 200, 500, 1000, 2000, 4000, 6000};
+  return map_enum_number(options, 9, value, "rlf_timers_and_consts_s::t310_e_");
 }
 
 std::string rlf_timers_and_consts_s::n310_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n3", "n4", "n6", "n8", "n10", "n20"};
+  static const char* options[] = {"n1", "n2", "n3", "n4", "n6", "n8", "n10", "n20"};
   return convert_enum_idx(options, 8, value, "rlf_timers_and_consts_s::n310_e_");
 }
 uint8_t rlf_timers_and_consts_s::n310_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3, 4, 6, 8, 10, 20};
-  return convert_enum_idx(options, 8, value, "rlf_timers_and_consts_s::n310_e_");
+  static const uint8_t options[] = {1, 2, 3, 4, 6, 8, 10, 20};
+  return map_enum_number(options, 8, value, "rlf_timers_and_consts_s::n310_e_");
 }
 
 std::string rlf_timers_and_consts_s::n311_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n3", "n4", "n5", "n6", "n8", "n10"};
+  static const char* options[] = {"n1", "n2", "n3", "n4", "n5", "n6", "n8", "n10"};
   return convert_enum_idx(options, 8, value, "rlf_timers_and_consts_s::n311_e_");
 }
 uint8_t rlf_timers_and_consts_s::n311_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3, 4, 5, 6, 8, 10};
-  return convert_enum_idx(options, 8, value, "rlf_timers_and_consts_s::n311_e_");
+  static const uint8_t options[] = {1, 2, 3, 4, 5, 6, 8, 10};
+  return map_enum_number(options, 8, value, "rlf_timers_and_consts_s::n311_e_");
 }
 
 std::string rlf_timers_and_consts_s::t311_v1530_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms1000", "ms3000", "ms5000", "ms10000", "ms15000", "ms20000", "ms30000"};
+  static const char* options[] = {"ms1000", "ms3000", "ms5000", "ms10000", "ms15000", "ms20000", "ms30000"};
   return convert_enum_idx(options, 7, value, "rlf_timers_and_consts_s::t311_v1530_e_");
 }
 uint16_t rlf_timers_and_consts_s::t311_v1530_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {1000, 3000, 5000, 10000, 15000, 20000, 30000};
-  return convert_enum_idx(options, 7, value, "rlf_timers_and_consts_s::t311_v1530_e_");
+  static const uint16_t options[] = {1000, 3000, 5000, 10000, 15000, 20000, 30000};
+  return map_enum_number(options, 7, value, "rlf_timers_and_consts_s::t311_v1530_e_");
 }
 
 // ReconfigurationWithSync ::= SEQUENCE
@@ -26314,7 +26318,7 @@ SRSASN_CODE recfg_with_sync_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE recfg_with_sync_s::unpack(bit_ref& bref)
+SRSASN_CODE recfg_with_sync_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(sp_cell_cfg_common_present, 1));
@@ -26370,13 +26374,13 @@ void recfg_with_sync_s::to_json(json_writer& j) const
 
 std::string recfg_with_sync_s::t304_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms50", "ms100", "ms150", "ms200", "ms500", "ms1000", "ms2000", "ms10000"};
+  static const char* options[] = {"ms50", "ms100", "ms150", "ms200", "ms500", "ms1000", "ms2000", "ms10000"};
   return convert_enum_idx(options, 8, value, "recfg_with_sync_s::t304_e_");
 }
 uint16_t recfg_with_sync_s::t304_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {50, 100, 150, 200, 500, 1000, 2000, 10000};
-  return convert_enum_idx(options, 8, value, "recfg_with_sync_s::t304_e_");
+  static const uint16_t options[] = {50, 100, 150, 200, 500, 1000, 2000, 10000};
+  return map_enum_number(options, 8, value, "recfg_with_sync_s::t304_e_");
 }
 
 void recfg_with_sync_s::rach_cfg_ded_c_::destroy_()
@@ -26480,7 +26484,7 @@ SRSASN_CODE recfg_with_sync_s::rach_cfg_ded_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE recfg_with_sync_s::rach_cfg_ded_c_::unpack(bit_ref& bref)
+SRSASN_CODE recfg_with_sync_s::rach_cfg_ded_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -26501,7 +26505,7 @@ SRSASN_CODE recfg_with_sync_s::rach_cfg_ded_c_::unpack(bit_ref& bref)
 
 std::string recfg_with_sync_s::rach_cfg_ded_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"uplink", "supplementaryUplink"};
+  static const char* options[] = {"uplink", "supplementaryUplink"};
   return convert_enum_idx(options, 2, value, "recfg_with_sync_s::rach_cfg_ded_c_::types");
 }
 
@@ -26520,7 +26524,7 @@ SRSASN_CODE srb_to_add_mod_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srb_to_add_mod_s::unpack(bit_ref& bref)
+SRSASN_CODE srb_to_add_mod_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(reestablish_pdcp_present, 1));
@@ -26566,7 +26570,7 @@ SRSASN_CODE sched_request_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sched_request_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE sched_request_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(sched_request_to_add_mod_list_present, 1));
   HANDLE_CODE(bref.unpack(sched_request_to_release_list_present, 1));
@@ -26585,15 +26589,15 @@ void sched_request_cfg_s::to_json(json_writer& j) const
   j.start_obj();
   if (sched_request_to_add_mod_list_present) {
     j.start_array("schedulingRequestToAddModList");
-    for (uint32_t i1 = 0; i1 < sched_request_to_add_mod_list.size(); ++i1) {
-      sched_request_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : sched_request_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (sched_request_to_release_list_present) {
     j.start_array("schedulingRequestToReleaseList");
-    for (uint32_t i1 = 0; i1 < sched_request_to_release_list.size(); ++i1) {
-      j.write_int(sched_request_to_release_list[i1]);
+    for (const auto& e1 : sched_request_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -26613,7 +26617,7 @@ SRSASN_CODE security_algorithm_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE security_algorithm_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE security_algorithm_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(integrity_prot_algorithm_present, 1));
@@ -26738,7 +26742,7 @@ SRSASN_CODE serving_cell_cfg_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE serving_cell_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE serving_cell_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(tdd_ul_dl_cfg_ded_present, 1));
@@ -26857,15 +26861,15 @@ void serving_cell_cfg_s::to_json(json_writer& j) const
   }
   if (dl_bwp_to_release_list_present) {
     j.start_array("downlinkBWP-ToReleaseList");
-    for (uint32_t i1 = 0; i1 < dl_bwp_to_release_list.size(); ++i1) {
-      j.write_int(dl_bwp_to_release_list[i1]);
+    for (const auto& e1 : dl_bwp_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (dl_bwp_to_add_mod_list_present) {
     j.start_array("downlinkBWP-ToAddModList");
-    for (uint32_t i1 = 0; i1 < dl_bwp_to_add_mod_list.size(); ++i1) {
-      dl_bwp_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : dl_bwp_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -26922,22 +26926,22 @@ void serving_cell_cfg_s::to_json(json_writer& j) const
     }
     if (rate_match_pattern_to_add_mod_list.is_present()) {
       j.start_array("rateMatchPatternToAddModList");
-      for (uint32_t i1 = 0; i1 < rate_match_pattern_to_add_mod_list->size(); ++i1) {
-        ((*rate_match_pattern_to_add_mod_list)[i1]).to_json(j);
+      for (const auto& e1 : *rate_match_pattern_to_add_mod_list) {
+        e1.to_json(j);
       }
       j.end_array();
     }
     if (rate_match_pattern_to_release_list.is_present()) {
       j.start_array("rateMatchPatternToReleaseList");
-      for (uint32_t i1 = 0; i1 < rate_match_pattern_to_release_list->size(); ++i1) {
-        j.write_int(((*rate_match_pattern_to_release_list)[i1]));
+      for (const auto& e1 : *rate_match_pattern_to_release_list) {
+        j.write_int(e1);
       }
       j.end_array();
     }
     if (dl_ch_bw_per_scs_list.is_present()) {
       j.start_array("downlinkChannelBW-PerSCS-List");
-      for (uint32_t i1 = 0; i1 < dl_ch_bw_per_scs_list->size(); ++i1) {
-        ((*dl_ch_bw_per_scs_list)[i1]).to_json(j);
+      for (const auto& e1 : *dl_ch_bw_per_scs_list) {
+        e1.to_json(j);
       }
       j.end_array();
     }
@@ -26947,48 +26951,48 @@ void serving_cell_cfg_s::to_json(json_writer& j) const
 
 std::string serving_cell_cfg_s::bwp_inactivity_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "ms2",    "ms3",    "ms4",    "ms5",    "ms6",    "ms8",    "ms10",   "ms20",   "ms30",   "ms40",   "ms50",
-      "ms60",   "ms80",   "ms100",  "ms200",  "ms300",  "ms500",  "ms750",  "ms1280", "ms1920", "ms2560", "spare10",
-      "spare9", "spare8", "spare7", "spare6", "spare5", "spare4", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"ms2",    "ms3",    "ms4",    "ms5",    "ms6",    "ms8",     "ms10",   "ms20",
+                                  "ms30",   "ms40",   "ms50",   "ms60",   "ms80",   "ms100",   "ms200",  "ms300",
+                                  "ms500",  "ms750",  "ms1280", "ms1920", "ms2560", "spare10", "spare9", "spare8",
+                                  "spare7", "spare6", "spare5", "spare4", "spare3", "spare2",  "spare1"};
   return convert_enum_idx(options, 31, value, "serving_cell_cfg_s::bwp_inactivity_timer_e_");
 }
 uint16_t serving_cell_cfg_s::bwp_inactivity_timer_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {2,  3,  4,   5,   6,   8,   10,  20,   30,   40,  50,
-                                         60, 80, 100, 200, 300, 500, 750, 1280, 1920, 2560};
-  return convert_enum_idx(options, 21, value, "serving_cell_cfg_s::bwp_inactivity_timer_e_");
+  static const uint16_t options[] = {2,  3,  4,   5,   6,   8,   10,  20,   30,   40,  50,
+                                     60, 80, 100, 200, 300, 500, 750, 1280, 1920, 2560};
+  return map_enum_number(options, 21, value, "serving_cell_cfg_s::bwp_inactivity_timer_e_");
 }
 
 std::string serving_cell_cfg_s::scell_deactivation_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms20",
-                                            "ms40",
-                                            "ms80",
-                                            "ms160",
-                                            "ms200",
-                                            "ms240",
-                                            "ms320",
-                                            "ms400",
-                                            "ms480",
-                                            "ms520",
-                                            "ms640",
-                                            "ms720",
-                                            "ms840",
-                                            "ms1280",
-                                            "spare2",
-                                            "spare1"};
+  static const char* options[] = {"ms20",
+                                  "ms40",
+                                  "ms80",
+                                  "ms160",
+                                  "ms200",
+                                  "ms240",
+                                  "ms320",
+                                  "ms400",
+                                  "ms480",
+                                  "ms520",
+                                  "ms640",
+                                  "ms720",
+                                  "ms840",
+                                  "ms1280",
+                                  "spare2",
+                                  "spare1"};
   return convert_enum_idx(options, 16, value, "serving_cell_cfg_s::scell_deactivation_timer_e_");
 }
 uint16_t serving_cell_cfg_s::scell_deactivation_timer_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {20, 40, 80, 160, 200, 240, 320, 400, 480, 520, 640, 720, 840, 1280};
-  return convert_enum_idx(options, 14, value, "serving_cell_cfg_s::scell_deactivation_timer_e_");
+  static const uint16_t options[] = {20, 40, 80, 160, 200, 240, 320, 400, 480, 520, 640, 720, 840, 1280};
+  return map_enum_number(options, 14, value, "serving_cell_cfg_s::scell_deactivation_timer_e_");
 }
 
 std::string serving_cell_cfg_s::pathloss_ref_linking_opts::to_string() const
 {
-  static constexpr const char* options[] = {"pCell", "sCell"};
+  static const char* options[] = {"pCell", "sCell"};
   return convert_enum_idx(options, 2, value, "serving_cell_cfg_s::pathloss_ref_linking_e_");
 }
 
@@ -27007,7 +27011,7 @@ SRSASN_CODE tag_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE tag_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE tag_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(tag_to_release_list_present, 1));
   HANDLE_CODE(bref.unpack(tag_to_add_mod_list_present, 1));
@@ -27026,15 +27030,15 @@ void tag_cfg_s::to_json(json_writer& j) const
   j.start_obj();
   if (tag_to_release_list_present) {
     j.start_array("tag-ToReleaseList");
-    for (uint32_t i1 = 0; i1 < tag_to_release_list.size(); ++i1) {
-      j.write_int(tag_to_release_list[i1]);
+    for (const auto& e1 : tag_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (tag_to_add_mod_list_present) {
     j.start_array("tag-ToAddModList");
-    for (uint32_t i1 = 0; i1 < tag_to_add_mod_list.size(); ++i1) {
-      tag_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : tag_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -27089,7 +27093,7 @@ SRSASN_CODE mac_cell_group_cfg_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE mac_cell_group_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE mac_cell_group_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(drx_cfg_present, 1));
@@ -27235,7 +27239,7 @@ SRSASN_CODE phys_cell_group_cfg_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE phys_cell_group_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE phys_cell_group_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(harq_ack_spatial_bundling_pucch_present, 1));
@@ -27339,19 +27343,19 @@ void phys_cell_group_cfg_s::to_json(json_writer& j) const
 
 std::string phys_cell_group_cfg_s::pdsch_harq_ack_codebook_opts::to_string() const
 {
-  static constexpr const char* options[] = {"semiStatic", "dynamic"};
+  static const char* options[] = {"semiStatic", "dynamic"};
   return convert_enum_idx(options, 2, value, "phys_cell_group_cfg_s::pdsch_harq_ack_codebook_e_");
 }
 
 std::string phys_cell_group_cfg_s::xscale_opts::to_string() const
 {
-  static constexpr const char* options[] = {"dB0", "dB6", "spare2", "spare1"};
+  static const char* options[] = {"dB0", "dB6", "spare2", "spare1"};
   return convert_enum_idx(options, 4, value, "phys_cell_group_cfg_s::xscale_e_");
 }
 uint8_t phys_cell_group_cfg_s::xscale_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 6};
-  return convert_enum_idx(options, 2, value, "phys_cell_group_cfg_s::xscale_e_");
+  static const uint8_t options[] = {0, 6};
+  return map_enum_number(options, 2, value, "phys_cell_group_cfg_s::xscale_e_");
 }
 
 // RLC-BearerConfig ::= SEQUENCE
@@ -27376,7 +27380,7 @@ SRSASN_CODE rlc_bearer_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rlc_bearer_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE rlc_bearer_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(served_radio_bearer_present, 1));
@@ -27494,7 +27498,7 @@ SRSASN_CODE rlc_bearer_cfg_s::served_radio_bearer_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rlc_bearer_cfg_s::served_radio_bearer_c_::unpack(bit_ref& bref)
+SRSASN_CODE rlc_bearer_cfg_s::served_radio_bearer_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -27515,7 +27519,7 @@ SRSASN_CODE rlc_bearer_cfg_s::served_radio_bearer_c_::unpack(bit_ref& bref)
 
 std::string rlc_bearer_cfg_s::served_radio_bearer_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"srb-Identity", "drb-Identity"};
+  static const char* options[] = {"srb-Identity", "drb-Identity"};
   return convert_enum_idx(options, 2, value, "rlc_bearer_cfg_s::served_radio_bearer_c_::types");
 }
 
@@ -27550,7 +27554,7 @@ SRSASN_CODE scell_cfg_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE scell_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE scell_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(scell_cfg_common_present, 1));
@@ -27618,7 +27622,7 @@ SRSASN_CODE security_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE security_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE security_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(security_algorithm_cfg_present, 1));
@@ -27648,7 +27652,7 @@ void security_cfg_s::to_json(json_writer& j) const
 
 std::string security_cfg_s::key_to_use_opts::to_string() const
 {
-  static constexpr const char* options[] = {"master", "secondary"};
+  static const char* options[] = {"master", "secondary"};
   return convert_enum_idx(options, 2, value, "security_cfg_s::key_to_use_e_");
 }
 
@@ -27677,7 +27681,7 @@ SRSASN_CODE sp_cell_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sp_cell_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE sp_cell_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(serv_cell_idx_present, 1));
@@ -27773,7 +27777,7 @@ SRSASN_CODE cell_group_cfg_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cell_group_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE cell_group_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(rlc_bearer_to_add_mod_list_present, 1));
@@ -27825,15 +27829,15 @@ void cell_group_cfg_s::to_json(json_writer& j) const
   j.write_int("cellGroupId", cell_group_id);
   if (rlc_bearer_to_add_mod_list_present) {
     j.start_array("rlc-BearerToAddModList");
-    for (uint32_t i1 = 0; i1 < rlc_bearer_to_add_mod_list.size(); ++i1) {
-      rlc_bearer_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : rlc_bearer_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (rlc_bearer_to_release_list_present) {
     j.start_array("rlc-BearerToReleaseList");
-    for (uint32_t i1 = 0; i1 < rlc_bearer_to_release_list.size(); ++i1) {
-      j.write_int(rlc_bearer_to_release_list[i1]);
+    for (const auto& e1 : rlc_bearer_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -27851,15 +27855,15 @@ void cell_group_cfg_s::to_json(json_writer& j) const
   }
   if (scell_to_add_mod_list_present) {
     j.start_array("sCellToAddModList");
-    for (uint32_t i1 = 0; i1 < scell_to_add_mod_list.size(); ++i1) {
-      scell_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : scell_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (scell_to_release_list_present) {
     j.start_array("sCellToReleaseList");
-    for (uint32_t i1 = 0; i1 < scell_to_release_list.size(); ++i1) {
-      j.write_int(scell_to_release_list[i1]);
+    for (const auto& e1 : scell_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -27896,7 +27900,7 @@ SRSASN_CODE radio_bearer_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE radio_bearer_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE radio_bearer_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(srb_to_add_mod_list_present, 1));
@@ -27925,8 +27929,8 @@ void radio_bearer_cfg_s::to_json(json_writer& j) const
   j.start_obj();
   if (srb_to_add_mod_list_present) {
     j.start_array("srb-ToAddModList");
-    for (uint32_t i1 = 0; i1 < srb_to_add_mod_list.size(); ++i1) {
-      srb_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : srb_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -27935,15 +27939,15 @@ void radio_bearer_cfg_s::to_json(json_writer& j) const
   }
   if (drb_to_add_mod_list_present) {
     j.start_array("drb-ToAddModList");
-    for (uint32_t i1 = 0; i1 < drb_to_add_mod_list.size(); ++i1) {
-      drb_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : drb_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (drb_to_release_list_present) {
     j.start_array("drb-ToReleaseList");
-    for (uint32_t i1 = 0; i1 < drb_to_release_list.size(); ++i1) {
-      j.write_int(drb_to_release_list[i1]);
+    for (const auto& e1 : drb_to_release_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -27970,7 +27974,7 @@ SRSASN_CODE rrc_reject_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_reject_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_reject_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(wait_time_present, 1));
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
@@ -28016,7 +28020,7 @@ SRSASN_CODE rrc_setup_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_setup_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_setup_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -28053,7 +28057,7 @@ SRSASN_CODE rrc_reject_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_reject_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_reject_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(crit_exts.unpack(bref));
 
@@ -28158,7 +28162,7 @@ SRSASN_CODE rrc_reject_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_reject_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE rrc_reject_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -28178,7 +28182,7 @@ SRSASN_CODE rrc_reject_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string rrc_reject_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rrcReject", "criticalExtensionsFuture"};
+  static const char* options[] = {"rrcReject", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "rrc_reject_s::crit_exts_c_::types");
 }
 
@@ -28190,7 +28194,7 @@ SRSASN_CODE rrc_setup_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_setup_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_setup_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -28297,7 +28301,7 @@ SRSASN_CODE rrc_setup_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_setup_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE rrc_setup_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -28317,7 +28321,7 @@ SRSASN_CODE rrc_setup_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string rrc_setup_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rrcSetup", "criticalExtensionsFuture"};
+  static const char* options[] = {"rrcSetup", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "rrc_setup_s::crit_exts_c_::types");
 }
 
@@ -28413,7 +28417,7 @@ SRSASN_CODE dl_ccch_msg_type_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dl_ccch_msg_type_c::unpack(bit_ref& bref)
+SRSASN_CODE dl_ccch_msg_type_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -28551,7 +28555,7 @@ SRSASN_CODE dl_ccch_msg_type_c::c1_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dl_ccch_msg_type_c::c1_c_::unpack(bit_ref& bref)
+SRSASN_CODE dl_ccch_msg_type_c::c1_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -28576,19 +28580,19 @@ SRSASN_CODE dl_ccch_msg_type_c::c1_c_::unpack(bit_ref& bref)
 
 std::string dl_ccch_msg_type_c::c1_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rrcReject", "rrcSetup", "spare2", "spare1"};
+  static const char* options[] = {"rrcReject", "rrcSetup", "spare2", "spare1"};
   return convert_enum_idx(options, 4, value, "dl_ccch_msg_type_c::c1_c_::types");
 }
 
 std::string dl_ccch_msg_type_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"c1", "messageClassExtension"};
+  static const char* options[] = {"c1", "messageClassExtension"};
   return convert_enum_idx(options, 2, value, "dl_ccch_msg_type_c::types");
 }
 uint8_t dl_ccch_msg_type_c::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1};
-  return convert_enum_idx(options, 1, value, "dl_ccch_msg_type_c::types");
+  static const uint8_t options[] = {1};
+  return map_enum_number(options, 1, value, "dl_ccch_msg_type_c::types");
 }
 
 // DL-CCCH-Message ::= SEQUENCE
@@ -28600,7 +28604,7 @@ SRSASN_CODE dl_ccch_msg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dl_ccch_msg_s::unpack(bit_ref& bref)
+SRSASN_CODE dl_ccch_msg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(msg.unpack(bref));
 
@@ -28638,7 +28642,7 @@ SRSASN_CODE csi_rs_res_mob_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_rs_res_mob_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_rs_res_mob_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(associated_ssb_present, 1));
@@ -28785,7 +28789,7 @@ SRSASN_CODE csi_rs_res_mob_s::slot_cfg_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_rs_res_mob_s::slot_cfg_c_::unpack(bit_ref& bref)
+SRSASN_CODE csi_rs_res_mob_s::slot_cfg_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -28815,13 +28819,13 @@ SRSASN_CODE csi_rs_res_mob_s::slot_cfg_c_::unpack(bit_ref& bref)
 
 std::string csi_rs_res_mob_s::slot_cfg_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms4", "ms5", "ms10", "ms20", "ms40"};
+  static const char* options[] = {"ms4", "ms5", "ms10", "ms20", "ms40"};
   return convert_enum_idx(options, 5, value, "csi_rs_res_mob_s::slot_cfg_c_::types");
 }
 uint8_t csi_rs_res_mob_s::slot_cfg_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 5, 10, 20, 40};
-  return convert_enum_idx(options, 5, value, "csi_rs_res_mob_s::slot_cfg_c_::types");
+  static const uint8_t options[] = {4, 5, 10, 20, 40};
+  return map_enum_number(options, 5, value, "csi_rs_res_mob_s::slot_cfg_c_::types");
 }
 
 void csi_rs_res_mob_s::freq_domain_alloc_c_::destroy_()
@@ -28923,7 +28927,7 @@ SRSASN_CODE csi_rs_res_mob_s::freq_domain_alloc_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_rs_res_mob_s::freq_domain_alloc_c_::unpack(bit_ref& bref)
+SRSASN_CODE csi_rs_res_mob_s::freq_domain_alloc_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -28944,13 +28948,13 @@ SRSASN_CODE csi_rs_res_mob_s::freq_domain_alloc_c_::unpack(bit_ref& bref)
 
 std::string csi_rs_res_mob_s::freq_domain_alloc_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"row1", "row2"};
+  static const char* options[] = {"row1", "row2"};
   return convert_enum_idx(options, 2, value, "csi_rs_res_mob_s::freq_domain_alloc_c_::types");
 }
 uint8_t csi_rs_res_mob_s::freq_domain_alloc_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options, 2, value, "csi_rs_res_mob_s::freq_domain_alloc_c_::types");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options, 2, value, "csi_rs_res_mob_s::freq_domain_alloc_c_::types");
 }
 
 // CSI-RS-CellMobility ::= SEQUENCE
@@ -28968,7 +28972,7 @@ SRSASN_CODE csi_rs_cell_mob_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_rs_cell_mob_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_rs_cell_mob_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(density_present, 1));
 
@@ -28995,8 +28999,8 @@ void csi_rs_cell_mob_s::to_json(json_writer& j) const
     j.write_str("density", density.to_string());
   }
   j.start_array("csi-rs-ResourceList-Mobility");
-  for (uint32_t i1 = 0; i1 < csi_rs_res_list_mob.size(); ++i1) {
-    csi_rs_res_list_mob[i1].to_json(j);
+  for (const auto& e1 : csi_rs_res_list_mob) {
+    e1.to_json(j);
   }
   j.end_array();
   j.end_obj();
@@ -29004,24 +29008,24 @@ void csi_rs_cell_mob_s::to_json(json_writer& j) const
 
 std::string csi_rs_cell_mob_s::csi_rs_meas_bw_s_::nrof_prbs_opts::to_string() const
 {
-  static constexpr const char* options[] = {"size24", "size48", "size96", "size192", "size264"};
+  static const char* options[] = {"size24", "size48", "size96", "size192", "size264"};
   return convert_enum_idx(options, 5, value, "csi_rs_cell_mob_s::csi_rs_meas_bw_s_::nrof_prbs_e_");
 }
 uint16_t csi_rs_cell_mob_s::csi_rs_meas_bw_s_::nrof_prbs_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {24, 48, 96, 192, 264};
-  return convert_enum_idx(options, 5, value, "csi_rs_cell_mob_s::csi_rs_meas_bw_s_::nrof_prbs_e_");
+  static const uint16_t options[] = {24, 48, 96, 192, 264};
+  return map_enum_number(options, 5, value, "csi_rs_cell_mob_s::csi_rs_meas_bw_s_::nrof_prbs_e_");
 }
 
 std::string csi_rs_cell_mob_s::density_opts::to_string() const
 {
-  static constexpr const char* options[] = {"d1", "d3"};
+  static const char* options[] = {"d1", "d3"};
   return convert_enum_idx(options, 2, value, "csi_rs_cell_mob_s::density_e_");
 }
 uint8_t csi_rs_cell_mob_s::density_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 3};
-  return convert_enum_idx(options, 2, value, "csi_rs_cell_mob_s::density_e_");
+  static const uint8_t options[] = {1, 3};
+  return map_enum_number(options, 2, value, "csi_rs_cell_mob_s::density_e_");
 }
 
 // Q-OffsetRangeList ::= SEQUENCE
@@ -29055,7 +29059,7 @@ SRSASN_CODE q_offset_range_list_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE q_offset_range_list_s::unpack(bit_ref& bref)
+SRSASN_CODE q_offset_range_list_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(rsrp_offset_ssb_present, 1));
   HANDLE_CODE(bref.unpack(rsrq_offset_ssb_present, 1));
@@ -29132,7 +29136,7 @@ SRSASN_CODE csi_rs_res_cfg_mob_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_rs_res_cfg_mob_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_rs_res_cfg_mob_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(subcarrier_spacing.unpack(bref));
@@ -29158,8 +29162,8 @@ void csi_rs_res_cfg_mob_s::to_json(json_writer& j) const
   j.start_obj();
   j.write_str("subcarrierSpacing", subcarrier_spacing.to_string());
   j.start_array("csi-RS-CellList-Mobility");
-  for (uint32_t i1 = 0; i1 < csi_rs_cell_list_mob.size(); ++i1) {
-    csi_rs_cell_list_mob[i1].to_json(j);
+  for (const auto& e1 : csi_rs_cell_list_mob) {
+    e1.to_json(j);
   }
   j.end_array();
   if (ext) {
@@ -29178,7 +29182,7 @@ SRSASN_CODE cells_to_add_mod_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cells_to_add_mod_s::unpack(bit_ref& bref)
+SRSASN_CODE cells_to_add_mod_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(pci, bref, (uint16_t)0u, (uint16_t)1007u));
   HANDLE_CODE(cell_individual_offset.unpack(bref));
@@ -29197,28 +29201,28 @@ void cells_to_add_mod_s::to_json(json_writer& j) const
 // FilterCoefficient ::= ENUMERATED
 std::string filt_coef_opts::to_string() const
 {
-  static constexpr const char* options[] = {"fc0",
-                                            "fc1",
-                                            "fc2",
-                                            "fc3",
-                                            "fc4",
-                                            "fc5",
-                                            "fc6",
-                                            "fc7",
-                                            "fc8",
-                                            "fc9",
-                                            "fc11",
-                                            "fc13",
-                                            "fc15",
-                                            "fc17",
-                                            "fc19",
-                                            "spare1"};
+  static const char* options[] = {"fc0",
+                                  "fc1",
+                                  "fc2",
+                                  "fc3",
+                                  "fc4",
+                                  "fc5",
+                                  "fc6",
+                                  "fc7",
+                                  "fc8",
+                                  "fc9",
+                                  "fc11",
+                                  "fc13",
+                                  "fc15",
+                                  "fc17",
+                                  "fc19",
+                                  "spare1"};
   return convert_enum_idx(options, 16, value, "filt_coef_e");
 }
 uint8_t filt_coef_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 13, 15, 17, 19};
-  return convert_enum_idx(options, 15, value, "filt_coef_e");
+  static const uint8_t options[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 13, 15, 17, 19};
+  return map_enum_number(options, 15, value, "filt_coef_e");
 }
 
 // MeasReportQuantity ::= SEQUENCE
@@ -29230,7 +29234,7 @@ SRSASN_CODE meas_report_quant_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_report_quant_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_report_quant_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(rsrp, 1));
   HANDLE_CODE(bref.unpack(rsrq, 1));
@@ -29334,7 +29338,7 @@ SRSASN_CODE meas_trigger_quant_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_trigger_quant_c::unpack(bit_ref& bref)
+SRSASN_CODE meas_trigger_quant_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -29358,7 +29362,7 @@ SRSASN_CODE meas_trigger_quant_c::unpack(bit_ref& bref)
 
 std::string meas_trigger_quant_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rsrp", "rsrq", "sinr"};
+  static const char* options[] = {"rsrp", "rsrq", "sinr"};
   return convert_enum_idx(options, 3, value, "meas_trigger_quant_c::types");
 }
 
@@ -29449,7 +29453,7 @@ SRSASN_CODE meas_trigger_quant_eutra_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_trigger_quant_eutra_c::unpack(bit_ref& bref)
+SRSASN_CODE meas_trigger_quant_eutra_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -29473,7 +29477,7 @@ SRSASN_CODE meas_trigger_quant_eutra_c::unpack(bit_ref& bref)
 
 std::string meas_trigger_quant_eutra_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rsrp", "rsrq", "sinr"};
+  static const char* options[] = {"rsrp", "rsrq", "sinr"};
   return convert_enum_idx(options, 3, value, "meas_trigger_quant_eutra_c::types");
 }
 
@@ -29564,7 +29568,7 @@ SRSASN_CODE meas_trigger_quant_offset_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_trigger_quant_offset_c::unpack(bit_ref& bref)
+SRSASN_CODE meas_trigger_quant_offset_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -29588,40 +29592,40 @@ SRSASN_CODE meas_trigger_quant_offset_c::unpack(bit_ref& bref)
 
 std::string meas_trigger_quant_offset_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rsrp", "rsrq", "sinr"};
+  static const char* options[] = {"rsrp", "rsrq", "sinr"};
   return convert_enum_idx(options, 3, value, "meas_trigger_quant_offset_c::types");
 }
 
 // NR-RS-Type ::= ENUMERATED
 std::string nr_rs_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ssb", "csi-rs"};
+  static const char* options[] = {"ssb", "csi-rs"};
   return convert_enum_idx(options, 2, value, "nr_rs_type_e");
 }
 
 // ReportInterval ::= ENUMERATED
 std::string report_interv_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms120",
-                                            "ms240",
-                                            "ms480",
-                                            "ms640",
-                                            "ms1024",
-                                            "ms2048",
-                                            "ms5120",
-                                            "ms10240",
-                                            "ms20480",
-                                            "ms40960",
-                                            "min1",
-                                            "min6",
-                                            "min12",
-                                            "min30"};
+  static const char* options[] = {"ms120",
+                                  "ms240",
+                                  "ms480",
+                                  "ms640",
+                                  "ms1024",
+                                  "ms2048",
+                                  "ms5120",
+                                  "ms10240",
+                                  "ms20480",
+                                  "ms40960",
+                                  "min1",
+                                  "min6",
+                                  "min12",
+                                  "min30"};
   return convert_enum_idx(options, 14, value, "report_interv_e");
 }
 uint16_t report_interv_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {120, 240, 480, 640, 1024, 2048, 5120, 10240, 20480, 40960, 1, 6, 12, 30};
-  return convert_enum_idx(options, 14, value, "report_interv_e");
+  static const uint16_t options[] = {120, 240, 480, 640, 1024, 2048, 5120, 10240, 20480, 40960, 1, 6, 12, 30};
+  return map_enum_number(options, 14, value, "report_interv_e");
 }
 
 // SSB-ConfigMobility ::= SEQUENCE
@@ -29641,7 +29645,7 @@ SRSASN_CODE ssb_cfg_mob_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ssb_cfg_mob_s::unpack(bit_ref& bref)
+SRSASN_CODE ssb_cfg_mob_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(ssb_to_measure_present, 1));
@@ -29675,28 +29679,28 @@ void ssb_cfg_mob_s::to_json(json_writer& j) const
 // TimeToTrigger ::= ENUMERATED
 std::string time_to_trigger_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms0",
-                                            "ms40",
-                                            "ms64",
-                                            "ms80",
-                                            "ms100",
-                                            "ms128",
-                                            "ms160",
-                                            "ms256",
-                                            "ms320",
-                                            "ms480",
-                                            "ms512",
-                                            "ms640",
-                                            "ms1024",
-                                            "ms1280",
-                                            "ms2560",
-                                            "ms5120"};
+  static const char* options[] = {"ms0",
+                                  "ms40",
+                                  "ms64",
+                                  "ms80",
+                                  "ms100",
+                                  "ms128",
+                                  "ms160",
+                                  "ms256",
+                                  "ms320",
+                                  "ms480",
+                                  "ms512",
+                                  "ms640",
+                                  "ms1024",
+                                  "ms1280",
+                                  "ms2560",
+                                  "ms5120"};
   return convert_enum_idx(options, 16, value, "time_to_trigger_e");
 }
 uint16_t time_to_trigger_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {0, 40, 64, 80, 100, 128, 160, 256, 320, 480, 512, 640, 1024, 1280, 2560, 5120};
-  return convert_enum_idx(options, 16, value, "time_to_trigger_e");
+  static const uint16_t options[] = {0, 40, 64, 80, 100, 128, 160, 256, 320, 480, 512, 640, 1024, 1280, 2560, 5120};
+  return map_enum_number(options, 16, value, "time_to_trigger_e");
 }
 
 // EUTRA-BlackCell ::= SEQUENCE
@@ -29707,7 +29711,7 @@ SRSASN_CODE eutra_black_cell_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE eutra_black_cell_s::unpack(bit_ref& bref)
+SRSASN_CODE eutra_black_cell_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(cell_idx_eutra, bref, (uint8_t)1u, (uint8_t)32u));
   HANDLE_CODE(pci_range.unpack(bref));
@@ -29732,7 +29736,7 @@ SRSASN_CODE eutra_cell_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE eutra_cell_s::unpack(bit_ref& bref)
+SRSASN_CODE eutra_cell_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(cell_idx_eutra, bref, (uint8_t)1u, (uint8_t)32u));
   HANDLE_CODE(unpack_integer(pci, bref, (uint16_t)0u, (uint16_t)503u));
@@ -29773,7 +29777,7 @@ SRSASN_CODE event_trigger_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE event_trigger_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE event_trigger_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(report_quant_rs_idxes_present, 1));
@@ -30063,7 +30067,7 @@ SRSASN_CODE event_trigger_cfg_s::event_id_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE event_trigger_cfg_s::event_id_c_::unpack(bit_ref& bref)
+SRSASN_CODE event_trigger_cfg_s::event_id_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -30119,24 +30123,24 @@ SRSASN_CODE event_trigger_cfg_s::event_id_c_::unpack(bit_ref& bref)
 
 std::string event_trigger_cfg_s::event_id_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"eventA1", "eventA2", "eventA3", "eventA4", "eventA5", "eventA6"};
+  static const char* options[] = {"eventA1", "eventA2", "eventA3", "eventA4", "eventA5", "eventA6"};
   return convert_enum_idx(options, 6, value, "event_trigger_cfg_s::event_id_c_::types");
 }
 uint8_t event_trigger_cfg_s::event_id_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3, 4, 5, 6};
-  return convert_enum_idx(options, 6, value, "event_trigger_cfg_s::event_id_c_::types");
+  static const uint8_t options[] = {1, 2, 3, 4, 5, 6};
+  return map_enum_number(options, 6, value, "event_trigger_cfg_s::event_id_c_::types");
 }
 
 std::string event_trigger_cfg_s::report_amount_opts::to_string() const
 {
-  static constexpr const char* options[] = {"r1", "r2", "r4", "r8", "r16", "r32", "r64", "infinity"};
+  static const char* options[] = {"r1", "r2", "r4", "r8", "r16", "r32", "r64", "infinity"};
   return convert_enum_idx(options, 8, value, "event_trigger_cfg_s::report_amount_e_");
 }
 int8_t event_trigger_cfg_s::report_amount_opts::to_number() const
 {
-  static constexpr int8_t options[] = {1, 2, 4, 8, 16, 32, 64, -1};
-  return convert_enum_idx(options, 8, value, "event_trigger_cfg_s::report_amount_e_");
+  static const int8_t options[] = {1, 2, 4, 8, 16, 32, 64, -1};
+  return map_enum_number(options, 8, value, "event_trigger_cfg_s::report_amount_e_");
 }
 
 // EventTriggerConfigInterRAT ::= SEQUENCE
@@ -30152,7 +30156,7 @@ SRSASN_CODE event_trigger_cfg_inter_rat_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE event_trigger_cfg_inter_rat_s::unpack(bit_ref& bref)
+SRSASN_CODE event_trigger_cfg_inter_rat_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(event_id.unpack(bref));
@@ -30302,7 +30306,7 @@ SRSASN_CODE event_trigger_cfg_inter_rat_s::event_id_c_::pack(bit_ref& bref) cons
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE event_trigger_cfg_inter_rat_s::event_id_c_::unpack(bit_ref& bref)
+SRSASN_CODE event_trigger_cfg_inter_rat_s::event_id_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -30332,24 +30336,24 @@ SRSASN_CODE event_trigger_cfg_inter_rat_s::event_id_c_::unpack(bit_ref& bref)
 
 std::string event_trigger_cfg_inter_rat_s::event_id_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"eventB1", "eventB2"};
+  static const char* options[] = {"eventB1", "eventB2"};
   return convert_enum_idx(options, 2, value, "event_trigger_cfg_inter_rat_s::event_id_c_::types");
 }
 uint8_t event_trigger_cfg_inter_rat_s::event_id_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options, 2, value, "event_trigger_cfg_inter_rat_s::event_id_c_::types");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options, 2, value, "event_trigger_cfg_inter_rat_s::event_id_c_::types");
 }
 
 std::string event_trigger_cfg_inter_rat_s::report_amount_opts::to_string() const
 {
-  static constexpr const char* options[] = {"r1", "r2", "r4", "r8", "r16", "r32", "r64", "infinity"};
+  static const char* options[] = {"r1", "r2", "r4", "r8", "r16", "r32", "r64", "infinity"};
   return convert_enum_idx(options, 8, value, "event_trigger_cfg_inter_rat_s::report_amount_e_");
 }
 int8_t event_trigger_cfg_inter_rat_s::report_amount_opts::to_number() const
 {
-  static constexpr int8_t options[] = {1, 2, 4, 8, 16, 32, 64, -1};
-  return convert_enum_idx(options, 8, value, "event_trigger_cfg_inter_rat_s::report_amount_e_");
+  static const int8_t options[] = {1, 2, 4, 8, 16, 32, 64, -1};
+  return map_enum_number(options, 8, value, "event_trigger_cfg_inter_rat_s::report_amount_e_");
 }
 
 // FilterConfig ::= SEQUENCE
@@ -30371,7 +30375,7 @@ SRSASN_CODE filt_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE filt_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE filt_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(filt_coef_rsrp_present, 1));
   HANDLE_CODE(bref.unpack(filt_coef_rsrq_present, 1));
@@ -30412,7 +30416,7 @@ SRSASN_CODE pci_range_elem_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pci_range_elem_s::unpack(bit_ref& bref)
+SRSASN_CODE pci_range_elem_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(pci_range_idx, bref, (uint8_t)1u, (uint8_t)8u));
   HANDLE_CODE(pci_range.unpack(bref));
@@ -30451,7 +30455,7 @@ SRSASN_CODE periodical_report_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE periodical_report_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE periodical_report_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(report_quant_rs_idxes_present, 1));
@@ -30496,13 +30500,13 @@ void periodical_report_cfg_s::to_json(json_writer& j) const
 
 std::string periodical_report_cfg_s::report_amount_opts::to_string() const
 {
-  static constexpr const char* options[] = {"r1", "r2", "r4", "r8", "r16", "r32", "r64", "infinity"};
+  static const char* options[] = {"r1", "r2", "r4", "r8", "r16", "r32", "r64", "infinity"};
   return convert_enum_idx(options, 8, value, "periodical_report_cfg_s::report_amount_e_");
 }
 int8_t periodical_report_cfg_s::report_amount_opts::to_number() const
 {
-  static constexpr int8_t options[] = {1, 2, 4, 8, 16, 32, 64, -1};
-  return convert_enum_idx(options, 8, value, "periodical_report_cfg_s::report_amount_e_");
+  static const int8_t options[] = {1, 2, 4, 8, 16, 32, 64, -1};
+  return map_enum_number(options, 8, value, "periodical_report_cfg_s::report_amount_e_");
 }
 
 // PeriodicalReportConfigInterRAT ::= SEQUENCE
@@ -30516,7 +30520,7 @@ SRSASN_CODE periodical_report_cfg_inter_rat_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE periodical_report_cfg_inter_rat_s::unpack(bit_ref& bref)
+SRSASN_CODE periodical_report_cfg_inter_rat_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(report_interv.unpack(bref));
@@ -30539,13 +30543,13 @@ void periodical_report_cfg_inter_rat_s::to_json(json_writer& j) const
 
 std::string periodical_report_cfg_inter_rat_s::report_amount_opts::to_string() const
 {
-  static constexpr const char* options[] = {"r1", "r2", "r4", "r8", "r16", "r32", "r64", "infinity"};
+  static const char* options[] = {"r1", "r2", "r4", "r8", "r16", "r32", "r64", "infinity"};
   return convert_enum_idx(options, 8, value, "periodical_report_cfg_inter_rat_s::report_amount_e_");
 }
 int8_t periodical_report_cfg_inter_rat_s::report_amount_opts::to_number() const
 {
-  static constexpr int8_t options[] = {1, 2, 4, 8, 16, 32, 64, -1};
-  return convert_enum_idx(options, 8, value, "periodical_report_cfg_inter_rat_s::report_amount_e_");
+  static const int8_t options[] = {1, 2, 4, 8, 16, 32, 64, -1};
+  return map_enum_number(options, 8, value, "periodical_report_cfg_inter_rat_s::report_amount_e_");
 }
 
 // RAN-AreaConfig ::= SEQUENCE
@@ -30560,7 +30564,7 @@ SRSASN_CODE ran_area_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ran_area_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE ran_area_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ran_area_code_list_present, 1));
 
@@ -30577,8 +30581,8 @@ void ran_area_cfg_s::to_json(json_writer& j) const
   j.write_str("trackingAreaCode", tac.to_string());
   if (ran_area_code_list_present) {
     j.start_array("ran-AreaCodeList");
-    for (uint32_t i1 = 0; i1 < ran_area_code_list.size(); ++i1) {
-      j.write_int(ran_area_code_list[i1]);
+    for (const auto& e1 : ran_area_code_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -30600,7 +30604,7 @@ SRSASN_CODE ref_sig_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ref_sig_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE ref_sig_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ssb_cfg_mob_present, 1));
   HANDLE_CODE(bref.unpack(csi_rs_res_cfg_mob_present, 1));
@@ -30636,7 +30640,7 @@ SRSASN_CODE report_cgi_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE report_cgi_s::unpack(bit_ref& bref)
+SRSASN_CODE report_cgi_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(cell_for_which_to_report_cgi, bref, (uint16_t)0u, (uint16_t)1007u));
@@ -30658,7 +30662,7 @@ SRSASN_CODE report_cgi_eutra_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE report_cgi_eutra_s::unpack(bit_ref& bref)
+SRSASN_CODE report_cgi_eutra_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(cell_for_which_to_report_cgi, bref, (uint16_t)0u, (uint16_t)503u));
@@ -30684,7 +30688,7 @@ SRSASN_CODE ssb_mtc2_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ssb_mtc2_s::unpack(bit_ref& bref)
+SRSASN_CODE ssb_mtc2_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(pci_list_present, 1));
 
@@ -30700,8 +30704,8 @@ void ssb_mtc2_s::to_json(json_writer& j) const
   j.start_obj();
   if (pci_list_present) {
     j.start_array("pci-List");
-    for (uint32_t i1 = 0; i1 < pci_list.size(); ++i1) {
-      j.write_int(pci_list[i1]);
+    for (const auto& e1 : pci_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -30711,13 +30715,13 @@ void ssb_mtc2_s::to_json(json_writer& j) const
 
 std::string ssb_mtc2_s::periodicity_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sf5", "sf10", "sf20", "sf40", "sf80", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"sf5", "sf10", "sf20", "sf40", "sf80", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 8, value, "ssb_mtc2_s::periodicity_e_");
 }
 uint8_t ssb_mtc2_s::periodicity_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {5, 10, 20, 40, 80};
-  return convert_enum_idx(options, 5, value, "ssb_mtc2_s::periodicity_e_");
+  static const uint8_t options[] = {5, 10, 20, 40, 80};
+  return map_enum_number(options, 5, value, "ssb_mtc2_s::periodicity_e_");
 }
 
 // MeasObjectEUTRA ::= SEQUENCE
@@ -30752,7 +30756,7 @@ SRSASN_CODE meas_obj_eutra_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_obj_eutra_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_obj_eutra_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(cells_to_rem_list_eutran_present, 1));
@@ -30790,29 +30794,29 @@ void meas_obj_eutra_s::to_json(json_writer& j) const
   j.write_str("allowedMeasBandwidth", allowed_meas_bw.to_string());
   if (cells_to_rem_list_eutran_present) {
     j.start_array("cellsToRemoveListEUTRAN");
-    for (uint32_t i1 = 0; i1 < cells_to_rem_list_eutran.size(); ++i1) {
-      j.write_int(cells_to_rem_list_eutran[i1]);
+    for (const auto& e1 : cells_to_rem_list_eutran) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (cells_to_add_mod_list_eutran_present) {
     j.start_array("cellsToAddModListEUTRAN");
-    for (uint32_t i1 = 0; i1 < cells_to_add_mod_list_eutran.size(); ++i1) {
-      cells_to_add_mod_list_eutran[i1].to_json(j);
+    for (const auto& e1 : cells_to_add_mod_list_eutran) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (black_cells_to_rem_list_eutran_present) {
     j.start_array("blackCellsToRemoveListEUTRAN");
-    for (uint32_t i1 = 0; i1 < black_cells_to_rem_list_eutran.size(); ++i1) {
-      j.write_int(black_cells_to_rem_list_eutran[i1]);
+    for (const auto& e1 : black_cells_to_rem_list_eutran) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (black_cells_to_add_mod_list_eutran_present) {
     j.start_array("blackCellsToAddModListEUTRAN");
-    for (uint32_t i1 = 0; i1 < black_cells_to_add_mod_list_eutran.size(); ++i1) {
-      black_cells_to_add_mod_list_eutran[i1].to_json(j);
+    for (const auto& e1 : black_cells_to_add_mod_list_eutran) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -30914,7 +30918,7 @@ SRSASN_CODE meas_obj_nr_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_obj_nr_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_obj_nr_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(ssb_freq_present, 1));
@@ -31042,43 +31046,43 @@ void meas_obj_nr_s::to_json(json_writer& j) const
   offset_mo.to_json(j);
   if (cells_to_rem_list_present) {
     j.start_array("cellsToRemoveList");
-    for (uint32_t i1 = 0; i1 < cells_to_rem_list.size(); ++i1) {
-      j.write_int(cells_to_rem_list[i1]);
+    for (const auto& e1 : cells_to_rem_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (cells_to_add_mod_list_present) {
     j.start_array("cellsToAddModList");
-    for (uint32_t i1 = 0; i1 < cells_to_add_mod_list.size(); ++i1) {
-      cells_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : cells_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (black_cells_to_rem_list_present) {
     j.start_array("blackCellsToRemoveList");
-    for (uint32_t i1 = 0; i1 < black_cells_to_rem_list.size(); ++i1) {
-      j.write_int(black_cells_to_rem_list[i1]);
+    for (const auto& e1 : black_cells_to_rem_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (black_cells_to_add_mod_list_present) {
     j.start_array("blackCellsToAddModList");
-    for (uint32_t i1 = 0; i1 < black_cells_to_add_mod_list.size(); ++i1) {
-      black_cells_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : black_cells_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (white_cells_to_rem_list_present) {
     j.start_array("whiteCellsToRemoveList");
-    for (uint32_t i1 = 0; i1 < white_cells_to_rem_list.size(); ++i1) {
-      j.write_int(white_cells_to_rem_list[i1]);
+    for (const auto& e1 : white_cells_to_rem_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (white_cells_to_add_mod_list_present) {
     j.start_array("whiteCellsToAddModList");
-    for (uint32_t i1 = 0; i1 < white_cells_to_add_mod_list.size(); ++i1) {
-      white_cells_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : white_cells_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -31095,13 +31099,13 @@ void meas_obj_nr_s::to_json(json_writer& j) const
 
 std::string meas_obj_nr_s::meas_cycle_scell_v1530_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sf160", "sf256", "sf320", "sf512", "sf640", "sf1024", "sf1280"};
+  static const char* options[] = {"sf160", "sf256", "sf320", "sf512", "sf640", "sf1024", "sf1280"};
   return convert_enum_idx(options, 7, value, "meas_obj_nr_s::meas_cycle_scell_v1530_e_");
 }
 uint16_t meas_obj_nr_s::meas_cycle_scell_v1530_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {160, 256, 320, 512, 640, 1024, 1280};
-  return convert_enum_idx(options, 7, value, "meas_obj_nr_s::meas_cycle_scell_v1530_e_");
+  static const uint16_t options[] = {160, 256, 320, 512, 640, 1024, 1280};
+  return map_enum_number(options, 7, value, "meas_obj_nr_s::meas_cycle_scell_v1530_e_");
 }
 
 // OverheatingAssistanceConfig ::= SEQUENCE
@@ -31111,7 +31115,7 @@ SRSASN_CODE overheat_assist_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE overheat_assist_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE overheat_assist_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(overheat_ind_prohibit_timer.unpack(bref));
 
@@ -31126,33 +31130,32 @@ void overheat_assist_cfg_s::to_json(json_writer& j) const
 
 std::string overheat_assist_cfg_s::overheat_ind_prohibit_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {"s0",
-                                            "s0dot5",
-                                            "s1",
-                                            "s2",
-                                            "s5",
-                                            "s10",
-                                            "s20",
-                                            "s30",
-                                            "s60",
-                                            "s90",
-                                            "s120",
-                                            "s300",
-                                            "s600",
-                                            "spare3",
-                                            "spare2",
-                                            "spare1"};
+  static const char* options[] = {"s0",
+                                  "s0dot5",
+                                  "s1",
+                                  "s2",
+                                  "s5",
+                                  "s10",
+                                  "s20",
+                                  "s30",
+                                  "s60",
+                                  "s90",
+                                  "s120",
+                                  "s300",
+                                  "s600",
+                                  "spare3",
+                                  "spare2",
+                                  "spare1"};
   return convert_enum_idx(options, 16, value, "overheat_assist_cfg_s::overheat_ind_prohibit_timer_e_");
 }
 float overheat_assist_cfg_s::overheat_ind_prohibit_timer_opts::to_number() const
 {
-  static constexpr float options[] = {0.0, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0, 90.0, 120.0, 300.0, 600.0};
-  return convert_enum_idx(options, 13, value, "overheat_assist_cfg_s::overheat_ind_prohibit_timer_e_");
+  static const float options[] = {0.0, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0, 90.0, 120.0, 300.0, 600.0};
+  return map_enum_number(options, 13, value, "overheat_assist_cfg_s::overheat_ind_prohibit_timer_e_");
 }
 std::string overheat_assist_cfg_s::overheat_ind_prohibit_timer_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {
-      "0", "0.5", "1", "2", "5", "10", "20", "30", "60", "90", "120", "300", "600"};
+  static const char* options[] = {"0", "0.5", "1", "2", "5", "10", "20", "30", "60", "90", "120", "300", "600"};
   return convert_enum_idx(options, 16, value, "overheat_assist_cfg_s::overheat_ind_prohibit_timer_e_");
 }
 
@@ -31168,7 +31171,7 @@ SRSASN_CODE plmn_ran_area_cell_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE plmn_ran_area_cell_s::unpack(bit_ref& bref)
+SRSASN_CODE plmn_ran_area_cell_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(plmn_id_present, 1));
 
@@ -31187,8 +31190,8 @@ void plmn_ran_area_cell_s::to_json(json_writer& j) const
     plmn_id.to_json(j);
   }
   j.start_array("ran-AreaCells");
-  for (uint32_t i1 = 0; i1 < ran_area_cells.size(); ++i1) {
-    j.write_str(ran_area_cells[i1].to_string());
+  for (const auto& e1 : ran_area_cells) {
+    j.write_str(e1.to_string());
   }
   j.end_array();
   j.end_obj();
@@ -31206,7 +31209,7 @@ SRSASN_CODE plmn_ran_area_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE plmn_ran_area_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE plmn_ran_area_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(plmn_id_present, 1));
 
@@ -31225,8 +31228,8 @@ void plmn_ran_area_cfg_s::to_json(json_writer& j) const
     plmn_id.to_json(j);
   }
   j.start_array("ran-Area");
-  for (uint32_t i1 = 0; i1 < ran_area.size(); ++i1) {
-    ran_area[i1].to_json(j);
+  for (const auto& e1 : ran_area) {
+    e1.to_json(j);
   }
   j.end_array();
   j.end_obj();
@@ -31240,7 +31243,7 @@ SRSASN_CODE quant_cfg_rs_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE quant_cfg_rs_s::unpack(bit_ref& bref)
+SRSASN_CODE quant_cfg_rs_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(ssb_filt_cfg.unpack(bref));
   HANDLE_CODE(csi_rs_filt_cfg.unpack(bref));
@@ -31264,7 +31267,7 @@ SRSASN_CODE report_cfg_inter_rat_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE report_cfg_inter_rat_s::unpack(bit_ref& bref)
+SRSASN_CODE report_cfg_inter_rat_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(report_type.unpack(bref));
 
@@ -31398,7 +31401,7 @@ SRSASN_CODE report_cfg_inter_rat_s::report_type_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE report_cfg_inter_rat_s::report_type_c_::unpack(bit_ref& bref)
+SRSASN_CODE report_cfg_inter_rat_s::report_type_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -31422,7 +31425,7 @@ SRSASN_CODE report_cfg_inter_rat_s::report_type_c_::unpack(bit_ref& bref)
 
 std::string report_cfg_inter_rat_s::report_type_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"periodical", "eventTriggered", "reportCGI"};
+  static const char* options[] = {"periodical", "eventTriggered", "reportCGI"};
   return convert_enum_idx(options, 3, value, "report_cfg_inter_rat_s::report_type_c_::types");
 }
 
@@ -31433,7 +31436,7 @@ SRSASN_CODE report_cfg_nr_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE report_cfg_nr_s::unpack(bit_ref& bref)
+SRSASN_CODE report_cfg_nr_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(report_type.unpack(bref));
 
@@ -31568,7 +31571,7 @@ SRSASN_CODE report_cfg_nr_s::report_type_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE report_cfg_nr_s::report_type_c_::unpack(bit_ref& bref)
+SRSASN_CODE report_cfg_nr_s::report_type_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -31593,7 +31596,7 @@ SRSASN_CODE report_cfg_nr_s::report_type_c_::unpack(bit_ref& bref)
 
 std::string report_cfg_nr_s::report_type_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"periodical", "eventTriggered", "reportCGI"};
+  static const char* options[] = {"periodical", "eventTriggered", "reportCGI"};
   return convert_enum_idx(options, 3, value, "report_cfg_nr_s::report_type_c_::types");
 }
 
@@ -31610,7 +31613,7 @@ SRSASN_CODE freq_prio_eutra_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE freq_prio_eutra_s::unpack(bit_ref& bref)
+SRSASN_CODE freq_prio_eutra_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(cell_resel_sub_prio_present, 1));
 
@@ -31646,7 +31649,7 @@ SRSASN_CODE freq_prio_nr_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE freq_prio_nr_s::unpack(bit_ref& bref)
+SRSASN_CODE freq_prio_nr_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(cell_resel_sub_prio_present, 1));
 
@@ -31680,7 +31683,7 @@ SRSASN_CODE gap_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE gap_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE gap_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(gap_offset, bref, (uint8_t)0u, (uint8_t)159u));
@@ -31702,61 +31705,61 @@ void gap_cfg_s::to_json(json_writer& j) const
 
 std::string gap_cfg_s::mgl_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms1dot5", "ms3", "ms3dot5", "ms4", "ms5dot5", "ms6"};
+  static const char* options[] = {"ms1dot5", "ms3", "ms3dot5", "ms4", "ms5dot5", "ms6"};
   return convert_enum_idx(options, 6, value, "gap_cfg_s::mgl_e_");
 }
 float gap_cfg_s::mgl_opts::to_number() const
 {
-  static constexpr float options[] = {1.5, 3.0, 3.5, 4.0, 5.5, 6.0};
-  return convert_enum_idx(options, 6, value, "gap_cfg_s::mgl_e_");
+  static const float options[] = {1.5, 3.0, 3.5, 4.0, 5.5, 6.0};
+  return map_enum_number(options, 6, value, "gap_cfg_s::mgl_e_");
 }
 std::string gap_cfg_s::mgl_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"1.5", "3", "3.5", "4", "5.5", "6"};
+  static const char* options[] = {"1.5", "3", "3.5", "4", "5.5", "6"};
   return convert_enum_idx(options, 6, value, "gap_cfg_s::mgl_e_");
 }
 
 std::string gap_cfg_s::mgrp_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms20", "ms40", "ms80", "ms160"};
+  static const char* options[] = {"ms20", "ms40", "ms80", "ms160"};
   return convert_enum_idx(options, 4, value, "gap_cfg_s::mgrp_e_");
 }
 uint8_t gap_cfg_s::mgrp_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {20, 40, 80, 160};
-  return convert_enum_idx(options, 4, value, "gap_cfg_s::mgrp_e_");
+  static const uint8_t options[] = {20, 40, 80, 160};
+  return map_enum_number(options, 4, value, "gap_cfg_s::mgrp_e_");
 }
 
 std::string gap_cfg_s::mgta_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms0", "ms0dot25", "ms0dot5"};
+  static const char* options[] = {"ms0", "ms0dot25", "ms0dot5"};
   return convert_enum_idx(options, 3, value, "gap_cfg_s::mgta_e_");
 }
 float gap_cfg_s::mgta_opts::to_number() const
 {
-  static constexpr float options[] = {0.0, 0.25, 0.5};
-  return convert_enum_idx(options, 3, value, "gap_cfg_s::mgta_e_");
+  static const float options[] = {0.0, 0.25, 0.5};
+  return map_enum_number(options, 3, value, "gap_cfg_s::mgta_e_");
 }
 std::string gap_cfg_s::mgta_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"0", "0.25", "0.5"};
+  static const char* options[] = {"0", "0.25", "0.5"};
   return convert_enum_idx(options, 3, value, "gap_cfg_s::mgta_e_");
 }
 
 // MeasGapSharingScheme ::= ENUMERATED
 std::string meas_gap_sharing_scheme_opts::to_string() const
 {
-  static constexpr const char* options[] = {"scheme00", "scheme01", "scheme10", "scheme11"};
+  static const char* options[] = {"scheme00", "scheme01", "scheme10", "scheme11"};
   return convert_enum_idx(options, 4, value, "meas_gap_sharing_scheme_e");
 }
 float meas_gap_sharing_scheme_opts::to_number() const
 {
-  static constexpr float options[] = {0.0, 0.1, 1.0, 1.1};
-  return convert_enum_idx(options, 4, value, "meas_gap_sharing_scheme_e");
+  static const float options[] = {0.0, 0.1, 1.0, 1.1};
+  return map_enum_number(options, 4, value, "meas_gap_sharing_scheme_e");
 }
 std::string meas_gap_sharing_scheme_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"0.0", "0.1", "1.0", "1.1"};
+  static const char* options[] = {"0.0", "0.1", "1.0", "1.1"};
   return convert_enum_idx(options, 4, value, "meas_gap_sharing_scheme_e");
 }
 
@@ -31769,7 +31772,7 @@ SRSASN_CODE meas_id_to_add_mod_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_id_to_add_mod_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_id_to_add_mod_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(meas_id, bref, (uint8_t)1u, (uint8_t)64u));
   HANDLE_CODE(unpack_integer(meas_obj_id, bref, (uint8_t)1u, (uint8_t)64u));
@@ -31794,7 +31797,7 @@ SRSASN_CODE meas_obj_to_add_mod_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_obj_to_add_mod_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_obj_to_add_mod_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(meas_obj_id, bref, (uint8_t)1u, (uint8_t)64u));
   HANDLE_CODE(meas_obj.unpack(bref));
@@ -31912,7 +31915,7 @@ SRSASN_CODE meas_obj_to_add_mod_s::meas_obj_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_obj_to_add_mod_s::meas_obj_c_::unpack(bit_ref& bref)
+SRSASN_CODE meas_obj_to_add_mod_s::meas_obj_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -31934,7 +31937,7 @@ SRSASN_CODE meas_obj_to_add_mod_s::meas_obj_c_::unpack(bit_ref& bref)
 
 std::string meas_obj_to_add_mod_s::meas_obj_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"measObjectNR", "measObjectEUTRA"};
+  static const char* options[] = {"measObjectNR", "measObjectEUTRA"};
   return convert_enum_idx(options, 2, value, "meas_obj_to_add_mod_s::meas_obj_c_::types");
 }
 
@@ -31950,7 +31953,7 @@ SRSASN_CODE other_cfg_v1540_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE other_cfg_v1540_s::unpack(bit_ref& bref)
+SRSASN_CODE other_cfg_v1540_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(overheat_assist_cfg_present, 1));
@@ -31983,7 +31986,7 @@ SRSASN_CODE quant_cfg_nr_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE quant_cfg_nr_s::unpack(bit_ref& bref)
+SRSASN_CODE quant_cfg_nr_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(quant_cfg_rs_idx_present, 1));
 
@@ -32009,7 +32012,7 @@ void quant_cfg_nr_s::to_json(json_writer& j) const
 // RAT-Type ::= ENUMERATED
 std::string rat_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"nr", "eutra-nr", "eutra", "spare1"};
+  static const char* options[] = {"nr", "eutra-nr", "eutra", "spare1"};
   return convert_enum_idx(options, 4, value, "rat_type_e");
 }
 
@@ -32021,7 +32024,7 @@ SRSASN_CODE report_cfg_to_add_mod_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE report_cfg_to_add_mod_s::unpack(bit_ref& bref)
+SRSASN_CODE report_cfg_to_add_mod_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(report_cfg_id, bref, (uint8_t)1u, (uint8_t)64u));
   HANDLE_CODE(report_cfg.unpack(bref));
@@ -32139,7 +32142,7 @@ SRSASN_CODE report_cfg_to_add_mod_s::report_cfg_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE report_cfg_to_add_mod_s::report_cfg_c_::unpack(bit_ref& bref)
+SRSASN_CODE report_cfg_to_add_mod_s::report_cfg_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -32161,7 +32164,7 @@ SRSASN_CODE report_cfg_to_add_mod_s::report_cfg_c_::unpack(bit_ref& bref)
 
 std::string report_cfg_to_add_mod_s::report_cfg_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"reportConfigNR", "reportConfigInterRAT"};
+  static const char* options[] = {"reportConfigNR", "reportConfigInterRAT"};
   return convert_enum_idx(options, 2, value, "report_cfg_to_add_mod_s::report_cfg_c_::types");
 }
 
@@ -32179,7 +32182,7 @@ SRSASN_CODE carrier_info_nr_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE carrier_info_nr_s::unpack(bit_ref& bref)
+SRSASN_CODE carrier_info_nr_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(smtc_present, 1));
@@ -32213,7 +32216,7 @@ SRSASN_CODE drb_count_msb_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE drb_count_msb_info_s::unpack(bit_ref& bref)
+SRSASN_CODE drb_count_msb_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(drb_id, bref, (uint8_t)1u, (uint8_t)32u));
   HANDLE_CODE(unpack_integer(count_msb_ul, bref, (uint32_t)0u, (uint32_t)33554431u));
@@ -32244,7 +32247,7 @@ SRSASN_CODE master_key_upd_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE master_key_upd_s::unpack(bit_ref& bref)
+SRSASN_CODE master_key_upd_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(nas_container_present, 1));
@@ -32299,7 +32302,7 @@ SRSASN_CODE meas_gap_cfg_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_gap_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_gap_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(gap_fr2_present, 1));
@@ -32382,7 +32385,7 @@ SRSASN_CODE meas_gap_sharing_cfg_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_gap_sharing_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_gap_sharing_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(gap_sharing_fr2_present, 1));
@@ -32445,7 +32448,7 @@ SRSASN_CODE other_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE other_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE other_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(delay_budget_report_cfg_present, 1));
 
@@ -32501,7 +32504,7 @@ SRSASN_CODE other_cfg_s::delay_budget_report_cfg_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE other_cfg_s::delay_budget_report_cfg_c_::unpack(bit_ref& bref)
+SRSASN_CODE other_cfg_s::delay_budget_report_cfg_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -32522,40 +32525,40 @@ SRSASN_CODE other_cfg_s::delay_budget_report_cfg_c_::unpack(bit_ref& bref)
 std::string
 other_cfg_s::delay_budget_report_cfg_c_::setup_s_::delay_budget_report_prohibit_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {"s0", "s0dot4", "s0dot8", "s1dot6", "s3", "s6", "s12", "s30"};
+  static const char* options[] = {"s0", "s0dot4", "s0dot8", "s1dot6", "s3", "s6", "s12", "s30"};
   return convert_enum_idx(
       options, 8, value, "other_cfg_s::delay_budget_report_cfg_c_::setup_s_::delay_budget_report_prohibit_timer_e_");
 }
 float other_cfg_s::delay_budget_report_cfg_c_::setup_s_::delay_budget_report_prohibit_timer_opts::to_number() const
 {
-  static constexpr float options[] = {0.0, 0.4, 0.8, 1.6, 3.0, 6.0, 12.0, 30.0};
-  return convert_enum_idx(
+  static const float options[] = {0.0, 0.4, 0.8, 1.6, 3.0, 6.0, 12.0, 30.0};
+  return map_enum_number(
       options, 8, value, "other_cfg_s::delay_budget_report_cfg_c_::setup_s_::delay_budget_report_prohibit_timer_e_");
 }
 std::string
 other_cfg_s::delay_budget_report_cfg_c_::setup_s_::delay_budget_report_prohibit_timer_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"0", "0.4", "0.8", "1.6", "3", "6", "12", "30"};
+  static const char* options[] = {"0", "0.4", "0.8", "1.6", "3", "6", "12", "30"};
   return convert_enum_idx(
       options, 8, value, "other_cfg_s::delay_budget_report_cfg_c_::setup_s_::delay_budget_report_prohibit_timer_e_");
 }
 
 std::string other_cfg_s::delay_budget_report_cfg_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"release", "setup"};
+  static const char* options[] = {"release", "setup"};
   return convert_enum_idx(options, 2, value, "other_cfg_s::delay_budget_report_cfg_c_::types");
 }
 
 // PeriodicRNAU-TimerValue ::= ENUMERATED
 std::string periodic_rnau_timer_value_opts::to_string() const
 {
-  static constexpr const char* options[] = {"min5", "min10", "min20", "min30", "min60", "min120", "min360", "min720"};
+  static const char* options[] = {"min5", "min10", "min20", "min30", "min60", "min120", "min360", "min720"};
   return convert_enum_idx(options, 8, value, "periodic_rnau_timer_value_e");
 }
 uint16_t periodic_rnau_timer_value_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {5, 10, 20, 30, 60, 120, 360, 720};
-  return convert_enum_idx(options, 8, value, "periodic_rnau_timer_value_e");
+  static const uint16_t options[] = {5, 10, 20, 30, 60, 120, 360, 720};
+  return map_enum_number(options, 8, value, "periodic_rnau_timer_value_e");
 }
 
 // QuantityConfig ::= SEQUENCE
@@ -32584,7 +32587,7 @@ SRSASN_CODE quant_cfg_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE quant_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE quant_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(quant_cfg_nr_list_present, 1));
@@ -32615,8 +32618,8 @@ void quant_cfg_s::to_json(json_writer& j) const
   j.start_obj();
   if (quant_cfg_nr_list_present) {
     j.start_array("quantityConfigNR-List");
-    for (uint32_t i1 = 0; i1 < quant_cfg_nr_list.size(); ++i1) {
-      quant_cfg_nr_list[i1].to_json(j);
+    for (const auto& e1 : quant_cfg_nr_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -32703,15 +32706,15 @@ void ran_notif_area_info_c::to_json(json_writer& j) const
   switch (type_) {
     case types::cell_list:
       j.start_array("cellList");
-      for (uint32_t i1 = 0; i1 < c.get<plmn_ran_area_cell_list_l>().size(); ++i1) {
-        c.get<plmn_ran_area_cell_list_l>()[i1].to_json(j);
+      for (const auto& e1 : c.get<plmn_ran_area_cell_list_l>()) {
+        e1.to_json(j);
       }
       j.end_array();
       break;
     case types::ran_area_cfg_list:
       j.start_array("ran-AreaConfigList");
-      for (uint32_t i1 = 0; i1 < c.get<plmn_ran_area_cfg_list_l>().size(); ++i1) {
-        c.get<plmn_ran_area_cfg_list_l>()[i1].to_json(j);
+      for (const auto& e1 : c.get<plmn_ran_area_cfg_list_l>()) {
+        e1.to_json(j);
       }
       j.end_array();
       break;
@@ -32736,7 +32739,7 @@ SRSASN_CODE ran_notif_area_info_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ran_notif_area_info_c::unpack(bit_ref& bref)
+SRSASN_CODE ran_notif_area_info_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -32757,7 +32760,7 @@ SRSASN_CODE ran_notif_area_info_c::unpack(bit_ref& bref)
 
 std::string ran_notif_area_info_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"cellList", "ran-AreaConfigList"};
+  static const char* options[] = {"cellList", "ran-AreaConfigList"};
   return convert_enum_idx(options, 2, value, "ran_notif_area_info_c::types");
 }
 
@@ -32773,7 +32776,7 @@ SRSASN_CODE rrc_recfg_v1540_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_recfg_v1540_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_recfg_v1540_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(other_cfg_v1540_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -32811,7 +32814,7 @@ SRSASN_CODE redirected_carrier_info_eutra_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE redirected_carrier_info_eutra_s::unpack(bit_ref& bref)
+SRSASN_CODE redirected_carrier_info_eutra_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(cn_type_present, 1));
 
@@ -32834,17 +32837,15 @@ void redirected_carrier_info_eutra_s::to_json(json_writer& j) const
 
 std::string redirected_carrier_info_eutra_s::cn_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"epc", "fiveGC"};
+  static const char* options[] = {"epc", "fiveGC"};
   return convert_enum_idx(options, 2, value, "redirected_carrier_info_eutra_s::cn_type_e_");
 }
 uint8_t redirected_carrier_info_eutra_s::cn_type_opts::to_number() const
 {
-  switch (value) {
-    case five_gc:
-      return 5;
-    default:
-      invalid_enum_number(value, "redirected_carrier_info_eutra_s::cn_type_e_");
+  if (value == five_gc) {
+    return 5;
   }
+  invalid_enum_number(value, "redirected_carrier_info_eutra_s::cn_type_e_");
   return 0;
 }
 
@@ -32861,7 +32862,7 @@ SRSASN_CODE ue_cap_rat_request_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_cap_rat_request_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_cap_rat_request_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(cap_request_filt_present, 1));
@@ -32903,7 +32904,7 @@ SRSASN_CODE cell_resel_priorities_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cell_resel_priorities_s::unpack(bit_ref& bref)
+SRSASN_CODE cell_resel_priorities_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(freq_prio_list_eutra_present, 1));
@@ -32927,15 +32928,15 @@ void cell_resel_priorities_s::to_json(json_writer& j) const
   j.start_obj();
   if (freq_prio_list_eutra_present) {
     j.start_array("freqPriorityListEUTRA");
-    for (uint32_t i1 = 0; i1 < freq_prio_list_eutra.size(); ++i1) {
-      freq_prio_list_eutra[i1].to_json(j);
+    for (const auto& e1 : freq_prio_list_eutra) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (freq_prio_list_nr_present) {
     j.start_array("freqPriorityListNR");
-    for (uint32_t i1 = 0; i1 < freq_prio_list_nr.size(); ++i1) {
-      freq_prio_list_nr[i1].to_json(j);
+    for (const auto& e1 : freq_prio_list_nr) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -32947,13 +32948,13 @@ void cell_resel_priorities_s::to_json(json_writer& j) const
 
 std::string cell_resel_priorities_s::t320_opts::to_string() const
 {
-  static constexpr const char* options[] = {"min5", "min10", "min20", "min30", "min60", "min120", "min180", "spare1"};
+  static const char* options[] = {"min5", "min10", "min20", "min30", "min60", "min120", "min180", "spare1"};
   return convert_enum_idx(options, 8, value, "cell_resel_priorities_s::t320_e_");
 }
 uint8_t cell_resel_priorities_s::t320_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {5, 10, 20, 30, 60, 120, 180};
-  return convert_enum_idx(options, 7, value, "cell_resel_priorities_s::t320_e_");
+  static const uint8_t options[] = {5, 10, 20, 30, 60, 120, 180};
+  return map_enum_number(options, 7, value, "cell_resel_priorities_s::t320_e_");
 }
 
 // MeasConfig ::= SEQUENCE
@@ -33004,7 +33005,7 @@ SRSASN_CODE meas_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(meas_obj_to_rem_list_present, 1));
@@ -33056,43 +33057,43 @@ void meas_cfg_s::to_json(json_writer& j) const
   j.start_obj();
   if (meas_obj_to_rem_list_present) {
     j.start_array("measObjectToRemoveList");
-    for (uint32_t i1 = 0; i1 < meas_obj_to_rem_list.size(); ++i1) {
-      j.write_int(meas_obj_to_rem_list[i1]);
+    for (const auto& e1 : meas_obj_to_rem_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (meas_obj_to_add_mod_list_present) {
     j.start_array("measObjectToAddModList");
-    for (uint32_t i1 = 0; i1 < meas_obj_to_add_mod_list.size(); ++i1) {
-      meas_obj_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : meas_obj_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (report_cfg_to_rem_list_present) {
     j.start_array("reportConfigToRemoveList");
-    for (uint32_t i1 = 0; i1 < report_cfg_to_rem_list.size(); ++i1) {
-      j.write_int(report_cfg_to_rem_list[i1]);
+    for (const auto& e1 : report_cfg_to_rem_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (report_cfg_to_add_mod_list_present) {
     j.start_array("reportConfigToAddModList");
-    for (uint32_t i1 = 0; i1 < report_cfg_to_add_mod_list.size(); ++i1) {
-      report_cfg_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : report_cfg_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (meas_id_to_rem_list_present) {
     j.start_array("measIdToRemoveList");
-    for (uint32_t i1 = 0; i1 < meas_id_to_rem_list.size(); ++i1) {
-      j.write_int(meas_id_to_rem_list[i1]);
+    for (const auto& e1 : meas_id_to_rem_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
   if (meas_id_to_add_mod_list_present) {
     j.start_array("measIdToAddModList");
-    for (uint32_t i1 = 0; i1 < meas_id_to_add_mod_list.size(); ++i1) {
-      meas_id_to_add_mod_list[i1].to_json(j);
+    for (const auto& e1 : meas_id_to_add_mod_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -33189,7 +33190,7 @@ SRSASN_CODE meas_cfg_s::s_measure_cfg_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_cfg_s::s_measure_cfg_c_::unpack(bit_ref& bref)
+SRSASN_CODE meas_cfg_s::s_measure_cfg_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -33210,7 +33211,7 @@ SRSASN_CODE meas_cfg_s::s_measure_cfg_c_::unpack(bit_ref& bref)
 
 std::string meas_cfg_s::s_measure_cfg_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ssb-RSRP", "csi-RSRP"};
+  static const char* options[] = {"ssb-RSRP", "csi-RSRP"};
   return convert_enum_idx(options, 2, value, "meas_cfg_s::s_measure_cfg_c_::types");
 }
 
@@ -33250,7 +33251,7 @@ SRSASN_CODE rrc_recfg_v1530_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_recfg_v1530_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_recfg_v1530_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(master_cell_group_present, 1));
   HANDLE_CODE(bref.unpack(full_cfg_present, 1));
@@ -33296,8 +33297,8 @@ void rrc_recfg_v1530_ies_s::to_json(json_writer& j) const
   }
   if (ded_nas_msg_list_present) {
     j.start_array("dedicatedNAS-MessageList");
-    for (uint32_t i1 = 0; i1 < ded_nas_msg_list.size(); ++i1) {
-      j.write_str(ded_nas_msg_list[i1].to_string());
+    for (const auto& e1 : ded_nas_msg_list) {
+      j.write_str(e1.to_string());
     }
     j.end_array();
   }
@@ -33334,7 +33335,7 @@ SRSASN_CODE rrc_release_v1540_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_release_v1540_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_release_v1540_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(wait_time_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -33460,7 +33461,7 @@ SRSASN_CODE redirected_carrier_info_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE redirected_carrier_info_c::unpack(bit_ref& bref)
+SRSASN_CODE redirected_carrier_info_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -33481,7 +33482,7 @@ SRSASN_CODE redirected_carrier_info_c::unpack(bit_ref& bref)
 
 std::string redirected_carrier_info_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"nr", "eutra"};
+  static const char* options[] = {"nr", "eutra"};
   return convert_enum_idx(options, 2, value, "redirected_carrier_info_c::types");
 }
 
@@ -33493,7 +33494,7 @@ SRSASN_CODE security_cfg_smc_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE security_cfg_smc_s::unpack(bit_ref& bref)
+SRSASN_CODE security_cfg_smc_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(security_algorithm_cfg.unpack(bref));
@@ -33528,7 +33529,7 @@ SRSASN_CODE suspend_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE suspend_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE suspend_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(ran_notif_area_info_present, 1));
@@ -33577,7 +33578,7 @@ SRSASN_CODE counter_check_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE counter_check_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE counter_check_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -33593,8 +33594,8 @@ void counter_check_ies_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("drb-CountMSB-InfoList");
-  for (uint32_t i1 = 0; i1 < drb_count_msb_info_list.size(); ++i1) {
-    drb_count_msb_info_list[i1].to_json(j);
+  for (const auto& e1 : drb_count_msb_info_list) {
+    e1.to_json(j);
   }
   j.end_array();
   if (late_non_crit_ext_present) {
@@ -33624,7 +33625,7 @@ SRSASN_CODE dl_info_transfer_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dl_info_transfer_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE dl_info_transfer_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ded_nas_msg_present, 1));
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
@@ -33674,7 +33675,7 @@ SRSASN_CODE mob_from_nr_cmd_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE mob_from_nr_cmd_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE mob_from_nr_cmd_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(nas_security_param_from_nr_present, 1));
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
@@ -33712,7 +33713,7 @@ void mob_from_nr_cmd_ies_s::to_json(json_writer& j) const
 
 std::string mob_from_nr_cmd_ies_s::target_rat_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"eutra", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"eutra", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 4, value, "mob_from_nr_cmd_ies_s::target_rat_type_e_");
 }
 
@@ -33743,7 +33744,7 @@ SRSASN_CODE rrc_recfg_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_recfg_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_recfg_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(radio_bearer_cfg_present, 1));
   HANDLE_CODE(bref.unpack(secondary_cell_group_present, 1));
@@ -33806,7 +33807,7 @@ SRSASN_CODE rrc_reest_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_reest_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_reest_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -33865,7 +33866,7 @@ SRSASN_CODE rrc_release_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_release_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_release_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(redirected_carrier_info_present, 1));
   HANDLE_CODE(bref.unpack(cell_resel_priorities_present, 1));
@@ -33930,19 +33931,19 @@ void rrc_release_ies_s::to_json(json_writer& j) const
 
 std::string rrc_release_ies_s::depriorit_req_s_::depriorit_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"frequency", "nr"};
+  static const char* options[] = {"frequency", "nr"};
   return convert_enum_idx(options, 2, value, "rrc_release_ies_s::depriorit_req_s_::depriorit_type_e_");
 }
 
 std::string rrc_release_ies_s::depriorit_req_s_::depriorit_timer_opts::to_string() const
 {
-  static constexpr const char* options[] = {"min5", "min10", "min15", "min30"};
+  static const char* options[] = {"min5", "min10", "min15", "min30"};
   return convert_enum_idx(options, 4, value, "rrc_release_ies_s::depriorit_req_s_::depriorit_timer_e_");
 }
 uint8_t rrc_release_ies_s::depriorit_req_s_::depriorit_timer_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {5, 10, 15, 30};
-  return convert_enum_idx(options, 4, value, "rrc_release_ies_s::depriorit_req_s_::depriorit_timer_e_");
+  static const uint8_t options[] = {5, 10, 15, 30};
+  return map_enum_number(options, 4, value, "rrc_release_ies_s::depriorit_req_s_::depriorit_timer_e_");
 }
 
 // RRCResume-IEs ::= SEQUENCE
@@ -33970,7 +33971,7 @@ SRSASN_CODE rrc_resume_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_resume_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_resume_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(radio_bearer_cfg_present, 1));
   HANDLE_CODE(bref.unpack(master_cell_group_present, 1));
@@ -34035,7 +34036,7 @@ SRSASN_CODE security_mode_cmd_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE security_mode_cmd_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE security_mode_cmd_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -34076,7 +34077,7 @@ SRSASN_CODE ue_cap_enquiry_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_cap_enquiry_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_cap_enquiry_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -34092,8 +34093,8 @@ void ue_cap_enquiry_ies_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("ue-CapabilityRAT-RequestList");
-  for (uint32_t i1 = 0; i1 < ue_cap_rat_request_list.size(); ++i1) {
-    ue_cap_rat_request_list[i1].to_json(j);
+  for (const auto& e1 : ue_cap_rat_request_list) {
+    e1.to_json(j);
   }
   j.end_array();
   if (late_non_crit_ext_present) {
@@ -34115,7 +34116,7 @@ SRSASN_CODE counter_check_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE counter_check_s::unpack(bit_ref& bref)
+SRSASN_CODE counter_check_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -34222,7 +34223,7 @@ SRSASN_CODE counter_check_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE counter_check_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE counter_check_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -34242,7 +34243,7 @@ SRSASN_CODE counter_check_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string counter_check_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"counterCheck", "criticalExtensionsFuture"};
+  static const char* options[] = {"counterCheck", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "counter_check_s::crit_exts_c_::types");
 }
 
@@ -34254,7 +34255,7 @@ SRSASN_CODE dl_info_transfer_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dl_info_transfer_s::unpack(bit_ref& bref)
+SRSASN_CODE dl_info_transfer_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -34362,7 +34363,7 @@ SRSASN_CODE dl_info_transfer_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dl_info_transfer_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE dl_info_transfer_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -34382,7 +34383,7 @@ SRSASN_CODE dl_info_transfer_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string dl_info_transfer_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"dlInformationTransfer", "criticalExtensionsFuture"};
+  static const char* options[] = {"dlInformationTransfer", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "dl_info_transfer_s::crit_exts_c_::types");
 }
 
@@ -34394,7 +34395,7 @@ SRSASN_CODE mob_from_nr_cmd_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE mob_from_nr_cmd_s::unpack(bit_ref& bref)
+SRSASN_CODE mob_from_nr_cmd_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -34502,7 +34503,7 @@ SRSASN_CODE mob_from_nr_cmd_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE mob_from_nr_cmd_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE mob_from_nr_cmd_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -34522,7 +34523,7 @@ SRSASN_CODE mob_from_nr_cmd_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string mob_from_nr_cmd_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"mobilityFromNRCommand", "criticalExtensionsFuture"};
+  static const char* options[] = {"mobilityFromNRCommand", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "mob_from_nr_cmd_s::crit_exts_c_::types");
 }
 
@@ -34534,7 +34535,7 @@ SRSASN_CODE rrc_recfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_recfg_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_recfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -34641,7 +34642,7 @@ SRSASN_CODE rrc_recfg_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_recfg_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE rrc_recfg_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -34661,7 +34662,7 @@ SRSASN_CODE rrc_recfg_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string rrc_recfg_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rrcReconfiguration", "criticalExtensionsFuture"};
+  static const char* options[] = {"rrcReconfiguration", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "rrc_recfg_s::crit_exts_c_::types");
 }
 
@@ -34673,7 +34674,7 @@ SRSASN_CODE rrc_reest_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_reest_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_reest_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -34780,7 +34781,7 @@ SRSASN_CODE rrc_reest_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_reest_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE rrc_reest_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -34800,7 +34801,7 @@ SRSASN_CODE rrc_reest_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string rrc_reest_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rrcReestablishment", "criticalExtensionsFuture"};
+  static const char* options[] = {"rrcReestablishment", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "rrc_reest_s::crit_exts_c_::types");
 }
 
@@ -34812,7 +34813,7 @@ SRSASN_CODE rrc_release_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_release_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_release_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -34919,7 +34920,7 @@ SRSASN_CODE rrc_release_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_release_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE rrc_release_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -34939,7 +34940,7 @@ SRSASN_CODE rrc_release_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string rrc_release_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rrcRelease", "criticalExtensionsFuture"};
+  static const char* options[] = {"rrcRelease", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "rrc_release_s::crit_exts_c_::types");
 }
 
@@ -34951,7 +34952,7 @@ SRSASN_CODE rrc_resume_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_resume_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_resume_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -35058,7 +35059,7 @@ SRSASN_CODE rrc_resume_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_resume_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE rrc_resume_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -35078,7 +35079,7 @@ SRSASN_CODE rrc_resume_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string rrc_resume_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rrcResume", "criticalExtensionsFuture"};
+  static const char* options[] = {"rrcResume", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "rrc_resume_s::crit_exts_c_::types");
 }
 
@@ -35090,7 +35091,7 @@ SRSASN_CODE security_mode_cmd_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE security_mode_cmd_s::unpack(bit_ref& bref)
+SRSASN_CODE security_mode_cmd_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -35198,7 +35199,7 @@ SRSASN_CODE security_mode_cmd_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE security_mode_cmd_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE security_mode_cmd_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -35218,7 +35219,7 @@ SRSASN_CODE security_mode_cmd_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string security_mode_cmd_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"securityModeCommand", "criticalExtensionsFuture"};
+  static const char* options[] = {"securityModeCommand", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "security_mode_cmd_s::crit_exts_c_::types");
 }
 
@@ -35230,7 +35231,7 @@ SRSASN_CODE ue_cap_enquiry_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_cap_enquiry_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_cap_enquiry_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -35337,7 +35338,7 @@ SRSASN_CODE ue_cap_enquiry_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_cap_enquiry_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE ue_cap_enquiry_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -35357,7 +35358,7 @@ SRSASN_CODE ue_cap_enquiry_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string ue_cap_enquiry_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ueCapabilityEnquiry", "criticalExtensionsFuture"};
+  static const char* options[] = {"ueCapabilityEnquiry", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "ue_cap_enquiry_s::crit_exts_c_::types");
 }
 
@@ -35453,7 +35454,7 @@ SRSASN_CODE dl_dcch_msg_type_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dl_dcch_msg_type_c::unpack(bit_ref& bref)
+SRSASN_CODE dl_dcch_msg_type_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -35774,7 +35775,7 @@ SRSASN_CODE dl_dcch_msg_type_c::c1_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dl_dcch_msg_type_c::c1_c_::unpack(bit_ref& bref)
+SRSASN_CODE dl_dcch_msg_type_c::c1_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -35830,34 +35831,34 @@ SRSASN_CODE dl_dcch_msg_type_c::c1_c_::unpack(bit_ref& bref)
 
 std::string dl_dcch_msg_type_c::c1_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rrcReconfiguration",
-                                            "rrcResume",
-                                            "rrcRelease",
-                                            "rrcReestablishment",
-                                            "securityModeCommand",
-                                            "dlInformationTransfer",
-                                            "ueCapabilityEnquiry",
-                                            "counterCheck",
-                                            "mobilityFromNRCommand",
-                                            "spare7",
-                                            "spare6",
-                                            "spare5",
-                                            "spare4",
-                                            "spare3",
-                                            "spare2",
-                                            "spare1"};
+  static const char* options[] = {"rrcReconfiguration",
+                                  "rrcResume",
+                                  "rrcRelease",
+                                  "rrcReestablishment",
+                                  "securityModeCommand",
+                                  "dlInformationTransfer",
+                                  "ueCapabilityEnquiry",
+                                  "counterCheck",
+                                  "mobilityFromNRCommand",
+                                  "spare7",
+                                  "spare6",
+                                  "spare5",
+                                  "spare4",
+                                  "spare3",
+                                  "spare2",
+                                  "spare1"};
   return convert_enum_idx(options, 16, value, "dl_dcch_msg_type_c::c1_c_::types");
 }
 
 std::string dl_dcch_msg_type_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"c1", "messageClassExtension"};
+  static const char* options[] = {"c1", "messageClassExtension"};
   return convert_enum_idx(options, 2, value, "dl_dcch_msg_type_c::types");
 }
 uint8_t dl_dcch_msg_type_c::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1};
-  return convert_enum_idx(options, 1, value, "dl_dcch_msg_type_c::types");
+  static const uint8_t options[] = {1};
+  return map_enum_number(options, 1, value, "dl_dcch_msg_type_c::types");
 }
 
 // DL-DCCH-Message ::= SEQUENCE
@@ -35869,7 +35870,7 @@ SRSASN_CODE dl_dcch_msg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dl_dcch_msg_s::unpack(bit_ref& bref)
+SRSASN_CODE dl_dcch_msg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(msg.unpack(bref));
 
@@ -35988,7 +35989,7 @@ SRSASN_CODE paging_ue_id_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE paging_ue_id_c::unpack(bit_ref& bref)
+SRSASN_CODE paging_ue_id_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -36009,13 +36010,13 @@ SRSASN_CODE paging_ue_id_c::unpack(bit_ref& bref)
 
 std::string paging_ue_id_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ng-5G-S-TMSI", "fullI-RNTI"};
+  static const char* options[] = {"ng-5G-S-TMSI", "fullI-RNTI"};
   return convert_enum_idx(options, 2, value, "paging_ue_id_c::types");
 }
 int8_t paging_ue_id_c::types_opts::to_number() const
 {
-  static constexpr int8_t options[] = {-5};
-  return convert_enum_idx(options, 1, value, "paging_ue_id_c::types");
+  static const int8_t options[] = {-5};
+  return map_enum_number(options, 1, value, "paging_ue_id_c::types");
 }
 
 // PagingRecord ::= SEQUENCE
@@ -36028,7 +36029,7 @@ SRSASN_CODE paging_record_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE paging_record_s::unpack(bit_ref& bref)
+SRSASN_CODE paging_record_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(access_type_present, 1));
@@ -36064,7 +36065,7 @@ SRSASN_CODE paging_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE paging_s::unpack(bit_ref& bref)
+SRSASN_CODE paging_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(paging_record_list_present, 1));
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
@@ -36084,8 +36085,8 @@ void paging_s::to_json(json_writer& j) const
   j.start_obj();
   if (paging_record_list_present) {
     j.start_array("pagingRecordList");
-    for (uint32_t i1 = 0; i1 < paging_record_list.size(); ++i1) {
-      paging_record_list[i1].to_json(j);
+    for (const auto& e1 : paging_record_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -36192,7 +36193,7 @@ SRSASN_CODE pcch_msg_type_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pcch_msg_type_c::unpack(bit_ref& bref)
+SRSASN_CODE pcch_msg_type_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -36244,7 +36245,7 @@ SRSASN_CODE pcch_msg_type_c::c1_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pcch_msg_type_c::c1_c_::unpack(bit_ref& bref)
+SRSASN_CODE pcch_msg_type_c::c1_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -36264,19 +36265,19 @@ SRSASN_CODE pcch_msg_type_c::c1_c_::unpack(bit_ref& bref)
 
 std::string pcch_msg_type_c::c1_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"paging", "spare1"};
+  static const char* options[] = {"paging", "spare1"};
   return convert_enum_idx(options, 2, value, "pcch_msg_type_c::c1_c_::types");
 }
 
 std::string pcch_msg_type_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"c1", "messageClassExtension"};
+  static const char* options[] = {"c1", "messageClassExtension"};
   return convert_enum_idx(options, 2, value, "pcch_msg_type_c::types");
 }
 uint8_t pcch_msg_type_c::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1};
-  return convert_enum_idx(options, 1, value, "pcch_msg_type_c::types");
+  static const uint8_t options[] = {1};
+  return map_enum_number(options, 1, value, "pcch_msg_type_c::types");
 }
 
 // PCCH-Message ::= SEQUENCE
@@ -36288,7 +36289,7 @@ SRSASN_CODE pcch_msg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pcch_msg_s::unpack(bit_ref& bref)
+SRSASN_CODE pcch_msg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(msg.unpack(bref));
 
@@ -36311,22 +36312,22 @@ void pcch_msg_s::to_json(json_writer& j) const
 // EstablishmentCause ::= ENUMERATED
 std::string establishment_cause_opts::to_string() const
 {
-  static constexpr const char* options[] = {"emergency",
-                                            "highPriorityAccess",
-                                            "mt-Access",
-                                            "mo-Signalling",
-                                            "mo-Data",
-                                            "mo-VoiceCall",
-                                            "mo-VideoCall",
-                                            "mo-SMS",
-                                            "mps-PriorityAccess",
-                                            "mcs-PriorityAccess",
-                                            "spare6",
-                                            "spare5",
-                                            "spare4",
-                                            "spare3",
-                                            "spare2",
-                                            "spare1"};
+  static const char* options[] = {"emergency",
+                                  "highPriorityAccess",
+                                  "mt-Access",
+                                  "mo-Signalling",
+                                  "mo-Data",
+                                  "mo-VoiceCall",
+                                  "mo-VideoCall",
+                                  "mo-SMS",
+                                  "mps-PriorityAccess",
+                                  "mcs-PriorityAccess",
+                                  "spare6",
+                                  "spare5",
+                                  "spare4",
+                                  "spare3",
+                                  "spare2",
+                                  "spare1"};
   return convert_enum_idx(options, 16, value, "establishment_cause_e");
 }
 
@@ -36429,7 +36430,7 @@ SRSASN_CODE init_ue_id_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE init_ue_id_c::unpack(bit_ref& bref)
+SRSASN_CODE init_ue_id_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -36450,13 +36451,13 @@ SRSASN_CODE init_ue_id_c::unpack(bit_ref& bref)
 
 std::string init_ue_id_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ng-5G-S-TMSI-Part1", "randomValue"};
+  static const char* options[] = {"ng-5G-S-TMSI-Part1", "randomValue"};
   return convert_enum_idx(options, 2, value, "init_ue_id_c::types");
 }
 int8_t init_ue_id_c::types_opts::to_number() const
 {
-  static constexpr int8_t options[] = {-5};
-  return convert_enum_idx(options, 1, value, "init_ue_id_c::types");
+  static const int8_t options[] = {-5};
+  return map_enum_number(options, 1, value, "init_ue_id_c::types");
 }
 
 // ReestabUE-Identity ::= SEQUENCE
@@ -36468,7 +36469,7 @@ SRSASN_CODE reestab_ue_id_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE reestab_ue_id_s::unpack(bit_ref& bref)
+SRSASN_CODE reestab_ue_id_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(c_rnti, bref, (uint32_t)0u, (uint32_t)65535u));
   HANDLE_CODE(unpack_integer(pci, bref, (uint16_t)0u, (uint16_t)1007u));
@@ -36488,29 +36489,29 @@ void reestab_ue_id_s::to_json(json_writer& j) const
 // ReestablishmentCause ::= ENUMERATED
 std::string reest_cause_opts::to_string() const
 {
-  static constexpr const char* options[] = {"reconfigurationFailure", "handoverFailure", "otherFailure", "spare1"};
+  static const char* options[] = {"reconfigurationFailure", "handoverFailure", "otherFailure", "spare1"};
   return convert_enum_idx(options, 4, value, "reest_cause_e");
 }
 
 // ResumeCause ::= ENUMERATED
 std::string resume_cause_opts::to_string() const
 {
-  static constexpr const char* options[] = {"emergency",
-                                            "highPriorityAccess",
-                                            "mt-Access",
-                                            "mo-Signalling",
-                                            "mo-Data",
-                                            "mo-VoiceCall",
-                                            "mo-VideoCall",
-                                            "mo-SMS",
-                                            "rna-Update",
-                                            "mps-PriorityAccess",
-                                            "mcs-PriorityAccess",
-                                            "spare1",
-                                            "spare2",
-                                            "spare3",
-                                            "spare4",
-                                            "spare5"};
+  static const char* options[] = {"emergency",
+                                  "highPriorityAccess",
+                                  "mt-Access",
+                                  "mo-Signalling",
+                                  "mo-Data",
+                                  "mo-VoiceCall",
+                                  "mo-VideoCall",
+                                  "mo-SMS",
+                                  "rna-Update",
+                                  "mps-PriorityAccess",
+                                  "mcs-PriorityAccess",
+                                  "spare1",
+                                  "spare2",
+                                  "spare3",
+                                  "spare4",
+                                  "spare5"};
   return convert_enum_idx(options, 16, value, "resume_cause_e");
 }
 
@@ -36523,7 +36524,7 @@ SRSASN_CODE rrc_reest_request_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_reest_request_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_reest_request_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(ue_id.unpack(bref));
   HANDLE_CODE(reest_cause.unpack(bref));
@@ -36551,7 +36552,7 @@ SRSASN_CODE rrc_resume_request_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_resume_request_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_resume_request_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(resume_id.unpack(bref));
   HANDLE_CODE(resume_mac_i.unpack(bref));
@@ -36579,7 +36580,7 @@ SRSASN_CODE rrc_setup_request_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_setup_request_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_setup_request_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(ue_id.unpack(bref));
   HANDLE_CODE(establishment_cause.unpack(bref));
@@ -36605,7 +36606,7 @@ SRSASN_CODE rrc_sys_info_request_r15_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_sys_info_request_r15_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_sys_info_request_r15_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(requested_si_list.unpack(bref));
   HANDLE_CODE(spare.unpack(bref));
@@ -36627,7 +36628,7 @@ SRSASN_CODE rrc_reest_request_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_reest_request_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_reest_request_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(rrc_reest_request.unpack(bref));
 
@@ -36648,7 +36649,7 @@ SRSASN_CODE rrc_resume_request_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_resume_request_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_resume_request_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(rrc_resume_request.unpack(bref));
 
@@ -36669,7 +36670,7 @@ SRSASN_CODE rrc_setup_request_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_setup_request_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_setup_request_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(rrc_setup_request.unpack(bref));
 
@@ -36690,7 +36691,7 @@ SRSASN_CODE rrc_sys_info_request_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_sys_info_request_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_sys_info_request_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(crit_exts.unpack(bref));
 
@@ -36796,7 +36797,7 @@ SRSASN_CODE rrc_sys_info_request_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_sys_info_request_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE rrc_sys_info_request_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -36816,7 +36817,7 @@ SRSASN_CODE rrc_sys_info_request_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string rrc_sys_info_request_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rrcSystemInfoRequest-r15", "criticalExtensionsFuture"};
+  static const char* options[] = {"rrcSystemInfoRequest-r15", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "rrc_sys_info_request_s::crit_exts_c_::types");
 }
 
@@ -36912,7 +36913,7 @@ SRSASN_CODE ul_ccch_msg_type_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_ccch_msg_type_c::unpack(bit_ref& bref)
+SRSASN_CODE ul_ccch_msg_type_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -37068,7 +37069,7 @@ SRSASN_CODE ul_ccch_msg_type_c::c1_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_ccch_msg_type_c::c1_c_::unpack(bit_ref& bref)
+SRSASN_CODE ul_ccch_msg_type_c::c1_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -37095,20 +37096,20 @@ SRSASN_CODE ul_ccch_msg_type_c::c1_c_::unpack(bit_ref& bref)
 
 std::string ul_ccch_msg_type_c::c1_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "rrcSetupRequest", "rrcResumeRequest", "rrcReestablishmentRequest", "rrcSystemInfoRequest"};
   return convert_enum_idx(options, 4, value, "ul_ccch_msg_type_c::c1_c_::types");
 }
 
 std::string ul_ccch_msg_type_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"c1", "messageClassExtension"};
+  static const char* options[] = {"c1", "messageClassExtension"};
   return convert_enum_idx(options, 2, value, "ul_ccch_msg_type_c::types");
 }
 uint8_t ul_ccch_msg_type_c::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1};
-  return convert_enum_idx(options, 1, value, "ul_ccch_msg_type_c::types");
+  static const uint8_t options[] = {1};
+  return map_enum_number(options, 1, value, "ul_ccch_msg_type_c::types");
 }
 
 // UL-CCCH-Message ::= SEQUENCE
@@ -37120,7 +37121,7 @@ SRSASN_CODE ul_ccch_msg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_ccch_msg_s::unpack(bit_ref& bref)
+SRSASN_CODE ul_ccch_msg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(msg.unpack(bref));
 
@@ -37150,7 +37151,7 @@ SRSASN_CODE rrc_resume_request1_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_resume_request1_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_resume_request1_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(resume_id.unpack(bref));
   HANDLE_CODE(resume_mac_i.unpack(bref));
@@ -37176,7 +37177,7 @@ SRSASN_CODE rrc_resume_request1_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_resume_request1_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_resume_request1_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(rrc_resume_request1.unpack(bref));
 
@@ -37282,7 +37283,7 @@ SRSASN_CODE ul_ccch1_msg_type_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_ccch1_msg_type_c::unpack(bit_ref& bref)
+SRSASN_CODE ul_ccch1_msg_type_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -37342,7 +37343,7 @@ SRSASN_CODE ul_ccch1_msg_type_c::c1_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_ccch1_msg_type_c::c1_c_::unpack(bit_ref& bref)
+SRSASN_CODE ul_ccch1_msg_type_c::c1_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -37366,24 +37367,24 @@ SRSASN_CODE ul_ccch1_msg_type_c::c1_c_::unpack(bit_ref& bref)
 
 std::string ul_ccch1_msg_type_c::c1_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rrcResumeRequest1", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"rrcResumeRequest1", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 4, value, "ul_ccch1_msg_type_c::c1_c_::types");
 }
 uint8_t ul_ccch1_msg_type_c::c1_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1};
-  return convert_enum_idx(options, 1, value, "ul_ccch1_msg_type_c::c1_c_::types");
+  static const uint8_t options[] = {1};
+  return map_enum_number(options, 1, value, "ul_ccch1_msg_type_c::c1_c_::types");
 }
 
 std::string ul_ccch1_msg_type_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"c1", "messageClassExtension"};
+  static const char* options[] = {"c1", "messageClassExtension"};
   return convert_enum_idx(options, 2, value, "ul_ccch1_msg_type_c::types");
 }
 uint8_t ul_ccch1_msg_type_c::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1};
-  return convert_enum_idx(options, 1, value, "ul_ccch1_msg_type_c::types");
+  static const uint8_t options[] = {1};
+  return map_enum_number(options, 1, value, "ul_ccch1_msg_type_c::types");
 }
 
 // UL-CCCH1-Message ::= SEQUENCE
@@ -37395,7 +37396,7 @@ SRSASN_CODE ul_ccch1_msg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_ccch1_msg_s::unpack(bit_ref& bref)
+SRSASN_CODE ul_ccch1_msg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(msg.unpack(bref));
 
@@ -37434,7 +37435,7 @@ SRSASN_CODE meas_quant_results_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_quant_results_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_quant_results_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(rsrp_present, 1));
   HANDLE_CODE(bref.unpack(rsrq_present, 1));
@@ -37563,7 +37564,7 @@ SRSASN_CODE plmn_id_eutra_minus5_gc_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE plmn_id_eutra_minus5_gc_c::unpack(bit_ref& bref)
+SRSASN_CODE plmn_id_eutra_minus5_gc_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -37584,13 +37585,13 @@ SRSASN_CODE plmn_id_eutra_minus5_gc_c::unpack(bit_ref& bref)
 
 std::string plmn_id_eutra_minus5_gc_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"plmn-Identity-EUTRA-5GC", "plmn-index"};
+  static const char* options[] = {"plmn-Identity-EUTRA-5GC", "plmn-index"};
   return convert_enum_idx(options, 2, value, "plmn_id_eutra_minus5_gc_c::types");
 }
 int8_t plmn_id_eutra_minus5_gc_c::types_opts::to_number() const
 {
-  static constexpr int8_t options[] = {-5};
-  return convert_enum_idx(options, 1, value, "plmn_id_eutra_minus5_gc_c::types");
+  static const int8_t options[] = {-5};
+  return map_enum_number(options, 1, value, "plmn_id_eutra_minus5_gc_c::types");
 }
 
 // ResultsPerCSI-RS-Index ::= SEQUENCE
@@ -37605,7 +37606,7 @@ SRSASN_CODE results_per_csi_rs_idx_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE results_per_csi_rs_idx_s::unpack(bit_ref& bref)
+SRSASN_CODE results_per_csi_rs_idx_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(csi_rs_results_present, 1));
 
@@ -37639,7 +37640,7 @@ SRSASN_CODE results_per_ssb_idx_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE results_per_ssb_idx_s::unpack(bit_ref& bref)
+SRSASN_CODE results_per_ssb_idx_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ssb_results_present, 1));
 
@@ -37682,7 +37683,7 @@ SRSASN_CODE cgi_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cgi_info_s::unpack(bit_ref& bref)
+SRSASN_CODE cgi_info_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(plmn_id_info_list_present, 1));
@@ -37707,15 +37708,15 @@ void cgi_info_s::to_json(json_writer& j) const
   j.start_obj();
   if (plmn_id_info_list_present) {
     j.start_array("plmn-IdentityInfoList");
-    for (uint32_t i1 = 0; i1 < plmn_id_info_list.size(); ++i1) {
-      plmn_id_info_list[i1].to_json(j);
+    for (const auto& e1 : plmn_id_info_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (freq_band_list_present) {
     j.start_array("frequencyBandList");
-    for (uint32_t i1 = 0; i1 < freq_band_list.size(); ++i1) {
-      j.write_int(freq_band_list[i1]);
+    for (const auto& e1 : freq_band_list) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -37825,7 +37826,7 @@ SRSASN_CODE cell_id_eutra_minus5_gc_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cell_id_eutra_minus5_gc_c::unpack(bit_ref& bref)
+SRSASN_CODE cell_id_eutra_minus5_gc_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -37846,7 +37847,7 @@ SRSASN_CODE cell_id_eutra_minus5_gc_c::unpack(bit_ref& bref)
 
 std::string cell_id_eutra_minus5_gc_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"cellIdentity-EUTRA", "cellId-index"};
+  static const char* options[] = {"cellIdentity-EUTRA", "cellId-index"};
   return convert_enum_idx(options, 2, value, "cell_id_eutra_minus5_gc_c::types");
 }
 
@@ -37864,7 +37865,7 @@ SRSASN_CODE cell_access_related_info_eutra_minus5_gc_s::pack(bit_ref& bref) cons
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cell_access_related_info_eutra_minus5_gc_s::unpack(bit_ref& bref)
+SRSASN_CODE cell_access_related_info_eutra_minus5_gc_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ranac_minus5gc_present, 1));
 
@@ -37881,8 +37882,8 @@ void cell_access_related_info_eutra_minus5_gc_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("plmn-IdentityList-eutra-5gc");
-  for (uint32_t i1 = 0; i1 < plmn_id_list_eutra_minus5gc.size(); ++i1) {
-    plmn_id_list_eutra_minus5gc[i1].to_json(j);
+  for (const auto& e1 : plmn_id_list_eutra_minus5gc) {
+    e1.to_json(j);
   }
   j.end_array();
   j.write_str("trackingAreaCode-eutra-5gc", tac_eutra_minus5gc.to_string());
@@ -37903,7 +37904,7 @@ SRSASN_CODE cell_access_related_info_eutra_epc_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cell_access_related_info_eutra_epc_s::unpack(bit_ref& bref)
+SRSASN_CODE cell_access_related_info_eutra_epc_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_dyn_seq_of(plmn_id_list_eutra_epc, bref, 1, 12));
   HANDLE_CODE(tac_eutra_epc.unpack(bref));
@@ -37915,8 +37916,8 @@ void cell_access_related_info_eutra_epc_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("plmn-IdentityList-eutra-epc");
-  for (uint32_t i1 = 0; i1 < plmn_id_list_eutra_epc.size(); ++i1) {
-    plmn_id_list_eutra_epc[i1].to_json(j);
+  for (const auto& e1 : plmn_id_list_eutra_epc) {
+    e1.to_json(j);
   }
   j.end_array();
   j.write_str("trackingAreaCode-eutra-epc", tac_eutra_epc.to_string());
@@ -37943,7 +37944,7 @@ SRSASN_CODE meas_quant_results_eutra_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_quant_results_eutra_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_quant_results_eutra_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(rsrp_present, 1));
   HANDLE_CODE(bref.unpack(rsrq_present, 1));
@@ -38021,7 +38022,7 @@ SRSASN_CODE meas_result_nr_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_result_nr_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_result_nr_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(pci_present, 1));
@@ -38090,15 +38091,15 @@ void meas_result_nr_s::to_json(json_writer& j) const
     j.start_obj();
     if (meas_result.rs_idx_results.results_ssb_idxes_present) {
       j.start_array("resultsSSB-Indexes");
-      for (uint32_t i1 = 0; i1 < meas_result.rs_idx_results.results_ssb_idxes.size(); ++i1) {
-        meas_result.rs_idx_results.results_ssb_idxes[i1].to_json(j);
+      for (const auto& e1 : meas_result.rs_idx_results.results_ssb_idxes) {
+        e1.to_json(j);
       }
       j.end_array();
     }
     if (meas_result.rs_idx_results.results_csi_rs_idxes_present) {
       j.start_array("resultsCSI-RS-Indexes");
-      for (uint32_t i1 = 0; i1 < meas_result.rs_idx_results.results_csi_rs_idxes.size(); ++i1) {
-        meas_result.rs_idx_results.results_csi_rs_idxes[i1].to_json(j);
+      for (const auto& e1 : meas_result.rs_idx_results.results_csi_rs_idxes) {
+        e1.to_json(j);
       }
       j.end_array();
     }
@@ -38123,7 +38124,7 @@ SRSASN_CODE ul_tx_direct_current_bwp_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_tx_direct_current_bwp_s::unpack(bit_ref& bref)
+SRSASN_CODE ul_tx_direct_current_bwp_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(bwp_id, bref, (uint8_t)0u, (uint8_t)4u));
   HANDLE_CODE(bref.unpack(shift7dot5k_hz, 1));
@@ -38149,7 +38150,7 @@ SRSASN_CODE eutra_rstd_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE eutra_rstd_info_s::unpack(bit_ref& bref)
+SRSASN_CODE eutra_rstd_info_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(carrier_freq, bref, (uint32_t)0u, (uint32_t)262143u));
@@ -38168,25 +38169,25 @@ void eutra_rstd_info_s::to_json(json_writer& j) const
 // MIMO-LayersDL ::= ENUMERATED
 std::string mimo_layers_dl_opts::to_string() const
 {
-  static constexpr const char* options[] = {"twoLayers", "fourLayers", "eightLayers"};
+  static const char* options[] = {"twoLayers", "fourLayers", "eightLayers"};
   return convert_enum_idx(options, 3, value, "mimo_layers_dl_e");
 }
 uint8_t mimo_layers_dl_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 8};
-  return convert_enum_idx(options, 3, value, "mimo_layers_dl_e");
+  static const uint8_t options[] = {2, 4, 8};
+  return map_enum_number(options, 3, value, "mimo_layers_dl_e");
 }
 
 // MIMO-LayersUL ::= ENUMERATED
 std::string mimo_layers_ul_opts::to_string() const
 {
-  static constexpr const char* options[] = {"oneLayer", "twoLayers", "fourLayers"};
+  static const char* options[] = {"oneLayer", "twoLayers", "fourLayers"};
   return convert_enum_idx(options, 3, value, "mimo_layers_ul_e");
 }
 uint8_t mimo_layers_ul_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4};
-  return convert_enum_idx(options, 3, value, "mimo_layers_ul_e");
+  static const uint8_t options[] = {1, 2, 4};
+  return map_enum_number(options, 3, value, "mimo_layers_ul_e");
 }
 
 // MeasResultEUTRA ::= SEQUENCE
@@ -38220,7 +38221,7 @@ SRSASN_CODE meas_result_eutra_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_result_eutra_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_result_eutra_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(cgi_info_present, 1));
@@ -38266,8 +38267,8 @@ void meas_result_eutra_s::to_json(json_writer& j) const
       cgi_info.cgi_info_epc.cgi_info_epc_legacy.to_json(j);
       if (cgi_info.cgi_info_epc.cgi_info_epc_list_present) {
         j.start_array("cgi-info-EPC-list");
-        for (uint32_t i1 = 0; i1 < cgi_info.cgi_info_epc.cgi_info_epc_list.size(); ++i1) {
-          cgi_info.cgi_info_epc.cgi_info_epc_list[i1].to_json(j);
+        for (const auto& e1 : cgi_info.cgi_info_epc.cgi_info_epc_list) {
+          e1.to_json(j);
         }
         j.end_array();
       }
@@ -38275,16 +38276,16 @@ void meas_result_eutra_s::to_json(json_writer& j) const
     }
     if (cgi_info.cgi_info_minus5_gc_present) {
       j.start_array("cgi-info-5GC");
-      for (uint32_t i1 = 0; i1 < cgi_info.cgi_info_minus5_gc.size(); ++i1) {
-        cgi_info.cgi_info_minus5_gc[i1].to_json(j);
+      for (const auto& e1 : cgi_info.cgi_info_minus5_gc) {
+        e1.to_json(j);
       }
       j.end_array();
     }
     j.write_int("freqBandIndicator", cgi_info.freq_band_ind);
     if (cgi_info.multi_band_info_list_present) {
       j.start_array("multiBandInfoList");
-      for (uint32_t i1 = 0; i1 < cgi_info.multi_band_info_list.size(); ++i1) {
-        j.write_int(cgi_info.multi_band_info_list[i1]);
+      for (const auto& e1 : cgi_info.multi_band_info_list) {
+        j.write_int(e1);
       }
       j.end_array();
     }
@@ -38310,7 +38311,7 @@ SRSASN_CODE meas_result_serv_mo_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_result_serv_mo_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_result_serv_mo_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(meas_result_best_neigh_cell_present, 1));
@@ -38339,14 +38340,14 @@ void meas_result_serv_mo_s::to_json(json_writer& j) const
 // ReducedAggregatedBandwidth ::= ENUMERATED
 std::string reduced_aggregated_bw_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "mhz0", "mhz10", "mhz20", "mhz30", "mhz40", "mhz50", "mhz60", "mhz80", "mhz100", "mhz200", "mhz300", "mhz400"};
   return convert_enum_idx(options, 12, value, "reduced_aggregated_bw_e");
 }
 uint16_t reduced_aggregated_bw_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {0, 10, 20, 30, 40, 50, 60, 80, 100, 200, 300, 400};
-  return convert_enum_idx(options, 12, value, "reduced_aggregated_bw_e");
+  static const uint16_t options[] = {0, 10, 20, 30, 40, 50, 60, 80, 100, 200, 300, 400};
+  return map_enum_number(options, 12, value, "reduced_aggregated_bw_e");
 }
 
 // UplinkTxDirectCurrentCell ::= SEQUENCE
@@ -38358,7 +38359,7 @@ SRSASN_CODE ul_tx_direct_current_cell_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_tx_direct_current_cell_s::unpack(bit_ref& bref)
+SRSASN_CODE ul_tx_direct_current_cell_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(serv_cell_idx, bref, (uint8_t)0u, (uint8_t)31u));
@@ -38371,8 +38372,8 @@ void ul_tx_direct_current_cell_s::to_json(json_writer& j) const
   j.start_obj();
   j.write_int("servCellIndex", serv_cell_idx);
   j.start_array("uplinkDirectCurrentBWP");
-  for (uint32_t i1 = 0; i1 < ul_direct_current_bwp.size(); ++i1) {
-    ul_direct_current_bwp[i1].to_json(j);
+  for (const auto& e1 : ul_direct_current_bwp) {
+    e1.to_json(j);
   }
   j.end_array();
   j.end_obj();
@@ -38387,7 +38388,7 @@ SRSASN_CODE drb_count_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE drb_count_info_s::unpack(bit_ref& bref)
+SRSASN_CODE drb_count_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(drb_id, bref, (uint8_t)1u, (uint8_t)32u));
   HANDLE_CODE(unpack_integer(count_ul, bref, (uint64_t)0u, (uint64_t)4294967295u));
@@ -38436,7 +38437,7 @@ SRSASN_CODE overheat_assist_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE overheat_assist_s::unpack(bit_ref& bref)
+SRSASN_CODE overheat_assist_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(reduced_max_ccs_present, 1));
   HANDLE_CODE(bref.unpack(reduced_max_bw_fr1_present, 1));
@@ -38516,7 +38517,7 @@ SRSASN_CODE ue_cap_rat_container_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_cap_rat_container_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_cap_rat_container_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(rat_type.unpack(bref));
   HANDLE_CODE(ue_cap_rat_container.unpack(bref));
@@ -38544,7 +38545,7 @@ SRSASN_CODE delay_budget_report_c::pack(bit_ref& bref) const
   HANDLE_CODE(c.pack(bref));
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE delay_budget_report_c::unpack(bit_ref& bref)
+SRSASN_CODE delay_budget_report_c::unpack(cbit_ref& bref)
 {
   types e;
   unpack_enum(e, bref);
@@ -38558,41 +38559,41 @@ SRSASN_CODE delay_budget_report_c::unpack(bit_ref& bref)
 
 std::string delay_budget_report_c::type1_opts::to_string() const
 {
-  static constexpr const char* options[] = {"msMinus1280",
-                                            "msMinus640",
-                                            "msMinus320",
-                                            "msMinus160",
-                                            "msMinus80",
-                                            "msMinus60",
-                                            "msMinus40",
-                                            "msMinus20",
-                                            "ms0",
-                                            "ms20",
-                                            "ms40",
-                                            "ms60",
-                                            "ms80",
-                                            "ms160",
-                                            "ms320",
-                                            "ms640",
-                                            "ms1280"};
+  static const char* options[] = {"msMinus1280",
+                                  "msMinus640",
+                                  "msMinus320",
+                                  "msMinus160",
+                                  "msMinus80",
+                                  "msMinus60",
+                                  "msMinus40",
+                                  "msMinus20",
+                                  "ms0",
+                                  "ms20",
+                                  "ms40",
+                                  "ms60",
+                                  "ms80",
+                                  "ms160",
+                                  "ms320",
+                                  "ms640",
+                                  "ms1280"};
   return convert_enum_idx(options, 17, value, "delay_budget_report_c::type1_e_");
 }
 int16_t delay_budget_report_c::type1_opts::to_number() const
 {
-  static constexpr int16_t options[] = {
+  static const int16_t options[] = {
       -1280, -640, -320, -160, -80, -60, -40, -20, 0, 20, 40, 60, 80, 160, 320, 640, 1280};
-  return convert_enum_idx(options, 17, value, "delay_budget_report_c::type1_e_");
+  return map_enum_number(options, 17, value, "delay_budget_report_c::type1_e_");
 }
 
 std::string delay_budget_report_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"type1"};
+  static const char* options[] = {"type1"};
   return convert_enum_idx(options, 1, value, "delay_budget_report_c::types");
 }
 uint8_t delay_budget_report_c::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1};
-  return convert_enum_idx(options, 1, value, "delay_budget_report_c::types");
+  static const uint8_t options[] = {1};
+  return map_enum_number(options, 1, value, "delay_budget_report_c::types");
 }
 
 // FailureInfoRLC-Bearer ::= SEQUENCE
@@ -38604,7 +38605,7 @@ SRSASN_CODE fail_info_rlc_bearer_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE fail_info_rlc_bearer_s::unpack(bit_ref& bref)
+SRSASN_CODE fail_info_rlc_bearer_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(cell_group_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(unpack_integer(lc_ch_id, bref, (uint8_t)1u, (uint8_t)32u));
@@ -38623,7 +38624,7 @@ void fail_info_rlc_bearer_s::to_json(json_writer& j) const
 
 std::string fail_info_rlc_bearer_s::fail_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"duplication", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"duplication", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 4, value, "fail_info_rlc_bearer_s::fail_type_e_");
 }
 
@@ -38638,8 +38639,8 @@ void location_meas_info_c::to_json(json_writer& j) const
   switch (type_) {
     case types::eutra_rstd:
       j.start_array("eutra-RSTD");
-      for (uint32_t i1 = 0; i1 < c.size(); ++i1) {
-        c[i1].to_json(j);
+      for (const auto& e1 : c) {
+        e1.to_json(j);
       }
       j.end_array();
       break;
@@ -38665,7 +38666,7 @@ SRSASN_CODE location_meas_info_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE location_meas_info_c::unpack(bit_ref& bref)
+SRSASN_CODE location_meas_info_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -38685,7 +38686,7 @@ SRSASN_CODE location_meas_info_c::unpack(bit_ref& bref)
 
 std::string location_meas_info_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"eutra-RSTD", "eutra-FineTimingDetection"};
+  static const char* options[] = {"eutra-RSTD", "eutra-FineTimingDetection"};
   return convert_enum_idx(options, 2, value, "location_meas_info_c::types");
 }
 
@@ -38703,7 +38704,7 @@ SRSASN_CODE meas_results_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_results_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_results_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(meas_result_neigh_cells_present, 1));
@@ -38721,8 +38722,8 @@ void meas_results_s::to_json(json_writer& j) const
   j.start_obj();
   j.write_int("measId", meas_id);
   j.start_array("measResultServingMOList");
-  for (uint32_t i1 = 0; i1 < meas_result_serving_mo_list.size(); ++i1) {
-    meas_result_serving_mo_list[i1].to_json(j);
+  for (const auto& e1 : meas_result_serving_mo_list) {
+    e1.to_json(j);
   }
   j.end_array();
   if (meas_result_neigh_cells_present) {
@@ -38807,15 +38808,15 @@ void meas_results_s::meas_result_neigh_cells_c_::to_json(json_writer& j) const
   switch (type_) {
     case types::meas_result_list_nr:
       j.start_array("measResultListNR");
-      for (uint32_t i1 = 0; i1 < c.get<meas_result_list_nr_l>().size(); ++i1) {
-        c.get<meas_result_list_nr_l>()[i1].to_json(j);
+      for (const auto& e1 : c.get<meas_result_list_nr_l>()) {
+        e1.to_json(j);
       }
       j.end_array();
       break;
     case types::meas_result_list_eutra:
       j.start_array("measResultListEUTRA");
-      for (uint32_t i1 = 0; i1 < c.get<meas_result_list_eutra_l>().size(); ++i1) {
-        c.get<meas_result_list_eutra_l>()[i1].to_json(j);
+      for (const auto& e1 : c.get<meas_result_list_eutra_l>()) {
+        e1.to_json(j);
       }
       j.end_array();
       break;
@@ -38841,7 +38842,7 @@ SRSASN_CODE meas_results_s::meas_result_neigh_cells_c_::pack(bit_ref& bref) cons
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_results_s::meas_result_neigh_cells_c_::unpack(bit_ref& bref)
+SRSASN_CODE meas_results_s::meas_result_neigh_cells_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -38863,7 +38864,7 @@ SRSASN_CODE meas_results_s::meas_result_neigh_cells_c_::unpack(bit_ref& bref)
 
 std::string meas_results_s::meas_result_neigh_cells_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"measResultListNR", "measResultListEUTRA"};
+  static const char* options[] = {"measResultListNR", "measResultListEUTRA"};
   return convert_enum_idx(options, 2, value, "meas_results_s::meas_result_neigh_cells_c_::types");
 }
 
@@ -38879,7 +38880,7 @@ SRSASN_CODE rrc_recfg_complete_v1530_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_recfg_complete_v1530_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_recfg_complete_v1530_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ul_tx_direct_current_list_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -38895,8 +38896,8 @@ void rrc_recfg_complete_v1530_ies_s::to_json(json_writer& j) const
   j.start_obj();
   if (ul_tx_direct_current_list_present) {
     j.start_array("uplinkTxDirectCurrentList");
-    for (uint32_t i1 = 0; i1 < ul_tx_direct_current_list.size(); ++i1) {
-      ul_tx_direct_current_list[i1].to_json(j);
+    for (const auto& e1 : ul_tx_direct_current_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -38920,7 +38921,7 @@ SRSASN_CODE registered_amf_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE registered_amf_s::unpack(bit_ref& bref)
+SRSASN_CODE registered_amf_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(plmn_id_present, 1));
 
@@ -39041,7 +39042,7 @@ SRSASN_CODE s_nssai_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE s_nssai_c::unpack(bit_ref& bref)
+SRSASN_CODE s_nssai_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -39062,7 +39063,7 @@ SRSASN_CODE s_nssai_c::unpack(bit_ref& bref)
 
 std::string s_nssai_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sst", "sst-SD"};
+  static const char* options[] = {"sst", "sst-SD"};
   return convert_enum_idx(options, 2, value, "s_nssai_c::types");
 }
 
@@ -39078,7 +39079,7 @@ SRSASN_CODE ueassist_info_v1540_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ueassist_info_v1540_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE ueassist_info_v1540_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(overheat_assist_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -39117,7 +39118,7 @@ SRSASN_CODE counter_check_resp_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE counter_check_resp_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE counter_check_resp_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -39133,8 +39134,8 @@ void counter_check_resp_ies_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("drb-CountInfoList");
-  for (uint32_t i1 = 0; i1 < drb_count_info_list.size(); ++i1) {
-    drb_count_info_list[i1].to_json(j);
+  for (const auto& e1 : drb_count_info_list) {
+    e1.to_json(j);
   }
   j.end_array();
   if (late_non_crit_ext_present) {
@@ -39164,7 +39165,7 @@ SRSASN_CODE fail_info_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE fail_info_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE fail_info_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(fail_info_rlc_bearer_present, 1));
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
@@ -39210,7 +39211,7 @@ SRSASN_CODE location_meas_ind_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE location_meas_ind_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE location_meas_ind_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -39251,7 +39252,7 @@ SRSASN_CODE meas_report_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_report_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_report_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -39294,7 +39295,7 @@ SRSASN_CODE rrc_recfg_complete_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_recfg_complete_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_recfg_complete_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -39333,7 +39334,7 @@ SRSASN_CODE rrc_reest_complete_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_reest_complete_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_reest_complete_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -39382,7 +39383,7 @@ SRSASN_CODE rrc_resume_complete_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_resume_complete_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_resume_complete_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ded_nas_msg_present, 1));
   HANDLE_CODE(bref.unpack(sel_plmn_id_present, 1));
@@ -39416,8 +39417,8 @@ void rrc_resume_complete_ies_s::to_json(json_writer& j) const
   }
   if (ul_tx_direct_current_list_present) {
     j.start_array("uplinkTxDirectCurrentList");
-    for (uint32_t i1 = 0; i1 < ul_tx_direct_current_list.size(); ++i1) {
-      ul_tx_direct_current_list[i1].to_json(j);
+    for (const auto& e1 : ul_tx_direct_current_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -39462,7 +39463,7 @@ SRSASN_CODE rrc_setup_complete_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_setup_complete_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_setup_complete_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(registered_amf_present, 1));
   HANDLE_CODE(bref.unpack(guami_type_present, 1));
@@ -39504,8 +39505,8 @@ void rrc_setup_complete_ies_s::to_json(json_writer& j) const
   }
   if (s_nssai_list_present) {
     j.start_array("s-NSSAI-List");
-    for (uint32_t i1 = 0; i1 < s_nssai_list.size(); ++i1) {
-      s_nssai_list[i1].to_json(j);
+    for (const auto& e1 : s_nssai_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -39527,7 +39528,7 @@ void rrc_setup_complete_ies_s::to_json(json_writer& j) const
 
 std::string rrc_setup_complete_ies_s::guami_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"native", "mapped"};
+  static const char* options[] = {"native", "mapped"};
   return convert_enum_idx(options, 2, value, "rrc_setup_complete_ies_s::guami_type_e_");
 }
 
@@ -39631,7 +39632,7 @@ SRSASN_CODE rrc_setup_complete_ies_s::ng_minus5_g_s_tmsi_value_c_::pack(bit_ref&
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_setup_complete_ies_s::ng_minus5_g_s_tmsi_value_c_::unpack(bit_ref& bref)
+SRSASN_CODE rrc_setup_complete_ies_s::ng_minus5_g_s_tmsi_value_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -39652,7 +39653,7 @@ SRSASN_CODE rrc_setup_complete_ies_s::ng_minus5_g_s_tmsi_value_c_::unpack(bit_re
 
 std::string rrc_setup_complete_ies_s::ng_minus5_g_s_tmsi_value_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ng-5G-S-TMSI", "ng-5G-S-TMSI-Part2"};
+  static const char* options[] = {"ng-5G-S-TMSI", "ng-5G-S-TMSI-Part2"};
   return convert_enum_idx(options, 2, value, "rrc_setup_complete_ies_s::ng_minus5_g_s_tmsi_value_c_::types");
 }
 
@@ -39668,7 +39669,7 @@ SRSASN_CODE security_mode_complete_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE security_mode_complete_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE security_mode_complete_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -39705,7 +39706,7 @@ SRSASN_CODE security_mode_fail_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE security_mode_fail_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE security_mode_fail_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -39749,7 +39750,7 @@ SRSASN_CODE ueassist_info_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ueassist_info_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE ueassist_info_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(delay_budget_report_present, 1));
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
@@ -39800,7 +39801,7 @@ SRSASN_CODE ue_cap_info_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_cap_info_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_cap_info_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ue_cap_rat_container_list_present, 1));
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
@@ -39820,8 +39821,8 @@ void ue_cap_info_ies_s::to_json(json_writer& j) const
   j.start_obj();
   if (ue_cap_rat_container_list_present) {
     j.start_array("ue-CapabilityRAT-ContainerList");
-    for (uint32_t i1 = 0; i1 < ue_cap_rat_container_list.size(); ++i1) {
-      ue_cap_rat_container_list[i1].to_json(j);
+    for (const auto& e1 : ue_cap_rat_container_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -39852,7 +39853,7 @@ SRSASN_CODE ul_info_transfer_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_info_transfer_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE ul_info_transfer_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ded_nas_msg_present, 1));
   HANDLE_CODE(bref.unpack(late_non_crit_ext_present, 1));
@@ -39892,7 +39893,7 @@ SRSASN_CODE counter_check_resp_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE counter_check_resp_s::unpack(bit_ref& bref)
+SRSASN_CODE counter_check_resp_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -40000,7 +40001,7 @@ SRSASN_CODE counter_check_resp_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE counter_check_resp_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE counter_check_resp_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -40020,7 +40021,7 @@ SRSASN_CODE counter_check_resp_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string counter_check_resp_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"counterCheckResponse", "criticalExtensionsFuture"};
+  static const char* options[] = {"counterCheckResponse", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "counter_check_resp_s::crit_exts_c_::types");
 }
 
@@ -40031,7 +40032,7 @@ SRSASN_CODE fail_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE fail_info_s::unpack(bit_ref& bref)
+SRSASN_CODE fail_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(crit_exts.unpack(bref));
 
@@ -40136,7 +40137,7 @@ SRSASN_CODE fail_info_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE fail_info_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE fail_info_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -40156,7 +40157,7 @@ SRSASN_CODE fail_info_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string fail_info_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"failureInformation", "criticalExtensionsFuture"};
+  static const char* options[] = {"failureInformation", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "fail_info_s::crit_exts_c_::types");
 }
 
@@ -40167,7 +40168,7 @@ SRSASN_CODE location_meas_ind_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE location_meas_ind_s::unpack(bit_ref& bref)
+SRSASN_CODE location_meas_ind_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(crit_exts.unpack(bref));
 
@@ -40273,7 +40274,7 @@ SRSASN_CODE location_meas_ind_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE location_meas_ind_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE location_meas_ind_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -40293,7 +40294,7 @@ SRSASN_CODE location_meas_ind_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string location_meas_ind_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"locationMeasurementIndication", "criticalExtensionsFuture"};
+  static const char* options[] = {"locationMeasurementIndication", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "location_meas_ind_s::crit_exts_c_::types");
 }
 
@@ -40304,7 +40305,7 @@ SRSASN_CODE meas_report_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_report_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_report_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(crit_exts.unpack(bref));
 
@@ -40409,7 +40410,7 @@ SRSASN_CODE meas_report_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_report_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE meas_report_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -40429,7 +40430,7 @@ SRSASN_CODE meas_report_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string meas_report_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"measurementReport", "criticalExtensionsFuture"};
+  static const char* options[] = {"measurementReport", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "meas_report_s::crit_exts_c_::types");
 }
 
@@ -40441,7 +40442,7 @@ SRSASN_CODE rrc_recfg_complete_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_recfg_complete_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_recfg_complete_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -40549,7 +40550,7 @@ SRSASN_CODE rrc_recfg_complete_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_recfg_complete_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE rrc_recfg_complete_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -40569,7 +40570,7 @@ SRSASN_CODE rrc_recfg_complete_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string rrc_recfg_complete_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rrcReconfigurationComplete", "criticalExtensionsFuture"};
+  static const char* options[] = {"rrcReconfigurationComplete", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "rrc_recfg_complete_s::crit_exts_c_::types");
 }
 
@@ -40581,7 +40582,7 @@ SRSASN_CODE rrc_reest_complete_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_reest_complete_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_reest_complete_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -40689,7 +40690,7 @@ SRSASN_CODE rrc_reest_complete_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_reest_complete_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE rrc_reest_complete_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -40709,7 +40710,7 @@ SRSASN_CODE rrc_reest_complete_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string rrc_reest_complete_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rrcReestablishmentComplete", "criticalExtensionsFuture"};
+  static const char* options[] = {"rrcReestablishmentComplete", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "rrc_reest_complete_s::crit_exts_c_::types");
 }
 
@@ -40721,7 +40722,7 @@ SRSASN_CODE rrc_resume_complete_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_resume_complete_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_resume_complete_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -40829,7 +40830,7 @@ SRSASN_CODE rrc_resume_complete_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_resume_complete_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE rrc_resume_complete_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -40849,7 +40850,7 @@ SRSASN_CODE rrc_resume_complete_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string rrc_resume_complete_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rrcResumeComplete", "criticalExtensionsFuture"};
+  static const char* options[] = {"rrcResumeComplete", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "rrc_resume_complete_s::crit_exts_c_::types");
 }
 
@@ -40861,7 +40862,7 @@ SRSASN_CODE rrc_setup_complete_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_setup_complete_s::unpack(bit_ref& bref)
+SRSASN_CODE rrc_setup_complete_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -40969,7 +40970,7 @@ SRSASN_CODE rrc_setup_complete_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrc_setup_complete_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE rrc_setup_complete_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -40989,7 +40990,7 @@ SRSASN_CODE rrc_setup_complete_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string rrc_setup_complete_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"rrcSetupComplete", "criticalExtensionsFuture"};
+  static const char* options[] = {"rrcSetupComplete", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "rrc_setup_complete_s::crit_exts_c_::types");
 }
 
@@ -41001,7 +41002,7 @@ SRSASN_CODE security_mode_complete_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE security_mode_complete_s::unpack(bit_ref& bref)
+SRSASN_CODE security_mode_complete_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -41109,7 +41110,7 @@ SRSASN_CODE security_mode_complete_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE security_mode_complete_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE security_mode_complete_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -41129,7 +41130,7 @@ SRSASN_CODE security_mode_complete_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string security_mode_complete_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"securityModeComplete", "criticalExtensionsFuture"};
+  static const char* options[] = {"securityModeComplete", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "security_mode_complete_s::crit_exts_c_::types");
 }
 
@@ -41141,7 +41142,7 @@ SRSASN_CODE security_mode_fail_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE security_mode_fail_s::unpack(bit_ref& bref)
+SRSASN_CODE security_mode_fail_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -41249,7 +41250,7 @@ SRSASN_CODE security_mode_fail_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE security_mode_fail_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE security_mode_fail_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -41269,7 +41270,7 @@ SRSASN_CODE security_mode_fail_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string security_mode_fail_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"securityModeFailure", "criticalExtensionsFuture"};
+  static const char* options[] = {"securityModeFailure", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "security_mode_fail_s::crit_exts_c_::types");
 }
 
@@ -41280,7 +41281,7 @@ SRSASN_CODE ueassist_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ueassist_info_s::unpack(bit_ref& bref)
+SRSASN_CODE ueassist_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(crit_exts.unpack(bref));
 
@@ -41385,7 +41386,7 @@ SRSASN_CODE ueassist_info_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ueassist_info_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE ueassist_info_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -41405,7 +41406,7 @@ SRSASN_CODE ueassist_info_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string ueassist_info_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ueAssistanceInformation", "criticalExtensionsFuture"};
+  static const char* options[] = {"ueAssistanceInformation", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "ueassist_info_s::crit_exts_c_::types");
 }
 
@@ -41417,7 +41418,7 @@ SRSASN_CODE ue_cap_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_cap_info_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_cap_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(rrc_transaction_id, bref, (uint8_t)0u, (uint8_t)3u));
   HANDLE_CODE(crit_exts.unpack(bref));
@@ -41524,7 +41525,7 @@ SRSASN_CODE ue_cap_info_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_cap_info_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE ue_cap_info_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -41544,7 +41545,7 @@ SRSASN_CODE ue_cap_info_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string ue_cap_info_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ueCapabilityInformation", "criticalExtensionsFuture"};
+  static const char* options[] = {"ueCapabilityInformation", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "ue_cap_info_s::crit_exts_c_::types");
 }
 
@@ -41555,7 +41556,7 @@ SRSASN_CODE ul_info_transfer_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_info_transfer_s::unpack(bit_ref& bref)
+SRSASN_CODE ul_info_transfer_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(crit_exts.unpack(bref));
 
@@ -41661,7 +41662,7 @@ SRSASN_CODE ul_info_transfer_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_info_transfer_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE ul_info_transfer_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -41681,7 +41682,7 @@ SRSASN_CODE ul_info_transfer_s::crit_exts_c_::unpack(bit_ref& bref)
 
 std::string ul_info_transfer_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ulInformationTransfer", "criticalExtensionsFuture"};
+  static const char* options[] = {"ulInformationTransfer", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "ul_info_transfer_s::crit_exts_c_::types");
 }
 
@@ -41777,7 +41778,7 @@ SRSASN_CODE ul_dcch_msg_type_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_dcch_msg_type_c::unpack(bit_ref& bref)
+SRSASN_CODE ul_dcch_msg_type_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -42134,7 +42135,7 @@ SRSASN_CODE ul_dcch_msg_type_c::c1_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_dcch_msg_type_c::c1_c_::unpack(bit_ref& bref)
+SRSASN_CODE ul_dcch_msg_type_c::c1_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -42194,34 +42195,34 @@ SRSASN_CODE ul_dcch_msg_type_c::c1_c_::unpack(bit_ref& bref)
 
 std::string ul_dcch_msg_type_c::c1_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"measurementReport",
-                                            "rrcReconfigurationComplete",
-                                            "rrcSetupComplete",
-                                            "rrcReestablishmentComplete",
-                                            "rrcResumeComplete",
-                                            "securityModeComplete",
-                                            "securityModeFailure",
-                                            "ulInformationTransfer",
-                                            "locationMeasurementIndication",
-                                            "ueCapabilityInformation",
-                                            "counterCheckResponse",
-                                            "ueAssistanceInformation",
-                                            "failureInformation",
-                                            "spare3",
-                                            "spare2",
-                                            "spare1"};
+  static const char* options[] = {"measurementReport",
+                                  "rrcReconfigurationComplete",
+                                  "rrcSetupComplete",
+                                  "rrcReestablishmentComplete",
+                                  "rrcResumeComplete",
+                                  "securityModeComplete",
+                                  "securityModeFailure",
+                                  "ulInformationTransfer",
+                                  "locationMeasurementIndication",
+                                  "ueCapabilityInformation",
+                                  "counterCheckResponse",
+                                  "ueAssistanceInformation",
+                                  "failureInformation",
+                                  "spare3",
+                                  "spare2",
+                                  "spare1"};
   return convert_enum_idx(options, 16, value, "ul_dcch_msg_type_c::c1_c_::types");
 }
 
 std::string ul_dcch_msg_type_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"c1", "messageClassExtension"};
+  static const char* options[] = {"c1", "messageClassExtension"};
   return convert_enum_idx(options, 2, value, "ul_dcch_msg_type_c::types");
 }
 uint8_t ul_dcch_msg_type_c::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1};
-  return convert_enum_idx(options, 1, value, "ul_dcch_msg_type_c::types");
+  static const uint8_t options[] = {1};
+  return map_enum_number(options, 1, value, "ul_dcch_msg_type_c::types");
 }
 
 // UL-DCCH-Message ::= SEQUENCE
@@ -42233,7 +42234,7 @@ SRSASN_CODE ul_dcch_msg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ul_dcch_msg_s::unpack(bit_ref& bref)
+SRSASN_CODE ul_dcch_msg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(msg.unpack(bref));
 
@@ -42256,15 +42257,14 @@ void ul_dcch_msg_s::to_json(json_writer& j) const
 // CA-BandwidthClassEUTRA ::= ENUMERATED
 std::string ca_bw_class_eutra_opts::to_string() const
 {
-  static constexpr const char* options[] = {"a", "b", "c", "d", "e", "f"};
+  static const char* options[] = {"a", "b", "c", "d", "e", "f"};
   return convert_enum_idx(options, 6, value, "ca_bw_class_eutra_e");
 }
 
 // CA-BandwidthClassNR ::= ENUMERATED
 std::string ca_bw_class_nr_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q"};
+  static const char* options[] = {"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q"};
   return convert_enum_idx(options, 17, value, "ca_bw_class_nr_e");
 }
 
@@ -42401,7 +42401,7 @@ SRSASN_CODE band_params_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE band_params_c::unpack(bit_ref& bref)
+SRSASN_CODE band_params_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -42438,7 +42438,7 @@ SRSASN_CODE band_params_c::unpack(bit_ref& bref)
 
 std::string band_params_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"eutra", "nr"};
+  static const char* options[] = {"eutra", "nr"};
   return convert_enum_idx(options, 2, value, "band_params_c::types");
 }
 
@@ -42462,7 +42462,7 @@ SRSASN_CODE ca_params_eutra_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ca_params_eutra_s::unpack(bit_ref& bref)
+SRSASN_CODE ca_params_eutra_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(multiple_timing_advance_present, 1));
@@ -42524,7 +42524,7 @@ SRSASN_CODE ca_params_nr_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ca_params_nr_s::unpack(bit_ref& bref)
+SRSASN_CODE ca_params_nr_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(multiple_timing_advances_present, 1));
@@ -42574,13 +42574,13 @@ void ca_params_nr_s::to_json(json_writer& j) const
 
 std::string ca_params_nr_s::supported_num_tag_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n3", "n4"};
+  static const char* options[] = {"n2", "n3", "n4"};
   return convert_enum_idx(options, 3, value, "ca_params_nr_s::supported_num_tag_e_");
 }
 uint8_t ca_params_nr_s::supported_num_tag_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 3, 4};
-  return convert_enum_idx(options, 3, value, "ca_params_nr_s::supported_num_tag_e_");
+  static const uint8_t options[] = {2, 3, 4};
+  return map_enum_number(options, 3, value, "ca_params_nr_s::supported_num_tag_e_");
 }
 
 // MRDC-Parameters ::= SEQUENCE
@@ -42622,7 +42622,7 @@ SRSASN_CODE mrdc_params_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE mrdc_params_s::unpack(bit_ref& bref)
+SRSASN_CODE mrdc_params_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(single_ul_tx_present, 1));
@@ -42697,24 +42697,24 @@ void mrdc_params_s::to_json(json_writer& j) const
 
 std::string mrdc_params_s::ul_sharing_eutra_nr_opts::to_string() const
 {
-  static constexpr const char* options[] = {"tdm", "fdm", "both"};
+  static const char* options[] = {"tdm", "fdm", "both"};
   return convert_enum_idx(options, 3, value, "mrdc_params_s::ul_sharing_eutra_nr_e_");
 }
 
 std::string mrdc_params_s::ul_switching_time_eutra_nr_opts::to_string() const
 {
-  static constexpr const char* options[] = {"type1", "type2"};
+  static const char* options[] = {"type1", "type2"};
   return convert_enum_idx(options, 2, value, "mrdc_params_s::ul_switching_time_eutra_nr_e_");
 }
 uint8_t mrdc_params_s::ul_switching_time_eutra_nr_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options, 2, value, "mrdc_params_s::ul_switching_time_eutra_nr_e_");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options, 2, value, "mrdc_params_s::ul_switching_time_eutra_nr_e_");
 }
 
 std::string mrdc_params_s::intra_band_endc_support_v1540_opts::to_string() const
 {
-  static constexpr const char* options[] = {"non-contiguous", "both"};
+  static const char* options[] = {"non-contiguous", "both"};
   return convert_enum_idx(options, 2, value, "mrdc_params_s::intra_band_endc_support_v1540_e_");
 }
 
@@ -42744,7 +42744,7 @@ SRSASN_CODE band_combination_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE band_combination_s::unpack(bit_ref& bref)
+SRSASN_CODE band_combination_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ca_params_eutra_present, 1));
   HANDLE_CODE(bref.unpack(ca_params_nr_present, 1));
@@ -42773,8 +42773,8 @@ void band_combination_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("bandList");
-  for (uint32_t i1 = 0; i1 < band_list.size(); ++i1) {
-    band_list[i1].to_json(j);
+  for (const auto& e1 : band_list) {
+    e1.to_json(j);
   }
   j.end_array();
   j.write_int("featureSetCombination", feature_set_combination);
@@ -42814,7 +42814,7 @@ SRSASN_CODE srs_switching_time_eutra_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_switching_time_eutra_s::unpack(bit_ref& bref)
+SRSASN_CODE srs_switching_time_eutra_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(switching_time_dl_present, 1));
   HANDLE_CODE(bref.unpack(switching_time_ul_present, 1));
@@ -42842,62 +42842,62 @@ void srs_switching_time_eutra_s::to_json(json_writer& j) const
 
 std::string srs_switching_time_eutra_s::switching_time_dl_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0",
-                                            "n0dot5",
-                                            "n1",
-                                            "n1dot5",
-                                            "n2",
-                                            "n2dot5",
-                                            "n3",
-                                            "n3dot5",
-                                            "n4",
-                                            "n4dot5",
-                                            "n5",
-                                            "n5dot5",
-                                            "n6",
-                                            "n6dot5",
-                                            "n7"};
+  static const char* options[] = {"n0",
+                                  "n0dot5",
+                                  "n1",
+                                  "n1dot5",
+                                  "n2",
+                                  "n2dot5",
+                                  "n3",
+                                  "n3dot5",
+                                  "n4",
+                                  "n4dot5",
+                                  "n5",
+                                  "n5dot5",
+                                  "n6",
+                                  "n6dot5",
+                                  "n7"};
   return convert_enum_idx(options, 15, value, "srs_switching_time_eutra_s::switching_time_dl_e_");
 }
 float srs_switching_time_eutra_s::switching_time_dl_opts::to_number() const
 {
-  static constexpr float options[] = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0};
-  return convert_enum_idx(options, 15, value, "srs_switching_time_eutra_s::switching_time_dl_e_");
+  static const float options[] = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0};
+  return map_enum_number(options, 15, value, "srs_switching_time_eutra_s::switching_time_dl_e_");
 }
 std::string srs_switching_time_eutra_s::switching_time_dl_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "0", "0.5", "1", "1.5", "2", "2.5", "3", "3.5", "4", "4.5", "5", "5.5", "6", "6.5", "7"};
   return convert_enum_idx(options, 15, value, "srs_switching_time_eutra_s::switching_time_dl_e_");
 }
 
 std::string srs_switching_time_eutra_s::switching_time_ul_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0",
-                                            "n0dot5",
-                                            "n1",
-                                            "n1dot5",
-                                            "n2",
-                                            "n2dot5",
-                                            "n3",
-                                            "n3dot5",
-                                            "n4",
-                                            "n4dot5",
-                                            "n5",
-                                            "n5dot5",
-                                            "n6",
-                                            "n6dot5",
-                                            "n7"};
+  static const char* options[] = {"n0",
+                                  "n0dot5",
+                                  "n1",
+                                  "n1dot5",
+                                  "n2",
+                                  "n2dot5",
+                                  "n3",
+                                  "n3dot5",
+                                  "n4",
+                                  "n4dot5",
+                                  "n5",
+                                  "n5dot5",
+                                  "n6",
+                                  "n6dot5",
+                                  "n7"};
   return convert_enum_idx(options, 15, value, "srs_switching_time_eutra_s::switching_time_ul_e_");
 }
 float srs_switching_time_eutra_s::switching_time_ul_opts::to_number() const
 {
-  static constexpr float options[] = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0};
-  return convert_enum_idx(options, 15, value, "srs_switching_time_eutra_s::switching_time_ul_e_");
+  static const float options[] = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0};
+  return map_enum_number(options, 15, value, "srs_switching_time_eutra_s::switching_time_ul_e_");
 }
 std::string srs_switching_time_eutra_s::switching_time_ul_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "0", "0.5", "1", "1.5", "2", "2.5", "3", "3.5", "4", "4.5", "5", "5.5", "6", "6.5", "7"};
   return convert_enum_idx(options, 15, value, "srs_switching_time_eutra_s::switching_time_ul_e_");
 }
@@ -42917,7 +42917,7 @@ SRSASN_CODE srs_switching_time_nr_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE srs_switching_time_nr_s::unpack(bit_ref& bref)
+SRSASN_CODE srs_switching_time_nr_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(switching_time_dl_present, 1));
   HANDLE_CODE(bref.unpack(switching_time_ul_present, 1));
@@ -42945,26 +42945,24 @@ void srs_switching_time_nr_s::to_json(json_writer& j) const
 
 std::string srs_switching_time_nr_s::switching_time_dl_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "n0us", "n30us", "n100us", "n140us", "n200us", "n300us", "n500us", "n900us"};
+  static const char* options[] = {"n0us", "n30us", "n100us", "n140us", "n200us", "n300us", "n500us", "n900us"};
   return convert_enum_idx(options, 8, value, "srs_switching_time_nr_s::switching_time_dl_e_");
 }
 uint16_t srs_switching_time_nr_s::switching_time_dl_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {0, 30, 100, 140, 200, 300, 500, 900};
-  return convert_enum_idx(options, 8, value, "srs_switching_time_nr_s::switching_time_dl_e_");
+  static const uint16_t options[] = {0, 30, 100, 140, 200, 300, 500, 900};
+  return map_enum_number(options, 8, value, "srs_switching_time_nr_s::switching_time_dl_e_");
 }
 
 std::string srs_switching_time_nr_s::switching_time_ul_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "n0us", "n30us", "n100us", "n140us", "n200us", "n300us", "n500us", "n900us"};
+  static const char* options[] = {"n0us", "n30us", "n100us", "n140us", "n200us", "n300us", "n500us", "n900us"};
   return convert_enum_idx(options, 8, value, "srs_switching_time_nr_s::switching_time_ul_e_");
 }
 uint16_t srs_switching_time_nr_s::switching_time_ul_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {0, 30, 100, 140, 200, 300, 500, 900};
-  return convert_enum_idx(options, 8, value, "srs_switching_time_nr_s::switching_time_ul_e_");
+  static const uint16_t options[] = {0, 30, 100, 140, 200, 300, 500, 900};
+  return map_enum_number(options, 8, value, "srs_switching_time_nr_s::switching_time_ul_e_");
 }
 
 // BandParameters-v1540 ::= SEQUENCE
@@ -42990,7 +42988,7 @@ SRSASN_CODE band_params_v1540_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE band_params_v1540_s::unpack(bit_ref& bref)
+SRSASN_CODE band_params_v1540_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(srs_carrier_switch_present, 1));
   HANDLE_CODE(bref.unpack(srs_tx_switch_v1540_present, 1));
@@ -43111,8 +43109,8 @@ void band_params_v1540_s::srs_carrier_switch_c_::to_json(json_writer& j) const
       j.write_fieldname("nr");
       j.start_obj();
       j.start_array("srs-SwitchingTimesListNR");
-      for (uint32_t i1 = 0; i1 < c.get<nr_s_>().srs_switching_times_list_nr.size(); ++i1) {
-        c.get<nr_s_>().srs_switching_times_list_nr[i1].to_json(j);
+      for (const auto& e1 : c.get<nr_s_>().srs_switching_times_list_nr) {
+        e1.to_json(j);
       }
       j.end_array();
       j.end_obj();
@@ -43121,8 +43119,8 @@ void band_params_v1540_s::srs_carrier_switch_c_::to_json(json_writer& j) const
       j.write_fieldname("eutra");
       j.start_obj();
       j.start_array("srs-SwitchingTimesListEUTRA");
-      for (uint32_t i1 = 0; i1 < c.get<eutra_s_>().srs_switching_times_list_eutra.size(); ++i1) {
-        c.get<eutra_s_>().srs_switching_times_list_eutra[i1].to_json(j);
+      for (const auto& e1 : c.get<eutra_s_>().srs_switching_times_list_eutra) {
+        e1.to_json(j);
       }
       j.end_array();
       j.end_obj();
@@ -43148,7 +43146,7 @@ SRSASN_CODE band_params_v1540_s::srs_carrier_switch_c_::pack(bit_ref& bref) cons
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE band_params_v1540_s::srs_carrier_switch_c_::unpack(bit_ref& bref)
+SRSASN_CODE band_params_v1540_s::srs_carrier_switch_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -43169,14 +43167,13 @@ SRSASN_CODE band_params_v1540_s::srs_carrier_switch_c_::unpack(bit_ref& bref)
 
 std::string band_params_v1540_s::srs_carrier_switch_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"nr", "eutra"};
+  static const char* options[] = {"nr", "eutra"};
   return convert_enum_idx(options, 2, value, "band_params_v1540_s::srs_carrier_switch_c_::types");
 }
 
 std::string band_params_v1540_s::srs_tx_switch_v1540_s_::supported_srs_tx_port_switch_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "t1r2", "t1r4", "t2r4", "t1r4-t2r4", "t1r1", "t2r2", "t4r4", "notSupported"};
+  static const char* options[] = {"t1r2", "t1r4", "t2r4", "t1r4-t2r4", "t1r1", "t2r2", "t4r4", "notSupported"};
   return convert_enum_idx(
       options, 8, value, "band_params_v1540_s::srs_tx_switch_v1540_s_::supported_srs_tx_port_switch_e_");
 }
@@ -43217,7 +43214,7 @@ SRSASN_CODE ca_params_nr_v1540_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ca_params_nr_v1540_s::unpack(bit_ref& bref)
+SRSASN_CODE ca_params_nr_v1540_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(simul_srs_assoc_csi_rs_all_cc_present, 1));
   HANDLE_CODE(bref.unpack(csi_rs_im_reception_for_feedback_per_band_comb_present, 1));
@@ -43292,7 +43289,7 @@ SRSASN_CODE band_combination_v1540_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE band_combination_v1540_s::unpack(bit_ref& bref)
+SRSASN_CODE band_combination_v1540_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ca_params_nr_v1540_present, 1));
 
@@ -43307,8 +43304,8 @@ void band_combination_v1540_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("bandList-v1540");
-  for (uint32_t i1 = 0; i1 < band_list_v1540.size(); ++i1) {
-    band_list_v1540[i1].to_json(j);
+  for (const auto& e1 : band_list_v1540) {
+    e1.to_json(j);
   }
   j.end_array();
   if (ca_params_nr_v1540_present) {
@@ -43325,7 +43322,7 @@ SRSASN_CODE ca_params_nr_v1550_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ca_params_nr_v1550_s::unpack(bit_ref& bref)
+SRSASN_CODE ca_params_nr_v1550_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(aperiodic_csi_diff_scs_present, 1));
 
@@ -43347,7 +43344,7 @@ SRSASN_CODE band_combination_v1550_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE band_combination_v1550_s::unpack(bit_ref& bref)
+SRSASN_CODE band_combination_v1550_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(ca_params_nr_v1550.unpack(bref));
 
@@ -43370,7 +43367,7 @@ SRSASN_CODE supported_csi_rs_res_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE supported_csi_rs_res_s::unpack(bit_ref& bref)
+SRSASN_CODE supported_csi_rs_res_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(max_num_tx_ports_per_res.unpack(bref));
   HANDLE_CODE(unpack_integer(max_num_res_per_band, bref, (uint8_t)1u, (uint8_t)64u));
@@ -43389,13 +43386,13 @@ void supported_csi_rs_res_s::to_json(json_writer& j) const
 
 std::string supported_csi_rs_res_s::max_num_tx_ports_per_res_opts::to_string() const
 {
-  static constexpr const char* options[] = {"p2", "p4", "p8", "p12", "p16", "p24", "p32"};
+  static const char* options[] = {"p2", "p4", "p8", "p12", "p16", "p24", "p32"};
   return convert_enum_idx(options, 7, value, "supported_csi_rs_res_s::max_num_tx_ports_per_res_e_");
 }
 uint8_t supported_csi_rs_res_s::max_num_tx_ports_per_res_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 8, 12, 16, 24, 32};
-  return convert_enum_idx(options, 7, value, "supported_csi_rs_res_s::max_num_tx_ports_per_res_e_");
+  static const uint8_t options[] = {2, 4, 8, 12, 16, 24, 32};
+  return map_enum_number(options, 7, value, "supported_csi_rs_res_s::max_num_tx_ports_per_res_e_");
 }
 
 // BeamManagementSSB-CSI-RS ::= SEQUENCE
@@ -43413,7 +43410,7 @@ SRSASN_CODE beam_management_ssb_csi_rs_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE beam_management_ssb_csi_rs_s::unpack(bit_ref& bref)
+SRSASN_CODE beam_management_ssb_csi_rs_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(supported_csi_rs_density_present, 1));
 
@@ -43442,52 +43439,52 @@ void beam_management_ssb_csi_rs_s::to_json(json_writer& j) const
 
 std::string beam_management_ssb_csi_rs_s::max_num_ssb_csi_rs_res_one_tx_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0", "n8", "n16", "n32", "n64"};
+  static const char* options[] = {"n0", "n8", "n16", "n32", "n64"};
   return convert_enum_idx(options, 5, value, "beam_management_ssb_csi_rs_s::max_num_ssb_csi_rs_res_one_tx_e_");
 }
 uint8_t beam_management_ssb_csi_rs_s::max_num_ssb_csi_rs_res_one_tx_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 8, 16, 32, 64};
-  return convert_enum_idx(options, 5, value, "beam_management_ssb_csi_rs_s::max_num_ssb_csi_rs_res_one_tx_e_");
+  static const uint8_t options[] = {0, 8, 16, 32, 64};
+  return map_enum_number(options, 5, value, "beam_management_ssb_csi_rs_s::max_num_ssb_csi_rs_res_one_tx_e_");
 }
 
 std::string beam_management_ssb_csi_rs_s::max_num_csi_rs_res_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0", "n4", "n8", "n16", "n32", "n64"};
+  static const char* options[] = {"n0", "n4", "n8", "n16", "n32", "n64"};
   return convert_enum_idx(options, 6, value, "beam_management_ssb_csi_rs_s::max_num_csi_rs_res_e_");
 }
 uint8_t beam_management_ssb_csi_rs_s::max_num_csi_rs_res_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 4, 8, 16, 32, 64};
-  return convert_enum_idx(options, 6, value, "beam_management_ssb_csi_rs_s::max_num_csi_rs_res_e_");
+  static const uint8_t options[] = {0, 4, 8, 16, 32, 64};
+  return map_enum_number(options, 6, value, "beam_management_ssb_csi_rs_s::max_num_csi_rs_res_e_");
 }
 
 std::string beam_management_ssb_csi_rs_s::max_num_csi_rs_res_two_tx_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0", "n4", "n8", "n16", "n32", "n64"};
+  static const char* options[] = {"n0", "n4", "n8", "n16", "n32", "n64"};
   return convert_enum_idx(options, 6, value, "beam_management_ssb_csi_rs_s::max_num_csi_rs_res_two_tx_e_");
 }
 uint8_t beam_management_ssb_csi_rs_s::max_num_csi_rs_res_two_tx_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 4, 8, 16, 32, 64};
-  return convert_enum_idx(options, 6, value, "beam_management_ssb_csi_rs_s::max_num_csi_rs_res_two_tx_e_");
+  static const uint8_t options[] = {0, 4, 8, 16, 32, 64};
+  return map_enum_number(options, 6, value, "beam_management_ssb_csi_rs_s::max_num_csi_rs_res_two_tx_e_");
 }
 
 std::string beam_management_ssb_csi_rs_s::supported_csi_rs_density_opts::to_string() const
 {
-  static constexpr const char* options[] = {"one", "three", "oneAndThree"};
+  static const char* options[] = {"one", "three", "oneAndThree"};
   return convert_enum_idx(options, 3, value, "beam_management_ssb_csi_rs_s::supported_csi_rs_density_e_");
 }
 
 std::string beam_management_ssb_csi_rs_s::max_num_aperiodic_csi_rs_res_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0", "n1", "n4", "n8", "n16", "n32", "n64"};
+  static const char* options[] = {"n0", "n1", "n4", "n8", "n16", "n32", "n64"};
   return convert_enum_idx(options, 7, value, "beam_management_ssb_csi_rs_s::max_num_aperiodic_csi_rs_res_e_");
 }
 uint8_t beam_management_ssb_csi_rs_s::max_num_aperiodic_csi_rs_res_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 1, 4, 8, 16, 32, 64};
-  return convert_enum_idx(options, 7, value, "beam_management_ssb_csi_rs_s::max_num_aperiodic_csi_rs_res_e_");
+  static const uint8_t options[] = {0, 1, 4, 8, 16, 32, 64};
+  return map_enum_number(options, 7, value, "beam_management_ssb_csi_rs_s::max_num_aperiodic_csi_rs_res_e_");
 }
 
 // CSI-RS-ForTracking ::= SEQUENCE
@@ -43500,7 +43497,7 @@ SRSASN_CODE csi_rs_for_tracking_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_rs_for_tracking_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_rs_for_tracking_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(max_burst_len, bref, (uint8_t)1u, (uint8_t)2u));
   HANDLE_CODE(unpack_integer(max_simul_res_sets_per_cc, bref, (uint8_t)1u, (uint8_t)8u));
@@ -43530,7 +43527,7 @@ SRSASN_CODE csi_rs_im_reception_for_feedback_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_rs_im_reception_for_feedback_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_rs_im_reception_for_feedback_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(max_cfg_num_nzp_csi_rs_per_cc, bref, (uint8_t)1u, (uint8_t)64u));
   HANDLE_CODE(unpack_integer(max_cfg_num_ports_across_nzp_csi_rs_per_cc, bref, (uint16_t)2u, (uint16_t)256u));
@@ -43553,13 +43550,13 @@ void csi_rs_im_reception_for_feedback_s::to_json(json_writer& j) const
 
 std::string csi_rs_im_reception_for_feedback_s::max_cfg_num_csi_im_per_cc_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n4", "n8", "n16", "n32"};
+  static const char* options[] = {"n1", "n2", "n4", "n8", "n16", "n32"};
   return convert_enum_idx(options, 6, value, "csi_rs_im_reception_for_feedback_s::max_cfg_num_csi_im_per_cc_e_");
 }
 uint8_t csi_rs_im_reception_for_feedback_s::max_cfg_num_csi_im_per_cc_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4, 8, 16, 32};
-  return convert_enum_idx(options, 6, value, "csi_rs_im_reception_for_feedback_s::max_cfg_num_csi_im_per_cc_e_");
+  static const uint8_t options[] = {1, 2, 4, 8, 16, 32};
+  return map_enum_number(options, 6, value, "csi_rs_im_reception_for_feedback_s::max_cfg_num_csi_im_per_cc_e_");
 }
 
 // CSI-RS-ProcFrameworkForSRS ::= SEQUENCE
@@ -43572,7 +43569,7 @@ SRSASN_CODE csi_rs_proc_framework_for_srs_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_rs_proc_framework_for_srs_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_rs_proc_framework_for_srs_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(max_num_periodic_srs_assoc_csi_rs_per_bwp, bref, (uint8_t)1u, (uint8_t)4u));
   HANDLE_CODE(unpack_integer(max_num_aperiodic_srs_assoc_csi_rs_per_bwp, bref, (uint8_t)1u, (uint8_t)4u));
@@ -43605,7 +43602,7 @@ SRSASN_CODE csi_report_framework_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE csi_report_framework_s::unpack(bit_ref& bref)
+SRSASN_CODE csi_report_framework_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(max_num_periodic_csi_per_bwp_for_csi_report, bref, (uint8_t)1u, (uint8_t)4u));
   HANDLE_CODE(unpack_integer(max_num_aperiodic_csi_per_bwp_for_csi_report, bref, (uint8_t)1u, (uint8_t)4u));
@@ -43634,13 +43631,13 @@ void csi_report_framework_s::to_json(json_writer& j) const
 
 std::string csi_report_framework_s::max_num_aperiodic_csi_trigger_state_per_cc_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n3", "n7", "n15", "n31", "n63", "n128"};
+  static const char* options[] = {"n3", "n7", "n15", "n31", "n63", "n128"};
   return convert_enum_idx(options, 6, value, "csi_report_framework_s::max_num_aperiodic_csi_trigger_state_per_cc_e_");
 }
 uint8_t csi_report_framework_s::max_num_aperiodic_csi_trigger_state_per_cc_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {3, 7, 15, 31, 63, 128};
-  return convert_enum_idx(options, 6, value, "csi_report_framework_s::max_num_aperiodic_csi_trigger_state_per_cc_e_");
+  static const uint8_t options[] = {3, 7, 15, 31, 63, 128};
+  return map_enum_number(options, 6, value, "csi_report_framework_s::max_num_aperiodic_csi_trigger_state_per_cc_e_");
 }
 
 // CodebookParameters ::= SEQUENCE
@@ -43673,7 +43670,7 @@ SRSASN_CODE codebook_params_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE codebook_params_s::unpack(bit_ref& bref)
+SRSASN_CODE codebook_params_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(type2_present, 1));
   HANDLE_CODE(bref.unpack(type2_port_sel_present, 1));
@@ -43710,8 +43707,8 @@ void codebook_params_s::to_json(json_writer& j) const
   j.write_fieldname("singlePanel");
   j.start_obj();
   j.start_array("supportedCSI-RS-ResourceList");
-  for (uint32_t i1 = 0; i1 < type1.single_panel.supported_csi_rs_res_list.size(); ++i1) {
-    type1.single_panel.supported_csi_rs_res_list[i1].to_json(j);
+  for (const auto& e1 : type1.single_panel.supported_csi_rs_res_list) {
+    e1.to_json(j);
   }
   j.end_array();
   j.write_str("modes", type1.single_panel.modes.to_string());
@@ -43721,8 +43718,8 @@ void codebook_params_s::to_json(json_writer& j) const
     j.write_fieldname("multiPanel");
     j.start_obj();
     j.start_array("supportedCSI-RS-ResourceList");
-    for (uint32_t i1 = 0; i1 < type1.multi_panel.supported_csi_rs_res_list.size(); ++i1) {
-      type1.multi_panel.supported_csi_rs_res_list[i1].to_json(j);
+    for (const auto& e1 : type1.multi_panel.supported_csi_rs_res_list) {
+      e1.to_json(j);
     }
     j.end_array();
     j.write_str("modes", type1.multi_panel.modes.to_string());
@@ -43735,8 +43732,8 @@ void codebook_params_s::to_json(json_writer& j) const
     j.write_fieldname("type2");
     j.start_obj();
     j.start_array("supportedCSI-RS-ResourceList");
-    for (uint32_t i1 = 0; i1 < type2.supported_csi_rs_res_list.size(); ++i1) {
-      type2.supported_csi_rs_res_list[i1].to_json(j);
+    for (const auto& e1 : type2.supported_csi_rs_res_list) {
+      e1.to_json(j);
     }
     j.end_array();
     j.write_int("parameterLx", type2.param_lx);
@@ -43750,8 +43747,8 @@ void codebook_params_s::to_json(json_writer& j) const
     j.write_fieldname("type2-PortSelection");
     j.start_obj();
     j.start_array("supportedCSI-RS-ResourceList");
-    for (uint32_t i1 = 0; i1 < type2_port_sel.supported_csi_rs_res_list.size(); ++i1) {
-      type2_port_sel.supported_csi_rs_res_list[i1].to_json(j);
+    for (const auto& e1 : type2_port_sel.supported_csi_rs_res_list) {
+      e1.to_json(j);
     }
     j.end_array();
     j.write_int("parameterLx", type2_port_sel.param_lx);
@@ -43763,41 +43760,41 @@ void codebook_params_s::to_json(json_writer& j) const
 
 std::string codebook_params_s::type1_s_::single_panel_s_::modes_opts::to_string() const
 {
-  static constexpr const char* options[] = {"mode1", "mode1andMode2"};
+  static const char* options[] = {"mode1", "mode1andMode2"};
   return convert_enum_idx(options, 2, value, "codebook_params_s::type1_s_::single_panel_s_::modes_e_");
 }
 
 std::string codebook_params_s::type1_s_::multi_panel_s_::modes_opts::to_string() const
 {
-  static constexpr const char* options[] = {"mode1", "mode2", "both"};
+  static const char* options[] = {"mode1", "mode2", "both"};
   return convert_enum_idx(options, 3, value, "codebook_params_s::type1_s_::multi_panel_s_::modes_e_");
 }
 uint8_t codebook_params_s::type1_s_::multi_panel_s_::modes_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options, 2, value, "codebook_params_s::type1_s_::multi_panel_s_::modes_e_");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options, 2, value, "codebook_params_s::type1_s_::multi_panel_s_::modes_e_");
 }
 
 std::string codebook_params_s::type1_s_::multi_panel_s_::nrof_panels_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n4"};
+  static const char* options[] = {"n2", "n4"};
   return convert_enum_idx(options, 2, value, "codebook_params_s::type1_s_::multi_panel_s_::nrof_panels_e_");
 }
 uint8_t codebook_params_s::type1_s_::multi_panel_s_::nrof_panels_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4};
-  return convert_enum_idx(options, 2, value, "codebook_params_s::type1_s_::multi_panel_s_::nrof_panels_e_");
+  static const uint8_t options[] = {2, 4};
+  return map_enum_number(options, 2, value, "codebook_params_s::type1_s_::multi_panel_s_::nrof_panels_e_");
 }
 
 std::string codebook_params_s::type2_s_::amplitude_scaling_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"wideband", "widebandAndSubband"};
+  static const char* options[] = {"wideband", "widebandAndSubband"};
   return convert_enum_idx(options, 2, value, "codebook_params_s::type2_s_::amplitude_scaling_type_e_");
 }
 
 std::string codebook_params_s::type2_port_sel_s_::amplitude_scaling_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"wideband", "widebandAndSubband"};
+  static const char* options[] = {"wideband", "widebandAndSubband"};
   return convert_enum_idx(options, 2, value, "codebook_params_s::type2_port_sel_s_::amplitude_scaling_type_e_");
 }
 
@@ -43810,7 +43807,7 @@ SRSASN_CODE dummy_g_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dummy_g_s::unpack(bit_ref& bref)
+SRSASN_CODE dummy_g_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(max_num_ssb_csi_rs_res_one_tx.unpack(bref));
   HANDLE_CODE(max_num_ssb_csi_rs_res_two_tx.unpack(bref));
@@ -43829,29 +43826,29 @@ void dummy_g_s::to_json(json_writer& j) const
 
 std::string dummy_g_s::max_num_ssb_csi_rs_res_one_tx_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n8", "n16", "n32", "n64"};
+  static const char* options[] = {"n8", "n16", "n32", "n64"};
   return convert_enum_idx(options, 4, value, "dummy_g_s::max_num_ssb_csi_rs_res_one_tx_e_");
 }
 uint8_t dummy_g_s::max_num_ssb_csi_rs_res_one_tx_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {8, 16, 32, 64};
-  return convert_enum_idx(options, 4, value, "dummy_g_s::max_num_ssb_csi_rs_res_one_tx_e_");
+  static const uint8_t options[] = {8, 16, 32, 64};
+  return map_enum_number(options, 4, value, "dummy_g_s::max_num_ssb_csi_rs_res_one_tx_e_");
 }
 
 std::string dummy_g_s::max_num_ssb_csi_rs_res_two_tx_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n0", "n4", "n8", "n16", "n32", "n64"};
+  static const char* options[] = {"n0", "n4", "n8", "n16", "n32", "n64"};
   return convert_enum_idx(options, 6, value, "dummy_g_s::max_num_ssb_csi_rs_res_two_tx_e_");
 }
 uint8_t dummy_g_s::max_num_ssb_csi_rs_res_two_tx_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {0, 4, 8, 16, 32, 64};
-  return convert_enum_idx(options, 6, value, "dummy_g_s::max_num_ssb_csi_rs_res_two_tx_e_");
+  static const uint8_t options[] = {0, 4, 8, 16, 32, 64};
+  return map_enum_number(options, 6, value, "dummy_g_s::max_num_ssb_csi_rs_res_two_tx_e_");
 }
 
 std::string dummy_g_s::supported_csi_rs_density_opts::to_string() const
 {
-  static constexpr const char* options[] = {"one", "three", "oneAndThree"};
+  static const char* options[] = {"one", "three", "oneAndThree"};
   return convert_enum_idx(options, 3, value, "dummy_g_s::supported_csi_rs_density_e_");
 }
 
@@ -43865,7 +43862,7 @@ SRSASN_CODE dummy_h_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dummy_h_s::unpack(bit_ref& bref)
+SRSASN_CODE dummy_h_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(burst_len, bref, (uint8_t)1u, (uint8_t)2u));
   HANDLE_CODE(unpack_integer(max_simul_res_sets_per_cc, bref, (uint8_t)1u, (uint8_t)8u));
@@ -43895,7 +43892,7 @@ SRSASN_CODE ptrs_density_recommendation_dl_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ptrs_density_recommendation_dl_s::unpack(bit_ref& bref)
+SRSASN_CODE ptrs_density_recommendation_dl_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(freq_density1, bref, (uint16_t)1u, (uint16_t)276u));
   HANDLE_CODE(unpack_integer(freq_density2, bref, (uint16_t)1u, (uint16_t)276u));
@@ -43932,7 +43929,7 @@ SRSASN_CODE ptrs_density_recommendation_ul_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ptrs_density_recommendation_ul_s::unpack(bit_ref& bref)
+SRSASN_CODE ptrs_density_recommendation_ul_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(freq_density1, bref, (uint16_t)1u, (uint16_t)276u));
   HANDLE_CODE(unpack_integer(freq_density2, bref, (uint16_t)1u, (uint16_t)276u));
@@ -43974,7 +43971,7 @@ SRSASN_CODE spatial_relations_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE spatial_relations_s::unpack(bit_ref& bref)
+SRSASN_CODE spatial_relations_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(add_active_spatial_relation_pucch_present, 1));
 
@@ -43998,35 +43995,35 @@ void spatial_relations_s::to_json(json_writer& j) const
 
 std::string spatial_relations_s::max_num_cfgured_spatial_relations_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n4", "n8", "n16", "n32", "n64", "n96"};
+  static const char* options[] = {"n4", "n8", "n16", "n32", "n64", "n96"};
   return convert_enum_idx(options, 6, value, "spatial_relations_s::max_num_cfgured_spatial_relations_e_");
 }
 uint8_t spatial_relations_s::max_num_cfgured_spatial_relations_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 8, 16, 32, 64, 96};
-  return convert_enum_idx(options, 6, value, "spatial_relations_s::max_num_cfgured_spatial_relations_e_");
+  static const uint8_t options[] = {4, 8, 16, 32, 64, 96};
+  return map_enum_number(options, 6, value, "spatial_relations_s::max_num_cfgured_spatial_relations_e_");
 }
 
 std::string spatial_relations_s::max_num_active_spatial_relations_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n4", "n8", "n14"};
+  static const char* options[] = {"n1", "n2", "n4", "n8", "n14"};
   return convert_enum_idx(options, 5, value, "spatial_relations_s::max_num_active_spatial_relations_e_");
 }
 uint8_t spatial_relations_s::max_num_active_spatial_relations_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4, 8, 14};
-  return convert_enum_idx(options, 5, value, "spatial_relations_s::max_num_active_spatial_relations_e_");
+  static const uint8_t options[] = {1, 2, 4, 8, 14};
+  return map_enum_number(options, 5, value, "spatial_relations_s::max_num_active_spatial_relations_e_");
 }
 
 std::string spatial_relations_s::max_num_dl_rs_qcl_type_d_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n4", "n8", "n14"};
+  static const char* options[] = {"n1", "n2", "n4", "n8", "n14"};
   return convert_enum_idx(options, 5, value, "spatial_relations_s::max_num_dl_rs_qcl_type_d_e_");
 }
 uint8_t spatial_relations_s::max_num_dl_rs_qcl_type_d_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4, 8, 14};
-  return convert_enum_idx(options, 5, value, "spatial_relations_s::max_num_dl_rs_qcl_type_d_e_");
+  static const uint8_t options[] = {1, 2, 4, 8, 14};
+  return map_enum_number(options, 5, value, "spatial_relations_s::max_num_dl_rs_qcl_type_d_e_");
 }
 
 // MIMO-ParametersPerBand ::= SEQUENCE
@@ -44246,7 +44243,7 @@ SRSASN_CODE mimo_params_per_band_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE mimo_params_per_band_s::unpack(bit_ref& bref)
+SRSASN_CODE mimo_params_per_band_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(tci_state_pdsch_present, 1));
@@ -44674,8 +44671,8 @@ void mimo_params_per_band_s::to_json(json_writer& j) const
     }
     if (srs_assoc_csi_rs.is_present()) {
       j.start_array("srs-AssocCSI-RS");
-      for (uint32_t i1 = 0; i1 < srs_assoc_csi_rs->size(); ++i1) {
-        ((*srs_assoc_csi_rs)[i1]).to_json(j);
+      for (const auto& e1 : *srs_assoc_csi_rs) {
+        e1.to_json(j);
       }
       j.end_array();
     }
@@ -44689,189 +44686,189 @@ void mimo_params_per_band_s::to_json(json_writer& j) const
 
 std::string mimo_params_per_band_s::tci_state_pdsch_s_::max_num_cfgured_tcistates_per_cc_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n4", "n8", "n16", "n32", "n64", "n128"};
+  static const char* options[] = {"n4", "n8", "n16", "n32", "n64", "n128"};
   return convert_enum_idx(
       options, 6, value, "mimo_params_per_band_s::tci_state_pdsch_s_::max_num_cfgured_tcistates_per_cc_e_");
 }
 uint8_t mimo_params_per_band_s::tci_state_pdsch_s_::max_num_cfgured_tcistates_per_cc_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 8, 16, 32, 64, 128};
-  return convert_enum_idx(
+  static const uint8_t options[] = {4, 8, 16, 32, 64, 128};
+  return map_enum_number(
       options, 6, value, "mimo_params_per_band_s::tci_state_pdsch_s_::max_num_cfgured_tcistates_per_cc_e_");
 }
 
 std::string mimo_params_per_band_s::tci_state_pdsch_s_::max_num_active_tci_per_bwp_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n4", "n8"};
+  static const char* options[] = {"n1", "n2", "n4", "n8"};
   return convert_enum_idx(
       options, 4, value, "mimo_params_per_band_s::tci_state_pdsch_s_::max_num_active_tci_per_bwp_e_");
 }
 uint8_t mimo_params_per_band_s::tci_state_pdsch_s_::max_num_active_tci_per_bwp_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4, 8};
-  return convert_enum_idx(
+  static const uint8_t options[] = {1, 2, 4, 8};
+  return map_enum_number(
       options, 4, value, "mimo_params_per_band_s::tci_state_pdsch_s_::max_num_active_tci_per_bwp_e_");
 }
 
 std::string mimo_params_per_band_s::pusch_trans_coherence_opts::to_string() const
 {
-  static constexpr const char* options[] = {"nonCoherent", "partialCoherent", "fullCoherent"};
+  static const char* options[] = {"nonCoherent", "partialCoherent", "fullCoherent"};
   return convert_enum_idx(options, 3, value, "mimo_params_per_band_s::pusch_trans_coherence_e_");
 }
 
 std::string mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus15k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n4", "n7", "n14"};
+  static const char* options[] = {"n4", "n7", "n14"};
   return convert_enum_idx(
       options, 3, value, "mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus15k_hz_e_");
 }
 uint8_t mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus15k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 7, 14};
-  return convert_enum_idx(
+  static const uint8_t options[] = {4, 7, 14};
+  return map_enum_number(
       options, 3, value, "mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus15k_hz_e_");
 }
 
 std::string mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus30k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n4", "n7", "n14"};
+  static const char* options[] = {"n4", "n7", "n14"};
   return convert_enum_idx(
       options, 3, value, "mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus30k_hz_e_");
 }
 uint8_t mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus30k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 7, 14};
-  return convert_enum_idx(
+  static const uint8_t options[] = {4, 7, 14};
+  return map_enum_number(
       options, 3, value, "mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus30k_hz_e_");
 }
 
 std::string mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus60k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n4", "n7", "n14"};
+  static const char* options[] = {"n4", "n7", "n14"};
   return convert_enum_idx(
       options, 3, value, "mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus60k_hz_e_");
 }
 uint8_t mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus60k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 7, 14};
-  return convert_enum_idx(
+  static const uint8_t options[] = {4, 7, 14};
+  return map_enum_number(
       options, 3, value, "mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus60k_hz_e_");
 }
 
 std::string mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus120k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n4", "n7", "n14"};
+  static const char* options[] = {"n4", "n7", "n14"};
   return convert_enum_idx(
       options, 3, value, "mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus120k_hz_e_");
 }
 uint8_t mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus120k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 7, 14};
-  return convert_enum_idx(
+  static const uint8_t options[] = {4, 7, 14};
+  return map_enum_number(
       options, 3, value, "mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus120k_hz_e_");
 }
 
 std::string mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus240k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n4", "n7", "n14"};
+  static const char* options[] = {"n4", "n7", "n14"};
   return convert_enum_idx(
       options, 3, value, "mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus240k_hz_e_");
 }
 uint8_t mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus240k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 7, 14};
-  return convert_enum_idx(
+  static const uint8_t options[] = {4, 7, 14};
+  return map_enum_number(
       options, 3, value, "mimo_params_per_band_s::max_num_rx_tx_beam_switch_dl_s_::scs_minus240k_hz_e_");
 }
 
 std::string mimo_params_per_band_s::max_num_non_group_beam_report_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n4"};
+  static const char* options[] = {"n1", "n2", "n4"};
   return convert_enum_idx(options, 3, value, "mimo_params_per_band_s::max_num_non_group_beam_report_e_");
 }
 uint8_t mimo_params_per_band_s::max_num_non_group_beam_report_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4};
-  return convert_enum_idx(options, 3, value, "mimo_params_per_band_s::max_num_non_group_beam_report_e_");
+  static const uint8_t options[] = {1, 2, 4};
+  return map_enum_number(options, 3, value, "mimo_params_per_band_s::max_num_non_group_beam_report_e_");
 }
 
 std::string mimo_params_per_band_s::ul_beam_management_s_::max_num_srs_res_per_set_bm_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n4", "n8", "n16"};
+  static const char* options[] = {"n2", "n4", "n8", "n16"};
   return convert_enum_idx(
       options, 4, value, "mimo_params_per_band_s::ul_beam_management_s_::max_num_srs_res_per_set_bm_e_");
 }
 uint8_t mimo_params_per_band_s::ul_beam_management_s_::max_num_srs_res_per_set_bm_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 8, 16};
-  return convert_enum_idx(
+  static const uint8_t options[] = {2, 4, 8, 16};
+  return map_enum_number(
       options, 4, value, "mimo_params_per_band_s::ul_beam_management_s_::max_num_srs_res_per_set_bm_e_");
 }
 
 std::string mimo_params_per_band_s::beam_report_timing_s_::scs_minus15k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sym2", "sym4", "sym8"};
+  static const char* options[] = {"sym2", "sym4", "sym8"};
   return convert_enum_idx(options, 3, value, "mimo_params_per_band_s::beam_report_timing_s_::scs_minus15k_hz_e_");
 }
 uint8_t mimo_params_per_band_s::beam_report_timing_s_::scs_minus15k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 8};
-  return convert_enum_idx(options, 3, value, "mimo_params_per_band_s::beam_report_timing_s_::scs_minus15k_hz_e_");
+  static const uint8_t options[] = {2, 4, 8};
+  return map_enum_number(options, 3, value, "mimo_params_per_band_s::beam_report_timing_s_::scs_minus15k_hz_e_");
 }
 
 std::string mimo_params_per_band_s::beam_report_timing_s_::scs_minus30k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sym4", "sym8", "sym14", "sym28"};
+  static const char* options[] = {"sym4", "sym8", "sym14", "sym28"};
   return convert_enum_idx(options, 4, value, "mimo_params_per_band_s::beam_report_timing_s_::scs_minus30k_hz_e_");
 }
 uint8_t mimo_params_per_band_s::beam_report_timing_s_::scs_minus30k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 8, 14, 28};
-  return convert_enum_idx(options, 4, value, "mimo_params_per_band_s::beam_report_timing_s_::scs_minus30k_hz_e_");
+  static const uint8_t options[] = {4, 8, 14, 28};
+  return map_enum_number(options, 4, value, "mimo_params_per_band_s::beam_report_timing_s_::scs_minus30k_hz_e_");
 }
 
 std::string mimo_params_per_band_s::beam_report_timing_s_::scs_minus60k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sym8", "sym14", "sym28"};
+  static const char* options[] = {"sym8", "sym14", "sym28"};
   return convert_enum_idx(options, 3, value, "mimo_params_per_band_s::beam_report_timing_s_::scs_minus60k_hz_e_");
 }
 uint8_t mimo_params_per_band_s::beam_report_timing_s_::scs_minus60k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {8, 14, 28};
-  return convert_enum_idx(options, 3, value, "mimo_params_per_band_s::beam_report_timing_s_::scs_minus60k_hz_e_");
+  static const uint8_t options[] = {8, 14, 28};
+  return map_enum_number(options, 3, value, "mimo_params_per_band_s::beam_report_timing_s_::scs_minus60k_hz_e_");
 }
 
 std::string mimo_params_per_band_s::beam_report_timing_s_::scs_minus120k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sym14", "sym28", "sym56"};
+  static const char* options[] = {"sym14", "sym28", "sym56"};
   return convert_enum_idx(options, 3, value, "mimo_params_per_band_s::beam_report_timing_s_::scs_minus120k_hz_e_");
 }
 uint8_t mimo_params_per_band_s::beam_report_timing_s_::scs_minus120k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {14, 28, 56};
-  return convert_enum_idx(options, 3, value, "mimo_params_per_band_s::beam_report_timing_s_::scs_minus120k_hz_e_");
+  static const uint8_t options[] = {14, 28, 56};
+  return map_enum_number(options, 3, value, "mimo_params_per_band_s::beam_report_timing_s_::scs_minus120k_hz_e_");
 }
 
 std::string mimo_params_per_band_s::beam_switch_timing_s_::scs_minus60k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sym14", "sym28", "sym48", "sym224", "sym336"};
+  static const char* options[] = {"sym14", "sym28", "sym48", "sym224", "sym336"};
   return convert_enum_idx(options, 5, value, "mimo_params_per_band_s::beam_switch_timing_s_::scs_minus60k_hz_e_");
 }
 uint16_t mimo_params_per_band_s::beam_switch_timing_s_::scs_minus60k_hz_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {14, 28, 48, 224, 336};
-  return convert_enum_idx(options, 5, value, "mimo_params_per_band_s::beam_switch_timing_s_::scs_minus60k_hz_e_");
+  static const uint16_t options[] = {14, 28, 48, 224, 336};
+  return map_enum_number(options, 5, value, "mimo_params_per_band_s::beam_switch_timing_s_::scs_minus60k_hz_e_");
 }
 
 std::string mimo_params_per_band_s::beam_switch_timing_s_::scs_minus120k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sym14", "sym28", "sym48", "sym224", "sym336"};
+  static const char* options[] = {"sym14", "sym28", "sym48", "sym224", "sym336"};
   return convert_enum_idx(options, 5, value, "mimo_params_per_band_s::beam_switch_timing_s_::scs_minus120k_hz_e_");
 }
 uint16_t mimo_params_per_band_s::beam_switch_timing_s_::scs_minus120k_hz_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {14, 28, 48, 224, 336};
-  return convert_enum_idx(options, 5, value, "mimo_params_per_band_s::beam_switch_timing_s_::scs_minus120k_hz_e_");
+  static const uint16_t options[] = {14, 28, 48, 224, 336};
+  return map_enum_number(options, 5, value, "mimo_params_per_band_s::beam_switch_timing_s_::scs_minus120k_hz_e_");
 }
 
 // BandNR ::= SEQUENCE
@@ -44937,7 +44934,7 @@ SRSASN_CODE band_nr_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE band_nr_s::unpack(bit_ref& bref)
+SRSASN_CODE band_nr_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(modified_mpr_behaviour_present, 1));
@@ -45061,24 +45058,24 @@ void band_nr_s::to_json(json_writer& j) const
 
 std::string band_nr_s::bwp_same_numerology_opts::to_string() const
 {
-  static constexpr const char* options[] = {"upto2", "upto4"};
+  static const char* options[] = {"upto2", "upto4"};
   return convert_enum_idx(options, 2, value, "band_nr_s::bwp_same_numerology_e_");
 }
 uint8_t band_nr_s::bwp_same_numerology_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4};
-  return convert_enum_idx(options, 2, value, "band_nr_s::bwp_same_numerology_e_");
+  static const uint8_t options[] = {2, 4};
+  return map_enum_number(options, 2, value, "band_nr_s::bwp_same_numerology_e_");
 }
 
 std::string band_nr_s::ue_pwr_class_opts::to_string() const
 {
-  static constexpr const char* options[] = {"pc1", "pc2", "pc3", "pc4"};
+  static const char* options[] = {"pc1", "pc2", "pc3", "pc4"};
   return convert_enum_idx(options, 4, value, "band_nr_s::ue_pwr_class_e_");
 }
 uint8_t band_nr_s::ue_pwr_class_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3, 4};
-  return convert_enum_idx(options, 4, value, "band_nr_s::ue_pwr_class_e_");
+  static const uint8_t options[] = {1, 2, 3, 4};
+  return map_enum_number(options, 4, value, "band_nr_s::ue_pwr_class_e_");
 }
 
 void band_nr_s::ch_bws_dl_v1530_c_::destroy_()
@@ -45216,7 +45213,7 @@ SRSASN_CODE band_nr_s::ch_bws_dl_v1530_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE band_nr_s::ch_bws_dl_v1530_c_::unpack(bit_ref& bref)
+SRSASN_CODE band_nr_s::ch_bws_dl_v1530_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -45255,13 +45252,13 @@ SRSASN_CODE band_nr_s::ch_bws_dl_v1530_c_::unpack(bit_ref& bref)
 
 std::string band_nr_s::ch_bws_dl_v1530_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"fr1", "fr2"};
+  static const char* options[] = {"fr1", "fr2"};
   return convert_enum_idx(options, 2, value, "band_nr_s::ch_bws_dl_v1530_c_::types");
 }
 uint8_t band_nr_s::ch_bws_dl_v1530_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options, 2, value, "band_nr_s::ch_bws_dl_v1530_c_::types");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options, 2, value, "band_nr_s::ch_bws_dl_v1530_c_::types");
 }
 
 void band_nr_s::ch_bws_ul_v1530_c_::destroy_()
@@ -45399,7 +45396,7 @@ SRSASN_CODE band_nr_s::ch_bws_ul_v1530_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE band_nr_s::ch_bws_ul_v1530_c_::unpack(bit_ref& bref)
+SRSASN_CODE band_nr_s::ch_bws_ul_v1530_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -45438,24 +45435,24 @@ SRSASN_CODE band_nr_s::ch_bws_ul_v1530_c_::unpack(bit_ref& bref)
 
 std::string band_nr_s::ch_bws_ul_v1530_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"fr1", "fr2"};
+  static const char* options[] = {"fr1", "fr2"};
   return convert_enum_idx(options, 2, value, "band_nr_s::ch_bws_ul_v1530_c_::types");
 }
 uint8_t band_nr_s::ch_bws_ul_v1530_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options, 2, value, "band_nr_s::ch_bws_ul_v1530_c_::types");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options, 2, value, "band_nr_s::ch_bws_ul_v1530_c_::types");
 }
 
 std::string band_nr_s::max_ul_duty_cycle_pc2_fr1_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n60", "n70", "n80", "n90", "n100"};
+  static const char* options[] = {"n60", "n70", "n80", "n90", "n100"};
   return convert_enum_idx(options, 5, value, "band_nr_s::max_ul_duty_cycle_pc2_fr1_e_");
 }
 uint8_t band_nr_s::max_ul_duty_cycle_pc2_fr1_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {60, 70, 80, 90, 100};
-  return convert_enum_idx(options, 5, value, "band_nr_s::max_ul_duty_cycle_pc2_fr1_e_");
+  static const uint8_t options[] = {60, 70, 80, 90, 100};
+  return map_enum_number(options, 5, value, "band_nr_s::max_ul_duty_cycle_pc2_fr1_e_");
 }
 
 // EUTRA-ParametersCommon ::= SEQUENCE
@@ -45473,7 +45470,7 @@ SRSASN_CODE eutra_params_common_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE eutra_params_common_s::unpack(bit_ref& bref)
+SRSASN_CODE eutra_params_common_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(mfbi_eutra_present, 1));
@@ -45513,7 +45510,7 @@ SRSASN_CODE eutra_params_xdd_diff_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE eutra_params_xdd_diff_s::unpack(bit_ref& bref)
+SRSASN_CODE eutra_params_xdd_diff_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(rsrq_meas_wideband_eutra_present, 1));
@@ -45546,7 +45543,7 @@ SRSASN_CODE eutra_params_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE eutra_params_s::unpack(bit_ref& bref)
+SRSASN_CODE eutra_params_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(eutra_params_common_present, 1));
@@ -45566,8 +45563,8 @@ void eutra_params_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("supportedBandListEUTRA");
-  for (uint32_t i1 = 0; i1 < supported_band_list_eutra.size(); ++i1) {
-    j.write_int(supported_band_list_eutra[i1]);
+  for (const auto& e1 : supported_band_list_eutra) {
+    j.write_int(e1);
   }
   j.end_array();
   if (eutra_params_common_present) {
@@ -45690,7 +45687,7 @@ SRSASN_CODE feature_set_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE feature_set_c::unpack(bit_ref& bref)
+SRSASN_CODE feature_set_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -45713,7 +45710,7 @@ SRSASN_CODE feature_set_c::unpack(bit_ref& bref)
 
 std::string feature_set_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"eutra", "nr"};
+  static const char* options[] = {"eutra", "nr"};
   return convert_enum_idx(options, 2, value, "feature_set_c::types");
 }
 
@@ -45728,7 +45725,7 @@ SRSASN_CODE dummy_a_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dummy_a_s::unpack(bit_ref& bref)
+SRSASN_CODE dummy_a_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(max_num_nzp_csi_rs_per_cc, bref, (uint8_t)1u, (uint8_t)32u));
   HANDLE_CODE(max_num_ports_across_nzp_csi_rs_per_cc.unpack(bref));
@@ -45752,60 +45749,59 @@ void dummy_a_s::to_json(json_writer& j) const
 
 std::string dummy_a_s::max_num_ports_across_nzp_csi_rs_per_cc_opts::to_string() const
 {
-  static constexpr const char* options[] = {"p2",   "p4",   "p8",   "p12",  "p16",  "p24",  "p32",  "p40",  "p48",
-                                            "p56",  "p64",  "p72",  "p80",  "p88",  "p96",  "p104", "p112", "p120",
-                                            "p128", "p136", "p144", "p152", "p160", "p168", "p176", "p184", "p192",
-                                            "p200", "p208", "p216", "p224", "p232", "p240", "p248", "p256"};
+  static const char* options[] = {"p2",   "p4",   "p8",   "p12",  "p16",  "p24",  "p32",  "p40",  "p48",
+                                  "p56",  "p64",  "p72",  "p80",  "p88",  "p96",  "p104", "p112", "p120",
+                                  "p128", "p136", "p144", "p152", "p160", "p168", "p176", "p184", "p192",
+                                  "p200", "p208", "p216", "p224", "p232", "p240", "p248", "p256"};
   return convert_enum_idx(options, 35, value, "dummy_a_s::max_num_ports_across_nzp_csi_rs_per_cc_e_");
 }
 uint16_t dummy_a_s::max_num_ports_across_nzp_csi_rs_per_cc_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {2,   4,   8,   12,  16,  24,  32,  40,  48,  56,  64,  72,
-                                         80,  88,  96,  104, 112, 120, 128, 136, 144, 152, 160, 168,
-                                         176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256};
-  return convert_enum_idx(options, 35, value, "dummy_a_s::max_num_ports_across_nzp_csi_rs_per_cc_e_");
+  static const uint16_t options[] = {2,   4,   8,   12,  16,  24,  32,  40,  48,  56,  64,  72,
+                                     80,  88,  96,  104, 112, 120, 128, 136, 144, 152, 160, 168,
+                                     176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256};
+  return map_enum_number(options, 35, value, "dummy_a_s::max_num_ports_across_nzp_csi_rs_per_cc_e_");
 }
 
 std::string dummy_a_s::max_num_cs_im_per_cc_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n1", "n2", "n4", "n8", "n16", "n32"};
+  static const char* options[] = {"n1", "n2", "n4", "n8", "n16", "n32"};
   return convert_enum_idx(options, 6, value, "dummy_a_s::max_num_cs_im_per_cc_e_");
 }
 uint8_t dummy_a_s::max_num_cs_im_per_cc_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4, 8, 16, 32};
-  return convert_enum_idx(options, 6, value, "dummy_a_s::max_num_cs_im_per_cc_e_");
+  static const uint8_t options[] = {1, 2, 4, 8, 16, 32};
+  return map_enum_number(options, 6, value, "dummy_a_s::max_num_cs_im_per_cc_e_");
 }
 
 std::string dummy_a_s::max_num_simul_csi_rs_act_bwp_all_cc_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n5",  "n6",  "n7",  "n8",  "n9",  "n10", "n12", "n14", "n16",
-                                            "n18", "n20", "n22", "n24", "n26", "n28", "n30", "n32", "n34",
-                                            "n36", "n38", "n40", "n42", "n44", "n46", "n48", "n50", "n52",
-                                            "n54", "n56", "n58", "n60", "n62", "n64"};
+  static const char* options[] = {"n5",  "n6",  "n7",  "n8",  "n9",  "n10", "n12", "n14", "n16", "n18", "n20",
+                                  "n22", "n24", "n26", "n28", "n30", "n32", "n34", "n36", "n38", "n40", "n42",
+                                  "n44", "n46", "n48", "n50", "n52", "n54", "n56", "n58", "n60", "n62", "n64"};
   return convert_enum_idx(options, 33, value, "dummy_a_s::max_num_simul_csi_rs_act_bwp_all_cc_e_");
 }
 uint8_t dummy_a_s::max_num_simul_csi_rs_act_bwp_all_cc_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {5,  6,  7,  8,  9,  10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32,
-                                        34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62, 64};
-  return convert_enum_idx(options, 33, value, "dummy_a_s::max_num_simul_csi_rs_act_bwp_all_cc_e_");
+  static const uint8_t options[] = {5,  6,  7,  8,  9,  10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32,
+                                    34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62, 64};
+  return map_enum_number(options, 33, value, "dummy_a_s::max_num_simul_csi_rs_act_bwp_all_cc_e_");
 }
 
 std::string dummy_a_s::total_num_ports_simul_csi_rs_act_bwp_all_cc_opts::to_string() const
 {
-  static constexpr const char* options[] = {"p8",   "p12",  "p16",  "p24",  "p32",  "p40",  "p48",  "p56",  "p64",
-                                            "p72",  "p80",  "p88",  "p96",  "p104", "p112", "p120", "p128", "p136",
-                                            "p144", "p152", "p160", "p168", "p176", "p184", "p192", "p200", "p208",
-                                            "p216", "p224", "p232", "p240", "p248", "p256"};
+  static const char* options[] = {"p8",   "p12",  "p16",  "p24",  "p32",  "p40",  "p48",  "p56",  "p64",
+                                  "p72",  "p80",  "p88",  "p96",  "p104", "p112", "p120", "p128", "p136",
+                                  "p144", "p152", "p160", "p168", "p176", "p184", "p192", "p200", "p208",
+                                  "p216", "p224", "p232", "p240", "p248", "p256"};
   return convert_enum_idx(options, 33, value, "dummy_a_s::total_num_ports_simul_csi_rs_act_bwp_all_cc_e_");
 }
 uint16_t dummy_a_s::total_num_ports_simul_csi_rs_act_bwp_all_cc_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {8,   12,  16,  24,  32,  40,  48,  56,  64,  72,  80,
-                                         88,  96,  104, 112, 120, 128, 136, 144, 152, 160, 168,
-                                         176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256};
-  return convert_enum_idx(options, 33, value, "dummy_a_s::total_num_ports_simul_csi_rs_act_bwp_all_cc_e_");
+  static const uint16_t options[] = {8,   12,  16,  24,  32,  40,  48,  56,  64,  72,  80,
+                                     88,  96,  104, 112, 120, 128, 136, 144, 152, 160, 168,
+                                     176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256};
+  return map_enum_number(options, 33, value, "dummy_a_s::total_num_ports_simul_csi_rs_act_bwp_all_cc_e_");
 }
 
 // DummyB ::= SEQUENCE
@@ -45819,7 +45815,7 @@ SRSASN_CODE dummy_b_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dummy_b_s::unpack(bit_ref& bref)
+SRSASN_CODE dummy_b_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(max_num_tx_ports_per_res.unpack(bref));
   HANDLE_CODE(unpack_integer(max_num_res, bref, (uint8_t)1u, (uint8_t)64u));
@@ -45842,18 +45838,18 @@ void dummy_b_s::to_json(json_writer& j) const
 
 std::string dummy_b_s::max_num_tx_ports_per_res_opts::to_string() const
 {
-  static constexpr const char* options[] = {"p2", "p4", "p8", "p12", "p16", "p24", "p32"};
+  static const char* options[] = {"p2", "p4", "p8", "p12", "p16", "p24", "p32"};
   return convert_enum_idx(options, 7, value, "dummy_b_s::max_num_tx_ports_per_res_e_");
 }
 uint8_t dummy_b_s::max_num_tx_ports_per_res_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 8, 12, 16, 24, 32};
-  return convert_enum_idx(options, 7, value, "dummy_b_s::max_num_tx_ports_per_res_e_");
+  static const uint8_t options[] = {2, 4, 8, 12, 16, 24, 32};
+  return map_enum_number(options, 7, value, "dummy_b_s::max_num_tx_ports_per_res_e_");
 }
 
 std::string dummy_b_s::supported_codebook_mode_opts::to_string() const
 {
-  static constexpr const char* options[] = {"mode1", "mode1AndMode2"};
+  static const char* options[] = {"mode1", "mode1AndMode2"};
   return convert_enum_idx(options, 2, value, "dummy_b_s::supported_codebook_mode_e_");
 }
 
@@ -45869,7 +45865,7 @@ SRSASN_CODE dummy_c_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dummy_c_s::unpack(bit_ref& bref)
+SRSASN_CODE dummy_c_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(max_num_tx_ports_per_res.unpack(bref));
   HANDLE_CODE(unpack_integer(max_num_res, bref, (uint8_t)1u, (uint8_t)64u));
@@ -45894,35 +45890,35 @@ void dummy_c_s::to_json(json_writer& j) const
 
 std::string dummy_c_s::max_num_tx_ports_per_res_opts::to_string() const
 {
-  static constexpr const char* options[] = {"p8", "p16", "p32"};
+  static const char* options[] = {"p8", "p16", "p32"};
   return convert_enum_idx(options, 3, value, "dummy_c_s::max_num_tx_ports_per_res_e_");
 }
 uint8_t dummy_c_s::max_num_tx_ports_per_res_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {8, 16, 32};
-  return convert_enum_idx(options, 3, value, "dummy_c_s::max_num_tx_ports_per_res_e_");
+  static const uint8_t options[] = {8, 16, 32};
+  return map_enum_number(options, 3, value, "dummy_c_s::max_num_tx_ports_per_res_e_");
 }
 
 std::string dummy_c_s::supported_codebook_mode_opts::to_string() const
 {
-  static constexpr const char* options[] = {"mode1", "mode2", "both"};
+  static const char* options[] = {"mode1", "mode2", "both"};
   return convert_enum_idx(options, 3, value, "dummy_c_s::supported_codebook_mode_e_");
 }
 uint8_t dummy_c_s::supported_codebook_mode_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options, 2, value, "dummy_c_s::supported_codebook_mode_e_");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options, 2, value, "dummy_c_s::supported_codebook_mode_e_");
 }
 
 std::string dummy_c_s::supported_num_panels_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n4"};
+  static const char* options[] = {"n2", "n4"};
   return convert_enum_idx(options, 2, value, "dummy_c_s::supported_num_panels_e_");
 }
 uint8_t dummy_c_s::supported_num_panels_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4};
-  return convert_enum_idx(options, 2, value, "dummy_c_s::supported_num_panels_e_");
+  static const uint8_t options[] = {2, 4};
+  return map_enum_number(options, 2, value, "dummy_c_s::supported_num_panels_e_");
 }
 
 // DummyD ::= SEQUENCE
@@ -45939,7 +45935,7 @@ SRSASN_CODE dummy_d_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dummy_d_s::unpack(bit_ref& bref)
+SRSASN_CODE dummy_d_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(amplitude_subset_restrict_present, 1));
 
@@ -45969,18 +45965,18 @@ void dummy_d_s::to_json(json_writer& j) const
 
 std::string dummy_d_s::max_num_tx_ports_per_res_opts::to_string() const
 {
-  static constexpr const char* options[] = {"p4", "p8", "p12", "p16", "p24", "p32"};
+  static const char* options[] = {"p4", "p8", "p12", "p16", "p24", "p32"};
   return convert_enum_idx(options, 6, value, "dummy_d_s::max_num_tx_ports_per_res_e_");
 }
 uint8_t dummy_d_s::max_num_tx_ports_per_res_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 8, 12, 16, 24, 32};
-  return convert_enum_idx(options, 6, value, "dummy_d_s::max_num_tx_ports_per_res_e_");
+  static const uint8_t options[] = {4, 8, 12, 16, 24, 32};
+  return map_enum_number(options, 6, value, "dummy_d_s::max_num_tx_ports_per_res_e_");
 }
 
 std::string dummy_d_s::amplitude_scaling_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"wideband", "widebandAndSubband"};
+  static const char* options[] = {"wideband", "widebandAndSubband"};
   return convert_enum_idx(options, 2, value, "dummy_d_s::amplitude_scaling_type_e_");
 }
 
@@ -45996,7 +45992,7 @@ SRSASN_CODE dummy_e_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dummy_e_s::unpack(bit_ref& bref)
+SRSASN_CODE dummy_e_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(max_num_tx_ports_per_res.unpack(bref));
   HANDLE_CODE(unpack_integer(max_num_res, bref, (uint8_t)1u, (uint8_t)64u));
@@ -46021,31 +46017,31 @@ void dummy_e_s::to_json(json_writer& j) const
 
 std::string dummy_e_s::max_num_tx_ports_per_res_opts::to_string() const
 {
-  static constexpr const char* options[] = {"p4", "p8", "p12", "p16", "p24", "p32"};
+  static const char* options[] = {"p4", "p8", "p12", "p16", "p24", "p32"};
   return convert_enum_idx(options, 6, value, "dummy_e_s::max_num_tx_ports_per_res_e_");
 }
 uint8_t dummy_e_s::max_num_tx_ports_per_res_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 8, 12, 16, 24, 32};
-  return convert_enum_idx(options, 6, value, "dummy_e_s::max_num_tx_ports_per_res_e_");
+  static const uint8_t options[] = {4, 8, 12, 16, 24, 32};
+  return map_enum_number(options, 6, value, "dummy_e_s::max_num_tx_ports_per_res_e_");
 }
 
 std::string dummy_e_s::amplitude_scaling_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"wideband", "widebandAndSubband"};
+  static const char* options[] = {"wideband", "widebandAndSubband"};
   return convert_enum_idx(options, 2, value, "dummy_e_s::amplitude_scaling_type_e_");
 }
 
 // FreqSeparationClass ::= ENUMERATED
 std::string freq_separation_class_opts::to_string() const
 {
-  static constexpr const char* options[] = {"c1", "c2", "c3"};
+  static const char* options[] = {"c1", "c2", "c3"};
   return convert_enum_idx(options, 3, value, "freq_separation_class_e");
 }
 uint8_t freq_separation_class_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3};
-  return convert_enum_idx(options, 3, value, "freq_separation_class_e");
+  static const uint8_t options[] = {1, 2, 3};
+  return map_enum_number(options, 3, value, "freq_separation_class_e");
 }
 
 // FeatureSetDownlink ::= SEQUENCE
@@ -46126,7 +46122,7 @@ SRSASN_CODE feature_set_dl_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE feature_set_dl_s::unpack(bit_ref& bref)
+SRSASN_CODE feature_set_dl_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(intra_band_freq_separation_dl_present, 1));
   HANDLE_CODE(bref.unpack(scaling_factor_present, 1));
@@ -46207,8 +46203,8 @@ void feature_set_dl_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("featureSetListPerDownlinkCC");
-  for (uint32_t i1 = 0; i1 < feature_set_list_per_dl_cc.size(); ++i1) {
-    j.write_int(feature_set_list_per_dl_cc[i1]);
+  for (const auto& e1 : feature_set_list_per_dl_cc) {
+    j.write_int(e1);
   }
   j.end_array();
   if (intra_band_freq_separation_dl_present) {
@@ -46278,29 +46274,29 @@ void feature_set_dl_s::to_json(json_writer& j) const
   }
   if (dummy4_present) {
     j.start_array("dummy4");
-    for (uint32_t i1 = 0; i1 < dummy4.size(); ++i1) {
-      dummy4[i1].to_json(j);
+    for (const auto& e1 : dummy4) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (dummy5_present) {
     j.start_array("dummy5");
-    for (uint32_t i1 = 0; i1 < dummy5.size(); ++i1) {
-      dummy5[i1].to_json(j);
+    for (const auto& e1 : dummy5) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (dummy6_present) {
     j.start_array("dummy6");
-    for (uint32_t i1 = 0; i1 < dummy6.size(); ++i1) {
-      dummy6[i1].to_json(j);
+    for (const auto& e1 : dummy6) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (dummy7_present) {
     j.start_array("dummy7");
-    for (uint32_t i1 = 0; i1 < dummy7.size(); ++i1) {
-      dummy7[i1].to_json(j);
+    for (const auto& e1 : dummy7) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -46309,87 +46305,87 @@ void feature_set_dl_s::to_json(json_writer& j) const
 
 std::string feature_set_dl_s::scaling_factor_opts::to_string() const
 {
-  static constexpr const char* options[] = {"f0p4", "f0p75", "f0p8"};
+  static const char* options[] = {"f0p4", "f0p75", "f0p8"};
   return convert_enum_idx(options, 3, value, "feature_set_dl_s::scaling_factor_e_");
 }
 
 std::string feature_set_dl_s::pdcch_monitoring_any_occasions_opts::to_string() const
 {
-  static constexpr const char* options[] = {"withoutDCI-Gap", "withDCI-Gap"};
+  static const char* options[] = {"withoutDCI-Gap", "withDCI-Gap"};
   return convert_enum_idx(options, 2, value, "feature_set_dl_s::pdcch_monitoring_any_occasions_e_");
 }
 
 std::string feature_set_dl_s::time_dur_for_qcl_s_::scs_minus60k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"s7", "s14", "s28"};
+  static const char* options[] = {"s7", "s14", "s28"};
   return convert_enum_idx(options, 3, value, "feature_set_dl_s::time_dur_for_qcl_s_::scs_minus60k_hz_e_");
 }
 uint8_t feature_set_dl_s::time_dur_for_qcl_s_::scs_minus60k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {7, 14, 28};
-  return convert_enum_idx(options, 3, value, "feature_set_dl_s::time_dur_for_qcl_s_::scs_minus60k_hz_e_");
+  static const uint8_t options[] = {7, 14, 28};
+  return map_enum_number(options, 3, value, "feature_set_dl_s::time_dur_for_qcl_s_::scs_minus60k_hz_e_");
 }
 
 std::string feature_set_dl_s::time_dur_for_qcl_s_::scs_minus120k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"s14", "s28"};
+  static const char* options[] = {"s14", "s28"};
   return convert_enum_idx(options, 2, value, "feature_set_dl_s::time_dur_for_qcl_s_::scs_minus120k_hz_e_");
 }
 uint8_t feature_set_dl_s::time_dur_for_qcl_s_::scs_minus120k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {14, 28};
-  return convert_enum_idx(options, 2, value, "feature_set_dl_s::time_dur_for_qcl_s_::scs_minus120k_hz_e_");
+  static const uint8_t options[] = {14, 28};
+  return map_enum_number(options, 2, value, "feature_set_dl_s::time_dur_for_qcl_s_::scs_minus120k_hz_e_");
 }
 
 std::string feature_set_dl_s::pdsch_processing_type1_different_tb_per_slot_s_::scs_minus15k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"upto2", "upto4", "upto7"};
+  static const char* options[] = {"upto2", "upto4", "upto7"};
   return convert_enum_idx(
       options, 3, value, "feature_set_dl_s::pdsch_processing_type1_different_tb_per_slot_s_::scs_minus15k_hz_e_");
 }
 uint8_t feature_set_dl_s::pdsch_processing_type1_different_tb_per_slot_s_::scs_minus15k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 7};
-  return convert_enum_idx(
+  static const uint8_t options[] = {2, 4, 7};
+  return map_enum_number(
       options, 3, value, "feature_set_dl_s::pdsch_processing_type1_different_tb_per_slot_s_::scs_minus15k_hz_e_");
 }
 
 std::string feature_set_dl_s::pdsch_processing_type1_different_tb_per_slot_s_::scs_minus30k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"upto2", "upto4", "upto7"};
+  static const char* options[] = {"upto2", "upto4", "upto7"};
   return convert_enum_idx(
       options, 3, value, "feature_set_dl_s::pdsch_processing_type1_different_tb_per_slot_s_::scs_minus30k_hz_e_");
 }
 uint8_t feature_set_dl_s::pdsch_processing_type1_different_tb_per_slot_s_::scs_minus30k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 7};
-  return convert_enum_idx(
+  static const uint8_t options[] = {2, 4, 7};
+  return map_enum_number(
       options, 3, value, "feature_set_dl_s::pdsch_processing_type1_different_tb_per_slot_s_::scs_minus30k_hz_e_");
 }
 
 std::string feature_set_dl_s::pdsch_processing_type1_different_tb_per_slot_s_::scs_minus60k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"upto2", "upto4", "upto7"};
+  static const char* options[] = {"upto2", "upto4", "upto7"};
   return convert_enum_idx(
       options, 3, value, "feature_set_dl_s::pdsch_processing_type1_different_tb_per_slot_s_::scs_minus60k_hz_e_");
 }
 uint8_t feature_set_dl_s::pdsch_processing_type1_different_tb_per_slot_s_::scs_minus60k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 7};
-  return convert_enum_idx(
+  static const uint8_t options[] = {2, 4, 7};
+  return map_enum_number(
       options, 3, value, "feature_set_dl_s::pdsch_processing_type1_different_tb_per_slot_s_::scs_minus60k_hz_e_");
 }
 
 std::string feature_set_dl_s::pdsch_processing_type1_different_tb_per_slot_s_::scs_minus120k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"upto2", "upto4", "upto7"};
+  static const char* options[] = {"upto2", "upto4", "upto7"};
   return convert_enum_idx(
       options, 3, value, "feature_set_dl_s::pdsch_processing_type1_different_tb_per_slot_s_::scs_minus120k_hz_e_");
 }
 uint8_t feature_set_dl_s::pdsch_processing_type1_different_tb_per_slot_s_::scs_minus120k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 7};
-  return convert_enum_idx(
+  static const uint8_t options[] = {2, 4, 7};
+  return map_enum_number(
       options, 3, value, "feature_set_dl_s::pdsch_processing_type1_different_tb_per_slot_s_::scs_minus120k_hz_e_");
 }
 
@@ -46420,7 +46416,7 @@ SRSASN_CODE processing_params_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE processing_params_s::unpack(bit_ref& bref)
+SRSASN_CODE processing_params_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(different_tb_per_slot_present, 1));
 
@@ -46472,17 +46468,15 @@ void processing_params_s::to_json(json_writer& j) const
 
 std::string processing_params_s::fallback_opts::to_string() const
 {
-  static constexpr const char* options[] = {"sc", "cap1-only"};
+  static const char* options[] = {"sc", "cap1-only"};
   return convert_enum_idx(options, 2, value, "processing_params_s::fallback_e_");
 }
 uint8_t processing_params_s::fallback_opts::to_number() const
 {
-  switch (value) {
-    case cap1_only:
-      return 1;
-    default:
-      invalid_enum_number(value, "processing_params_s::fallback_e_");
+  if (value == cap1_only) {
+    return 1;
   }
+  invalid_enum_number(value, "processing_params_s::fallback_e_");
   return 0;
 }
 
@@ -46537,7 +46531,7 @@ SRSASN_CODE feature_set_dl_v1540_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE feature_set_dl_v1540_s::unpack(bit_ref& bref)
+SRSASN_CODE feature_set_dl_v1540_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(one_fl_dmrs_two_add_dmrs_dl_present, 1));
   HANDLE_CODE(bref.unpack(add_dmrs_dl_alt_present, 1));
@@ -46655,49 +46649,49 @@ void feature_set_dl_v1540_s::to_json(json_writer& j) const
 std::string
 feature_set_dl_v1540_s::pdcch_monitoring_any_occasions_with_span_gap_s_::scs_minus15k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"set1", "set2", "set3"};
+  static const char* options[] = {"set1", "set2", "set3"};
   return convert_enum_idx(
       options, 3, value, "feature_set_dl_v1540_s::pdcch_monitoring_any_occasions_with_span_gap_s_::scs_minus15k_hz_e_");
 }
 uint8_t feature_set_dl_v1540_s::pdcch_monitoring_any_occasions_with_span_gap_s_::scs_minus15k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3};
-  return convert_enum_idx(
+  static const uint8_t options[] = {1, 2, 3};
+  return map_enum_number(
       options, 3, value, "feature_set_dl_v1540_s::pdcch_monitoring_any_occasions_with_span_gap_s_::scs_minus15k_hz_e_");
 }
 
 std::string
 feature_set_dl_v1540_s::pdcch_monitoring_any_occasions_with_span_gap_s_::scs_minus30k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"set1", "set2", "set3"};
+  static const char* options[] = {"set1", "set2", "set3"};
   return convert_enum_idx(
       options, 3, value, "feature_set_dl_v1540_s::pdcch_monitoring_any_occasions_with_span_gap_s_::scs_minus30k_hz_e_");
 }
 uint8_t feature_set_dl_v1540_s::pdcch_monitoring_any_occasions_with_span_gap_s_::scs_minus30k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3};
-  return convert_enum_idx(
+  static const uint8_t options[] = {1, 2, 3};
+  return map_enum_number(
       options, 3, value, "feature_set_dl_v1540_s::pdcch_monitoring_any_occasions_with_span_gap_s_::scs_minus30k_hz_e_");
 }
 
 std::string
 feature_set_dl_v1540_s::pdcch_monitoring_any_occasions_with_span_gap_s_::scs_minus60k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"set1", "set2", "set3"};
+  static const char* options[] = {"set1", "set2", "set3"};
   return convert_enum_idx(
       options, 3, value, "feature_set_dl_v1540_s::pdcch_monitoring_any_occasions_with_span_gap_s_::scs_minus60k_hz_e_");
 }
 uint8_t feature_set_dl_v1540_s::pdcch_monitoring_any_occasions_with_span_gap_s_::scs_minus60k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3};
-  return convert_enum_idx(
+  static const uint8_t options[] = {1, 2, 3};
+  return map_enum_number(
       options, 3, value, "feature_set_dl_v1540_s::pdcch_monitoring_any_occasions_with_span_gap_s_::scs_minus60k_hz_e_");
 }
 
 std::string
 feature_set_dl_v1540_s::pdcch_monitoring_any_occasions_with_span_gap_s_::scs_minus120k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"set1", "set2", "set3"};
+  static const char* options[] = {"set1", "set2", "set3"};
   return convert_enum_idx(
       options,
       3,
@@ -46707,8 +46701,8 @@ feature_set_dl_v1540_s::pdcch_monitoring_any_occasions_with_span_gap_s_::scs_min
 uint8_t
 feature_set_dl_v1540_s::pdcch_monitoring_any_occasions_with_span_gap_s_::scs_minus120k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 3};
-  return convert_enum_idx(
+  static const uint8_t options[] = {1, 2, 3};
+  return map_enum_number(
       options,
       3,
       value,
@@ -46718,7 +46712,7 @@ feature_set_dl_v1540_s::pdcch_monitoring_any_occasions_with_span_gap_s_::scs_min
 std::string
 feature_set_dl_v1540_s::pdsch_processing_type2_limited_s_::different_tb_per_slot_scs_minus30k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"upto1", "upto2", "upto4", "upto7"};
+  static const char* options[] = {"upto1", "upto2", "upto4", "upto7"};
   return convert_enum_idx(
       options,
       4,
@@ -46728,8 +46722,8 @@ feature_set_dl_v1540_s::pdsch_processing_type2_limited_s_::different_tb_per_slot
 uint8_t
 feature_set_dl_v1540_s::pdsch_processing_type2_limited_s_::different_tb_per_slot_scs_minus30k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2, 4, 7};
-  return convert_enum_idx(
+  static const uint8_t options[] = {1, 2, 4, 7};
+  return map_enum_number(
       options,
       4,
       value,
@@ -46739,7 +46733,7 @@ feature_set_dl_v1540_s::pdsch_processing_type2_limited_s_::different_tb_per_slot
 // ModulationOrder ::= ENUMERATED
 std::string mod_order_opts::to_string() const
 {
-  static constexpr const char* options[] = {"bpsk-halfpi", "bpsk", "qpsk", "qam16", "qam64", "qam256"};
+  static const char* options[] = {"bpsk-halfpi", "bpsk", "qpsk", "qam16", "qam64", "qam256"};
   return convert_enum_idx(options, 6, value, "mod_order_e");
 }
 float mod_order_opts::to_number() const
@@ -46760,7 +46754,7 @@ float mod_order_opts::to_number() const
 }
 std::string mod_order_opts::to_number_string() const
 {
-  static constexpr const char* options[] = {"0.5", "16", "64", "256"};
+  static const char* options[] = {"0.5", "16", "64", "256"};
   return convert_enum_idx(options, 6, value, "mod_order_e");
 }
 
@@ -46839,7 +46833,7 @@ SRSASN_CODE supported_bw_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE supported_bw_c::unpack(bit_ref& bref)
+SRSASN_CODE supported_bw_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -46860,36 +46854,36 @@ SRSASN_CODE supported_bw_c::unpack(bit_ref& bref)
 
 std::string supported_bw_c::fr1_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "mhz5", "mhz10", "mhz15", "mhz20", "mhz25", "mhz30", "mhz40", "mhz50", "mhz60", "mhz80", "mhz100"};
   return convert_enum_idx(options, 11, value, "supported_bw_c::fr1_e_");
 }
 uint8_t supported_bw_c::fr1_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {5, 10, 15, 20, 25, 30, 40, 50, 60, 80, 100};
-  return convert_enum_idx(options, 11, value, "supported_bw_c::fr1_e_");
+  static const uint8_t options[] = {5, 10, 15, 20, 25, 30, 40, 50, 60, 80, 100};
+  return map_enum_number(options, 11, value, "supported_bw_c::fr1_e_");
 }
 
 std::string supported_bw_c::fr2_opts::to_string() const
 {
-  static constexpr const char* options[] = {"mhz50", "mhz100", "mhz200", "mhz400"};
+  static const char* options[] = {"mhz50", "mhz100", "mhz200", "mhz400"};
   return convert_enum_idx(options, 4, value, "supported_bw_c::fr2_e_");
 }
 uint16_t supported_bw_c::fr2_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {50, 100, 200, 400};
-  return convert_enum_idx(options, 4, value, "supported_bw_c::fr2_e_");
+  static const uint16_t options[] = {50, 100, 200, 400};
+  return map_enum_number(options, 4, value, "supported_bw_c::fr2_e_");
 }
 
 std::string supported_bw_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"fr1", "fr2"};
+  static const char* options[] = {"fr1", "fr2"};
   return convert_enum_idx(options, 2, value, "supported_bw_c::types");
 }
 uint8_t supported_bw_c::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options, 2, value, "supported_bw_c::types");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options, 2, value, "supported_bw_c::types");
 }
 
 // FeatureSetDownlinkPerCC ::= SEQUENCE
@@ -46910,7 +46904,7 @@ SRSASN_CODE feature_set_dl_per_cc_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE feature_set_dl_per_cc_s::unpack(bit_ref& bref)
+SRSASN_CODE feature_set_dl_per_cc_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ch_bw_minus90mhz_present, 1));
   HANDLE_CODE(bref.unpack(max_num_mimo_layers_pdsch_present, 1));
@@ -46955,7 +46949,7 @@ SRSASN_CODE dummy_f_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dummy_f_s::unpack(bit_ref& bref)
+SRSASN_CODE dummy_f_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(max_num_periodic_csi_report_per_bwp, bref, (uint8_t)1u, (uint8_t)4u));
   HANDLE_CODE(unpack_integer(max_num_aperiodic_csi_report_per_bwp, bref, (uint8_t)1u, (uint8_t)4u));
@@ -46983,7 +46977,7 @@ SRSASN_CODE dummy_i_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE dummy_i_s::unpack(bit_ref& bref)
+SRSASN_CODE dummy_i_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(tx_switch_impact_to_rx_present, 1));
 
@@ -47003,7 +46997,7 @@ void dummy_i_s::to_json(json_writer& j) const
 
 std::string dummy_i_s::supported_srs_tx_port_switch_opts::to_string() const
 {
-  static constexpr const char* options[] = {"t1r2", "t1r4", "t2r4", "t1r4-t2r4", "tr-equal"};
+  static const char* options[] = {"t1r2", "t1r4", "t2r4", "t1r4-t2r4", "tr-equal"};
   return convert_enum_idx(options, 5, value, "dummy_i_s::supported_srs_tx_port_switch_e_");
 }
 
@@ -47059,7 +47053,7 @@ SRSASN_CODE feature_set_ul_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE feature_set_ul_s::unpack(bit_ref& bref)
+SRSASN_CODE feature_set_ul_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(scaling_factor_present, 1));
   HANDLE_CODE(bref.unpack(cross_carrier_sched_other_scs_present, 1));
@@ -47114,8 +47108,8 @@ void feature_set_ul_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("featureSetListPerUplinkCC");
-  for (uint32_t i1 = 0; i1 < feature_set_list_per_ul_cc.size(); ++i1) {
-    j.write_int(feature_set_list_per_ul_cc[i1]);
+  for (const auto& e1 : feature_set_list_per_ul_cc) {
+    j.write_int(e1);
   }
   j.end_array();
   if (scaling_factor_present) {
@@ -47173,59 +47167,59 @@ void feature_set_ul_s::to_json(json_writer& j) const
 
 std::string feature_set_ul_s::scaling_factor_opts::to_string() const
 {
-  static constexpr const char* options[] = {"f0p4", "f0p75", "f0p8"};
+  static const char* options[] = {"f0p4", "f0p75", "f0p8"};
   return convert_enum_idx(options, 3, value, "feature_set_ul_s::scaling_factor_e_");
 }
 
 std::string feature_set_ul_s::pusch_processing_type1_different_tb_per_slot_s_::scs_minus15k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"upto2", "upto4", "upto7"};
+  static const char* options[] = {"upto2", "upto4", "upto7"};
   return convert_enum_idx(
       options, 3, value, "feature_set_ul_s::pusch_processing_type1_different_tb_per_slot_s_::scs_minus15k_hz_e_");
 }
 uint8_t feature_set_ul_s::pusch_processing_type1_different_tb_per_slot_s_::scs_minus15k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 7};
-  return convert_enum_idx(
+  static const uint8_t options[] = {2, 4, 7};
+  return map_enum_number(
       options, 3, value, "feature_set_ul_s::pusch_processing_type1_different_tb_per_slot_s_::scs_minus15k_hz_e_");
 }
 
 std::string feature_set_ul_s::pusch_processing_type1_different_tb_per_slot_s_::scs_minus30k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"upto2", "upto4", "upto7"};
+  static const char* options[] = {"upto2", "upto4", "upto7"};
   return convert_enum_idx(
       options, 3, value, "feature_set_ul_s::pusch_processing_type1_different_tb_per_slot_s_::scs_minus30k_hz_e_");
 }
 uint8_t feature_set_ul_s::pusch_processing_type1_different_tb_per_slot_s_::scs_minus30k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 7};
-  return convert_enum_idx(
+  static const uint8_t options[] = {2, 4, 7};
+  return map_enum_number(
       options, 3, value, "feature_set_ul_s::pusch_processing_type1_different_tb_per_slot_s_::scs_minus30k_hz_e_");
 }
 
 std::string feature_set_ul_s::pusch_processing_type1_different_tb_per_slot_s_::scs_minus60k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"upto2", "upto4", "upto7"};
+  static const char* options[] = {"upto2", "upto4", "upto7"};
   return convert_enum_idx(
       options, 3, value, "feature_set_ul_s::pusch_processing_type1_different_tb_per_slot_s_::scs_minus60k_hz_e_");
 }
 uint8_t feature_set_ul_s::pusch_processing_type1_different_tb_per_slot_s_::scs_minus60k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 7};
-  return convert_enum_idx(
+  static const uint8_t options[] = {2, 4, 7};
+  return map_enum_number(
       options, 3, value, "feature_set_ul_s::pusch_processing_type1_different_tb_per_slot_s_::scs_minus60k_hz_e_");
 }
 
 std::string feature_set_ul_s::pusch_processing_type1_different_tb_per_slot_s_::scs_minus120k_hz_opts::to_string() const
 {
-  static constexpr const char* options[] = {"upto2", "upto4", "upto7"};
+  static const char* options[] = {"upto2", "upto4", "upto7"};
   return convert_enum_idx(
       options, 3, value, "feature_set_ul_s::pusch_processing_type1_different_tb_per_slot_s_::scs_minus120k_hz_e_");
 }
 uint8_t feature_set_ul_s::pusch_processing_type1_different_tb_per_slot_s_::scs_minus120k_hz_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 7};
-  return convert_enum_idx(
+  static const uint8_t options[] = {2, 4, 7};
+  return map_enum_number(
       options, 3, value, "feature_set_ul_s::pusch_processing_type1_different_tb_per_slot_s_::scs_minus120k_hz_e_");
 }
 
@@ -47255,7 +47249,7 @@ SRSASN_CODE feature_set_ul_v1540_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE feature_set_ul_v1540_s::unpack(bit_ref& bref)
+SRSASN_CODE feature_set_ul_v1540_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(zero_slot_offset_aperiodic_srs_present, 1));
   HANDLE_CODE(bref.unpack(pa_phase_discontinuity_impacts_present, 1));
@@ -47341,7 +47335,7 @@ SRSASN_CODE feature_set_ul_per_cc_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE feature_set_ul_per_cc_s::unpack(bit_ref& bref)
+SRSASN_CODE feature_set_ul_per_cc_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ch_bw_minus90mhz_present, 1));
   HANDLE_CODE(bref.unpack(mimo_cb_pusch_present, 1));
@@ -47405,7 +47399,7 @@ SRSASN_CODE feature_set_ul_per_cc_v1540_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE feature_set_ul_per_cc_v1540_s::unpack(bit_ref& bref)
+SRSASN_CODE feature_set_ul_per_cc_v1540_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(mimo_non_cb_pusch_present, 1));
 
@@ -47477,7 +47471,7 @@ SRSASN_CODE feature_sets_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE feature_sets_s::unpack(bit_ref& bref)
+SRSASN_CODE feature_sets_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(feature_sets_dl_present, 1));
@@ -47532,51 +47526,51 @@ void feature_sets_s::to_json(json_writer& j) const
   j.start_obj();
   if (feature_sets_dl_present) {
     j.start_array("featureSetsDownlink");
-    for (uint32_t i1 = 0; i1 < feature_sets_dl.size(); ++i1) {
-      feature_sets_dl[i1].to_json(j);
+    for (const auto& e1 : feature_sets_dl) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (feature_sets_dl_per_cc_present) {
     j.start_array("featureSetsDownlinkPerCC");
-    for (uint32_t i1 = 0; i1 < feature_sets_dl_per_cc.size(); ++i1) {
-      feature_sets_dl_per_cc[i1].to_json(j);
+    for (const auto& e1 : feature_sets_dl_per_cc) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (feature_sets_ul_present) {
     j.start_array("featureSetsUplink");
-    for (uint32_t i1 = 0; i1 < feature_sets_ul.size(); ++i1) {
-      feature_sets_ul[i1].to_json(j);
+    for (const auto& e1 : feature_sets_ul) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (feature_sets_ul_per_cc_present) {
     j.start_array("featureSetsUplinkPerCC");
-    for (uint32_t i1 = 0; i1 < feature_sets_ul_per_cc.size(); ++i1) {
-      feature_sets_ul_per_cc[i1].to_json(j);
+    for (const auto& e1 : feature_sets_ul_per_cc) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (ext) {
     if (feature_sets_dl_v1540.is_present()) {
       j.start_array("featureSetsDownlink-v1540");
-      for (uint32_t i1 = 0; i1 < feature_sets_dl_v1540->size(); ++i1) {
-        ((*feature_sets_dl_v1540)[i1]).to_json(j);
+      for (const auto& e1 : *feature_sets_dl_v1540) {
+        e1.to_json(j);
       }
       j.end_array();
     }
     if (feature_sets_ul_v1540.is_present()) {
       j.start_array("featureSetsUplink-v1540");
-      for (uint32_t i1 = 0; i1 < feature_sets_ul_v1540->size(); ++i1) {
-        ((*feature_sets_ul_v1540)[i1]).to_json(j);
+      for (const auto& e1 : *feature_sets_ul_v1540) {
+        e1.to_json(j);
       }
       j.end_array();
     }
     if (feature_sets_ul_per_cc_v1540.is_present()) {
       j.start_array("featureSetsUplinkPerCC-v1540");
-      for (uint32_t i1 = 0; i1 < feature_sets_ul_per_cc_v1540->size(); ++i1) {
-        ((*feature_sets_ul_per_cc_v1540)[i1]).to_json(j);
+      for (const auto& e1 : *feature_sets_ul_per_cc_v1540) {
+        e1.to_json(j);
       }
       j.end_array();
     }
@@ -47587,28 +47581,28 @@ void feature_sets_s::to_json(json_writer& j) const
 // AggregatedBandwidth ::= ENUMERATED
 std::string aggregated_bw_opts::to_string() const
 {
-  static constexpr const char* options[] = {"mhz50",
-                                            "mhz100",
-                                            "mhz150",
-                                            "mhz200",
-                                            "mhz250",
-                                            "mhz300",
-                                            "mhz350",
-                                            "mhz400",
-                                            "mhz450",
-                                            "mhz500",
-                                            "mhz550",
-                                            "mhz600",
-                                            "mhz650",
-                                            "mhz700",
-                                            "mhz750",
-                                            "mhz800"};
+  static const char* options[] = {"mhz50",
+                                  "mhz100",
+                                  "mhz150",
+                                  "mhz200",
+                                  "mhz250",
+                                  "mhz300",
+                                  "mhz350",
+                                  "mhz400",
+                                  "mhz450",
+                                  "mhz500",
+                                  "mhz550",
+                                  "mhz600",
+                                  "mhz650",
+                                  "mhz700",
+                                  "mhz750",
+                                  "mhz800"};
   return convert_enum_idx(options, 16, value, "aggregated_bw_e");
 }
 uint16_t aggregated_bw_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800};
-  return convert_enum_idx(options, 16, value, "aggregated_bw_e");
+  static const uint16_t options[] = {50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800};
+  return map_enum_number(options, 16, value, "aggregated_bw_e");
 }
 
 // FreqBandInformationEUTRA ::= SEQUENCE
@@ -47627,7 +47621,7 @@ SRSASN_CODE freq_band_info_eutra_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE freq_band_info_eutra_s::unpack(bit_ref& bref)
+SRSASN_CODE freq_band_info_eutra_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ca_bw_class_dl_eutra_present, 1));
   HANDLE_CODE(bref.unpack(ca_bw_class_ul_eutra_present, 1));
@@ -47679,7 +47673,7 @@ SRSASN_CODE freq_band_info_nr_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE freq_band_info_nr_s::unpack(bit_ref& bref)
+SRSASN_CODE freq_band_info_nr_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(max_bw_requested_dl_present, 1));
   HANDLE_CODE(bref.unpack(max_bw_requested_ul_present, 1));
@@ -47822,7 +47816,7 @@ SRSASN_CODE freq_band_info_c::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE freq_band_info_c::unpack(bit_ref& bref)
+SRSASN_CODE freq_band_info_c::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -47843,7 +47837,7 @@ SRSASN_CODE freq_band_info_c::unpack(bit_ref& bref)
 
 std::string freq_band_info_c::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"bandInformationEUTRA", "bandInformationNR"};
+  static const char* options[] = {"bandInformationEUTRA", "bandInformationNR"};
   return convert_enum_idx(options, 2, value, "freq_band_info_c::types");
 }
 
@@ -47855,7 +47849,7 @@ SRSASN_CODE ims_params_common_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ims_params_common_s::unpack(bit_ref& bref)
+SRSASN_CODE ims_params_common_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(voice_over_eutra_minus5_gc_present, 1));
@@ -47879,7 +47873,7 @@ SRSASN_CODE ims_params_frx_diff_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ims_params_frx_diff_s::unpack(bit_ref& bref)
+SRSASN_CODE ims_params_frx_diff_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(voice_over_nr_present, 1));
@@ -47911,7 +47905,7 @@ SRSASN_CODE ims_params_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ims_params_s::unpack(bit_ref& bref)
+SRSASN_CODE ims_params_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(ims_params_common_present, 1));
@@ -47952,7 +47946,7 @@ SRSASN_CODE inter_rat_params_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE inter_rat_params_s::unpack(bit_ref& bref)
+SRSASN_CODE inter_rat_params_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(eutra_present, 1));
@@ -47996,7 +47990,7 @@ SRSASN_CODE mac_params_common_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE mac_params_common_s::unpack(bit_ref& bref)
+SRSASN_CODE mac_params_common_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(lcp_restrict_present, 1));
@@ -48052,7 +48046,7 @@ SRSASN_CODE mac_params_xdd_diff_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE mac_params_xdd_diff_s::unpack(bit_ref& bref)
+SRSASN_CODE mac_params_xdd_diff_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(skip_ul_tx_dynamic_present, 1));
@@ -48103,7 +48097,7 @@ SRSASN_CODE mac_params_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE mac_params_s::unpack(bit_ref& bref)
+SRSASN_CODE mac_params_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(mac_params_common_present, 1));
   HANDLE_CODE(bref.unpack(mac_params_xdd_diff_present, 1));
@@ -48183,7 +48177,7 @@ SRSASN_CODE meas_and_mob_params_common_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_and_mob_params_common_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_and_mob_params_common_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(supported_gap_pattern_present, 1));
@@ -48271,13 +48265,13 @@ void meas_and_mob_params_common_s::to_json(json_writer& j) const
 
 std::string meas_and_mob_params_common_s::max_num_csi_rs_rrm_rs_sinr_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n4", "n8", "n16", "n32", "n64", "n96"};
+  static const char* options[] = {"n4", "n8", "n16", "n32", "n64", "n96"};
   return convert_enum_idx(options, 6, value, "meas_and_mob_params_common_s::max_num_csi_rs_rrm_rs_sinr_e_");
 }
 uint8_t meas_and_mob_params_common_s::max_num_csi_rs_rrm_rs_sinr_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {4, 8, 16, 32, 64, 96};
-  return convert_enum_idx(options, 6, value, "meas_and_mob_params_common_s::max_num_csi_rs_rrm_rs_sinr_e_");
+  static const uint8_t options[] = {4, 8, 16, 32, 64, 96};
+  return map_enum_number(options, 6, value, "meas_and_mob_params_common_s::max_num_csi_rs_rrm_rs_sinr_e_");
 }
 
 // MeasAndMobParametersFRX-Diff ::= SEQUENCE
@@ -48322,7 +48316,7 @@ SRSASN_CODE meas_and_mob_params_frx_diff_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_and_mob_params_frx_diff_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_and_mob_params_frx_diff_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(ss_sinr_meas_present, 1));
@@ -48398,13 +48392,13 @@ void meas_and_mob_params_frx_diff_s::to_json(json_writer& j) const
 
 std::string meas_and_mob_params_frx_diff_s::max_num_res_csi_rs_rlm_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n2", "n4", "n6", "n8"};
+  static const char* options[] = {"n2", "n4", "n6", "n8"};
   return convert_enum_idx(options, 4, value, "meas_and_mob_params_frx_diff_s::max_num_res_csi_rs_rlm_e_");
 }
 uint8_t meas_and_mob_params_frx_diff_s::max_num_res_csi_rs_rlm_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {2, 4, 6, 8};
-  return convert_enum_idx(options, 4, value, "meas_and_mob_params_frx_diff_s::max_num_res_csi_rs_rlm_e_");
+  static const uint8_t options[] = {2, 4, 6, 8};
+  return map_enum_number(options, 4, value, "meas_and_mob_params_frx_diff_s::max_num_res_csi_rs_rlm_e_");
 }
 
 // MeasAndMobParametersXDD-Diff ::= SEQUENCE
@@ -48431,7 +48425,7 @@ SRSASN_CODE meas_and_mob_params_xdd_diff_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_and_mob_params_xdd_diff_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_and_mob_params_xdd_diff_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(intra_and_inter_f_meas_and_report_present, 1));
@@ -48493,7 +48487,7 @@ SRSASN_CODE meas_and_mob_params_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_and_mob_params_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_and_mob_params_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(meas_and_mob_params_common_present, 1));
   HANDLE_CODE(bref.unpack(meas_and_mob_params_xdd_diff_present, 1));
@@ -48536,7 +48530,7 @@ SRSASN_CODE meas_and_mob_params_mrdc_common_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_and_mob_params_mrdc_common_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_and_mob_params_mrdc_common_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(independent_gap_cfg_present, 1));
 
@@ -48558,7 +48552,7 @@ SRSASN_CODE meas_and_mob_params_mrdc_frx_diff_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_and_mob_params_mrdc_frx_diff_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_and_mob_params_mrdc_frx_diff_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(simul_rx_data_ssb_diff_numerology_present, 1));
 
@@ -48581,7 +48575,7 @@ SRSASN_CODE meas_and_mob_params_mrdc_xdd_diff_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_and_mob_params_mrdc_xdd_diff_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_and_mob_params_mrdc_xdd_diff_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(sftd_meas_ps_cell_present, 1));
   HANDLE_CODE(bref.unpack(sftd_meas_nr_cell_present, 1));
@@ -48619,7 +48613,7 @@ SRSASN_CODE meas_and_mob_params_mrdc_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_and_mob_params_mrdc_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_and_mob_params_mrdc_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(meas_and_mob_params_mrdc_common_present, 1));
   HANDLE_CODE(bref.unpack(meas_and_mob_params_mrdc_xdd_diff_present, 1));
@@ -48679,7 +48673,7 @@ SRSASN_CODE meas_result2_nr_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_result2_nr_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_result2_nr_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(ssb_freq_present, 1));
@@ -48717,8 +48711,8 @@ void meas_result2_nr_s::to_json(json_writer& j) const
   }
   if (meas_result_neigh_cell_list_nr_present) {
     j.start_array("measResultNeighCellListNR");
-    for (uint32_t i1 = 0; i1 < meas_result_neigh_cell_list_nr.size(); ++i1) {
-      meas_result_neigh_cell_list_nr[i1].to_json(j);
+    for (const auto& e1 : meas_result_neigh_cell_list_nr) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -48739,7 +48733,7 @@ SRSASN_CODE meas_result_cell_sftd_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_result_cell_sftd_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_result_cell_sftd_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(rsrp_result_present, 1));
 
@@ -48772,7 +48766,7 @@ SRSASN_CODE meas_result_scg_fail_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_result_scg_fail_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_result_scg_fail_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_dyn_seq_of(meas_result_per_mo_list, bref, 1, 8));
@@ -48783,8 +48777,8 @@ void meas_result_scg_fail_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("measResultPerMOList");
-  for (uint32_t i1 = 0; i1 < meas_result_per_mo_list.size(); ++i1) {
-    meas_result_per_mo_list[i1].to_json(j);
+  for (const auto& e1 : meas_result_per_mo_list) {
+    e1.to_json(j);
   }
   j.end_array();
   j.end_obj();
@@ -48856,7 +48850,7 @@ SRSASN_CODE phy_params_common_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE phy_params_common_s::unpack(bit_ref& bref)
+SRSASN_CODE phy_params_common_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(csi_rs_cfra_for_ho_present, 1));
@@ -49041,13 +49035,13 @@ void phy_params_common_s::to_json(json_writer& j) const
 
 std::string phy_params_common_s::bwp_switching_delay_opts::to_string() const
 {
-  static constexpr const char* options[] = {"type1", "type2"};
+  static const char* options[] = {"type1", "type2"};
   return convert_enum_idx(options, 2, value, "phy_params_common_s::bwp_switching_delay_e_");
 }
 uint8_t phy_params_common_s::bwp_switching_delay_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options, 2, value, "phy_params_common_s::bwp_switching_delay_e_");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options, 2, value, "phy_params_common_s::bwp_switching_delay_e_");
 }
 
 // Phy-ParametersFR1 ::= SEQUENCE
@@ -49079,7 +49073,7 @@ SRSASN_CODE phy_params_fr1_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE phy_params_fr1_s::unpack(bit_ref& bref)
+SRSASN_CODE phy_params_fr1_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(pdcch_monitoring_single_occasion_present, 1));
@@ -49131,39 +49125,39 @@ void phy_params_fr1_s::to_json(json_writer& j) const
 
 std::string phy_params_fr1_s::pdsch_re_map_fr1_per_symbol_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n10", "n20"};
+  static const char* options[] = {"n10", "n20"};
   return convert_enum_idx(options, 2, value, "phy_params_fr1_s::pdsch_re_map_fr1_per_symbol_e_");
 }
 uint8_t phy_params_fr1_s::pdsch_re_map_fr1_per_symbol_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {10, 20};
-  return convert_enum_idx(options, 2, value, "phy_params_fr1_s::pdsch_re_map_fr1_per_symbol_e_");
+  static const uint8_t options[] = {10, 20};
+  return map_enum_number(options, 2, value, "phy_params_fr1_s::pdsch_re_map_fr1_per_symbol_e_");
 }
 
 std::string phy_params_fr1_s::pdsch_re_map_fr1_per_slot_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n16",
-                                            "n32",
-                                            "n48",
-                                            "n64",
-                                            "n80",
-                                            "n96",
-                                            "n112",
-                                            "n128",
-                                            "n144",
-                                            "n160",
-                                            "n176",
-                                            "n192",
-                                            "n208",
-                                            "n224",
-                                            "n240",
-                                            "n256"};
+  static const char* options[] = {"n16",
+                                  "n32",
+                                  "n48",
+                                  "n64",
+                                  "n80",
+                                  "n96",
+                                  "n112",
+                                  "n128",
+                                  "n144",
+                                  "n160",
+                                  "n176",
+                                  "n192",
+                                  "n208",
+                                  "n224",
+                                  "n240",
+                                  "n256"};
   return convert_enum_idx(options, 16, value, "phy_params_fr1_s::pdsch_re_map_fr1_per_slot_e_");
 }
 uint16_t phy_params_fr1_s::pdsch_re_map_fr1_per_slot_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 256};
-  return convert_enum_idx(options, 16, value, "phy_params_fr1_s::pdsch_re_map_fr1_per_slot_e_");
+  static const uint16_t options[] = {16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 256};
+  return map_enum_number(options, 16, value, "phy_params_fr1_s::pdsch_re_map_fr1_per_slot_e_");
 }
 
 // Phy-ParametersFR2 ::= SEQUENCE
@@ -49195,7 +49189,7 @@ SRSASN_CODE phy_params_fr2_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE phy_params_fr2_s::unpack(bit_ref& bref)
+SRSASN_CODE phy_params_fr2_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(dummy_present, 1));
@@ -49243,39 +49237,39 @@ void phy_params_fr2_s::to_json(json_writer& j) const
 
 std::string phy_params_fr2_s::pdsch_re_map_fr2_per_symbol_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n6", "n20"};
+  static const char* options[] = {"n6", "n20"};
   return convert_enum_idx(options, 2, value, "phy_params_fr2_s::pdsch_re_map_fr2_per_symbol_e_");
 }
 uint8_t phy_params_fr2_s::pdsch_re_map_fr2_per_symbol_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {6, 20};
-  return convert_enum_idx(options, 2, value, "phy_params_fr2_s::pdsch_re_map_fr2_per_symbol_e_");
+  static const uint8_t options[] = {6, 20};
+  return map_enum_number(options, 2, value, "phy_params_fr2_s::pdsch_re_map_fr2_per_symbol_e_");
 }
 
 std::string phy_params_fr2_s::pdsch_re_map_fr2_per_slot_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n16",
-                                            "n32",
-                                            "n48",
-                                            "n64",
-                                            "n80",
-                                            "n96",
-                                            "n112",
-                                            "n128",
-                                            "n144",
-                                            "n160",
-                                            "n176",
-                                            "n192",
-                                            "n208",
-                                            "n224",
-                                            "n240",
-                                            "n256"};
+  static const char* options[] = {"n16",
+                                  "n32",
+                                  "n48",
+                                  "n64",
+                                  "n80",
+                                  "n96",
+                                  "n112",
+                                  "n128",
+                                  "n144",
+                                  "n160",
+                                  "n176",
+                                  "n192",
+                                  "n208",
+                                  "n224",
+                                  "n240",
+                                  "n256"};
   return convert_enum_idx(options, 16, value, "phy_params_fr2_s::pdsch_re_map_fr2_per_slot_e_");
 }
 uint16_t phy_params_fr2_s::pdsch_re_map_fr2_per_slot_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 256};
-  return convert_enum_idx(options, 16, value, "phy_params_fr2_s::pdsch_re_map_fr2_per_slot_e_");
+  static const uint16_t options[] = {16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 256};
+  return map_enum_number(options, 16, value, "phy_params_fr2_s::pdsch_re_map_fr2_per_slot_e_");
 }
 
 // Phy-ParametersFRX-Diff ::= SEQUENCE
@@ -49399,7 +49393,7 @@ SRSASN_CODE phy_params_frx_diff_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE phy_params_frx_diff_s::unpack(bit_ref& bref)
+SRSASN_CODE phy_params_frx_diff_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(dynamic_sfi_present, 1));
@@ -49689,13 +49683,13 @@ void phy_params_frx_diff_s::to_json(json_writer& j) const
 
 std::string phy_params_frx_diff_s::supported_dmrs_type_dl_opts::to_string() const
 {
-  static constexpr const char* options[] = {"type1", "type1And2"};
+  static const char* options[] = {"type1", "type1And2"};
   return convert_enum_idx(options, 2, value, "phy_params_frx_diff_s::supported_dmrs_type_dl_e_");
 }
 
 std::string phy_params_frx_diff_s::supported_dmrs_type_ul_opts::to_string() const
 {
-  static constexpr const char* options[] = {"type1", "type1And2"};
+  static const char* options[] = {"type1", "type1And2"};
   return convert_enum_idx(options, 2, value, "phy_params_frx_diff_s::supported_dmrs_type_ul_e_");
 }
 
@@ -49725,7 +49719,7 @@ SRSASN_CODE phy_params_xdd_diff_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE phy_params_xdd_diff_s::unpack(bit_ref& bref)
+SRSASN_CODE phy_params_xdd_diff_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(dynamic_sfi_present, 1));
@@ -49803,7 +49797,7 @@ SRSASN_CODE phy_params_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE phy_params_s::unpack(bit_ref& bref)
+SRSASN_CODE phy_params_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(phy_params_common_present, 1));
   HANDLE_CODE(bref.unpack(phy_params_xdd_diff_present, 1));
@@ -49864,7 +49858,7 @@ SRSASN_CODE naics_cap_entry_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE naics_cap_entry_s::unpack(bit_ref& bref)
+SRSASN_CODE naics_cap_entry_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_integer(nof_naics_capable_cc, bref, (uint8_t)1u, (uint8_t)5u));
@@ -49882,28 +49876,28 @@ void naics_cap_entry_s::to_json(json_writer& j) const
 
 std::string naics_cap_entry_s::nof_aggregated_prb_opts::to_string() const
 {
-  static constexpr const char* options[] = {"n50",
-                                            "n75",
-                                            "n100",
-                                            "n125",
-                                            "n150",
-                                            "n175",
-                                            "n200",
-                                            "n225",
-                                            "n250",
-                                            "n275",
-                                            "n300",
-                                            "n350",
-                                            "n400",
-                                            "n450",
-                                            "n500",
-                                            "spare"};
+  static const char* options[] = {"n50",
+                                  "n75",
+                                  "n100",
+                                  "n125",
+                                  "n150",
+                                  "n175",
+                                  "n200",
+                                  "n225",
+                                  "n250",
+                                  "n275",
+                                  "n300",
+                                  "n350",
+                                  "n400",
+                                  "n450",
+                                  "n500",
+                                  "spare"};
   return convert_enum_idx(options, 16, value, "naics_cap_entry_s::nof_aggregated_prb_e_");
 }
 uint16_t naics_cap_entry_s::nof_aggregated_prb_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {50, 75, 100, 125, 150, 175, 200, 225, 250, 275, 300, 350, 400, 450, 500};
-  return convert_enum_idx(options, 15, value, "naics_cap_entry_s::nof_aggregated_prb_e_");
+  static const uint16_t options[] = {50, 75, 100, 125, 150, 175, 200, 225, 250, 275, 300, 350, 400, 450, 500};
+  return map_enum_number(options, 15, value, "naics_cap_entry_s::nof_aggregated_prb_e_");
 }
 
 // Phy-ParametersMRDC ::= SEQUENCE
@@ -49918,7 +49912,7 @@ SRSASN_CODE phy_params_mrdc_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE phy_params_mrdc_s::unpack(bit_ref& bref)
+SRSASN_CODE phy_params_mrdc_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(naics_cap_list_present, 1));
@@ -49934,8 +49928,8 @@ void phy_params_mrdc_s::to_json(json_writer& j) const
   j.start_obj();
   if (naics_cap_list_present) {
     j.start_array("naics-Capability-List");
-    for (uint32_t i1 = 0; i1 < naics_cap_list.size(); ++i1) {
-      naics_cap_list[i1].to_json(j);
+    for (const auto& e1 : naics_cap_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -49984,7 +49978,7 @@ SRSASN_CODE rf_params_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rf_params_s::unpack(bit_ref& bref)
+SRSASN_CODE rf_params_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(supported_band_combination_list_present, 1));
@@ -50030,29 +50024,29 @@ void rf_params_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("supportedBandListNR");
-  for (uint32_t i1 = 0; i1 < supported_band_list_nr.size(); ++i1) {
-    supported_band_list_nr[i1].to_json(j);
+  for (const auto& e1 : supported_band_list_nr) {
+    e1.to_json(j);
   }
   j.end_array();
   if (supported_band_combination_list_present) {
     j.start_array("supportedBandCombinationList");
-    for (uint32_t i1 = 0; i1 < supported_band_combination_list.size(); ++i1) {
-      supported_band_combination_list[i1].to_json(j);
+    for (const auto& e1 : supported_band_combination_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (applied_freq_band_list_filt_present) {
     j.start_array("appliedFreqBandListFilter");
-    for (uint32_t i1 = 0; i1 < applied_freq_band_list_filt.size(); ++i1) {
-      applied_freq_band_list_filt[i1].to_json(j);
+    for (const auto& e1 : applied_freq_band_list_filt) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (ext) {
     if (supported_band_combination_list_v1540.is_present()) {
       j.start_array("supportedBandCombinationList-v1540");
-      for (uint32_t i1 = 0; i1 < supported_band_combination_list_v1540->size(); ++i1) {
-        ((*supported_band_combination_list_v1540)[i1]).to_json(j);
+      for (const auto& e1 : *supported_band_combination_list_v1540) {
+        e1.to_json(j);
       }
       j.end_array();
     }
@@ -50061,8 +50055,8 @@ void rf_params_s::to_json(json_writer& j) const
     }
     if (supported_band_combination_list_v1550.is_present()) {
       j.start_array("supportedBandCombinationList-v1550");
-      for (uint32_t i1 = 0; i1 < supported_band_combination_list_v1550->size(); ++i1) {
-        ((*supported_band_combination_list_v1550)[i1]).to_json(j);
+      for (const auto& e1 : *supported_band_combination_list_v1550) {
+        e1.to_json(j);
       }
       j.end_array();
     }
@@ -50111,7 +50105,7 @@ SRSASN_CODE rf_params_mrdc_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rf_params_mrdc_s::unpack(bit_ref& bref)
+SRSASN_CODE rf_params_mrdc_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(supported_band_combination_list_present, 1));
@@ -50157,15 +50151,15 @@ void rf_params_mrdc_s::to_json(json_writer& j) const
   j.start_obj();
   if (supported_band_combination_list_present) {
     j.start_array("supportedBandCombinationList");
-    for (uint32_t i1 = 0; i1 < supported_band_combination_list.size(); ++i1) {
-      supported_band_combination_list[i1].to_json(j);
+    for (const auto& e1 : supported_band_combination_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (applied_freq_band_list_filt_present) {
     j.start_array("appliedFreqBandListFilter");
-    for (uint32_t i1 = 0; i1 < applied_freq_band_list_filt.size(); ++i1) {
-      applied_freq_band_list_filt[i1].to_json(j);
+    for (const auto& e1 : applied_freq_band_list_filt) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -50175,15 +50169,15 @@ void rf_params_mrdc_s::to_json(json_writer& j) const
     }
     if (supported_band_combination_list_v1540.is_present()) {
       j.start_array("supportedBandCombinationList-v1540");
-      for (uint32_t i1 = 0; i1 < supported_band_combination_list_v1540->size(); ++i1) {
-        ((*supported_band_combination_list_v1540)[i1]).to_json(j);
+      for (const auto& e1 : *supported_band_combination_list_v1540) {
+        e1.to_json(j);
       }
       j.end_array();
     }
     if (supported_band_combination_list_v1550.is_present()) {
       j.start_array("supportedBandCombinationList-v1550");
-      for (uint32_t i1 = 0; i1 < supported_band_combination_list_v1550->size(); ++i1) {
-        ((*supported_band_combination_list_v1550)[i1]).to_json(j);
+      for (const auto& e1 : *supported_band_combination_list_v1550) {
+        e1.to_json(j);
       }
       j.end_array();
     }
@@ -50199,7 +50193,7 @@ SRSASN_CODE ue_cap_request_filt_nr_v1540_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_cap_request_filt_nr_v1540_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_cap_request_filt_nr_v1540_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(srs_switching_time_request_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -50235,7 +50229,7 @@ SRSASN_CODE ue_cap_request_filt_nr_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_cap_request_filt_nr_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_cap_request_filt_nr_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(freq_band_list_filt_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -50254,8 +50248,8 @@ void ue_cap_request_filt_nr_s::to_json(json_writer& j) const
   j.start_obj();
   if (freq_band_list_filt_present) {
     j.start_array("frequencyBandListFilter");
-    for (uint32_t i1 = 0; i1 < freq_band_list_filt.size(); ++i1) {
-      freq_band_list_filt[i1].to_json(j);
+    for (const auto& e1 : freq_band_list_filt) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -50277,7 +50271,7 @@ SRSASN_CODE general_params_mrdc_xdd_diff_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE general_params_mrdc_xdd_diff_s::unpack(bit_ref& bref)
+SRSASN_CODE general_params_mrdc_xdd_diff_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(split_srb_with_one_ul_path_present, 1));
@@ -50313,7 +50307,7 @@ SRSASN_CODE pdcp_params_mrdc_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pdcp_params_mrdc_s::unpack(bit_ref& bref)
+SRSASN_CODE pdcp_params_mrdc_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(pdcp_dupl_split_srb_present, 1));
   HANDLE_CODE(bref.unpack(pdcp_dupl_split_drb_present, 1));
@@ -50339,7 +50333,7 @@ SRSASN_CODE ue_mrdc_cap_add_frx_mode_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_mrdc_cap_add_frx_mode_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_mrdc_cap_add_frx_mode_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(meas_and_mob_params_mrdc_frx_diff.unpack(bref));
 
@@ -50368,7 +50362,7 @@ SRSASN_CODE ue_mrdc_cap_add_xdd_mode_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_mrdc_cap_add_xdd_mode_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_mrdc_cap_add_xdd_mode_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(meas_and_mob_params_mrdc_xdd_diff_present, 1));
   HANDLE_CODE(bref.unpack(general_params_mrdc_xdd_diff_present, 1));
@@ -50449,7 +50443,7 @@ SRSASN_CODE ue_mrdc_cap_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_mrdc_cap_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_mrdc_cap_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(meas_and_mob_params_mrdc_present, 1));
   HANDLE_CODE(bref.unpack(phy_params_mrdc_v1530_present, 1));
@@ -50536,12 +50530,12 @@ void ue_mrdc_cap_s::to_json(json_writer& j) const
   }
   if (feature_set_combinations_present) {
     j.start_array("featureSetCombinations");
-    for (uint32_t i1 = 0; i1 < feature_set_combinations.size(); ++i1) {
+    for (const auto& e1 : feature_set_combinations) {
       j.start_array();
-      for (uint32_t i2 = 0; i2 < feature_set_combinations[i1].size(); ++i2) {
+      for (const auto& e2 : e1) {
         j.start_array();
-        for (uint32_t i3 = 0; i3 < feature_set_combinations[i1][i2].size(); ++i3) {
-          feature_set_combinations[i1][i2][i3].to_json(j);
+        for (const auto& e3 : e2) {
+          e3.to_json(j);
         }
         j.end_array();
       }
@@ -50568,21 +50562,21 @@ void ue_mrdc_cap_s::to_json(json_writer& j) const
 SRSASN_CODE sdap_params_s::pack(bit_ref& bref) const
 {
   bref.pack(ext, 1);
-  HANDLE_CODE(bref.pack(as_reflective_qo_s_present, 1));
+  HANDLE_CODE(bref.pack(as_reflective_qos_present, 1));
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE sdap_params_s::unpack(bit_ref& bref)
+SRSASN_CODE sdap_params_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
-  HANDLE_CODE(bref.unpack(as_reflective_qo_s_present, 1));
+  HANDLE_CODE(bref.unpack(as_reflective_qos_present, 1));
 
   return SRSASN_SUCCESS;
 }
 void sdap_params_s::to_json(json_writer& j) const
 {
   j.start_obj();
-  if (as_reflective_qo_s_present) {
+  if (as_reflective_qos_present) {
     j.write_str("as-ReflectiveQoS", "true");
   }
   j.end_obj();
@@ -50596,7 +50590,7 @@ SRSASN_CODE ue_nr_cap_v1550_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_nr_cap_v1550_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_nr_cap_v1550_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(reduced_cp_latency_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -50632,7 +50626,7 @@ SRSASN_CODE ue_nr_cap_add_frx_mode_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_nr_cap_add_frx_mode_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_nr_cap_add_frx_mode_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(phy_params_frx_diff_present, 1));
   HANDLE_CODE(bref.unpack(meas_and_mob_params_frx_diff_present, 1));
@@ -50671,7 +50665,7 @@ SRSASN_CODE ue_nr_cap_add_frx_mode_v1540_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_nr_cap_add_frx_mode_v1540_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_nr_cap_add_frx_mode_v1540_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ims_params_frx_diff_present, 1));
 
@@ -50723,7 +50717,7 @@ SRSASN_CODE ue_nr_cap_v1540_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_nr_cap_v1540_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_nr_cap_v1540_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(sdap_params_present, 1));
   HANDLE_CODE(bref.unpack(overheat_ind_present, 1));
@@ -50794,7 +50788,7 @@ SRSASN_CODE ue_nr_cap_add_xdd_mode_v1530_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_nr_cap_add_xdd_mode_v1530_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_nr_cap_add_xdd_mode_v1530_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(eutra_params_xdd_diff.unpack(bref));
 
@@ -50811,14 +50805,13 @@ void ue_nr_cap_add_xdd_mode_v1530_s::to_json(json_writer& j) const
 // AccessStratumRelease ::= ENUMERATED
 std::string access_stratum_release_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "rel15", "spare7", "spare6", "spare5", "spare4", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"rel15", "spare7", "spare6", "spare5", "spare4", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 8, value, "access_stratum_release_e");
 }
 uint8_t access_stratum_release_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {15};
-  return convert_enum_idx(options, 1, value, "access_stratum_release_e");
+  static const uint8_t options[] = {15};
+  return map_enum_number(options, 1, value, "access_stratum_release_e");
 }
 
 // PDCP-Parameters ::= SEQUENCE
@@ -50846,7 +50839,7 @@ SRSASN_CODE pdcp_params_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE pdcp_params_s::unpack(bit_ref& bref)
+SRSASN_CODE pdcp_params_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(ul_only_rohc_profiles_present, 1));
@@ -50910,28 +50903,28 @@ void pdcp_params_s::to_json(json_writer& j) const
 
 std::string pdcp_params_s::max_num_rohc_context_sessions_opts::to_string() const
 {
-  static constexpr const char* options[] = {"cs2",
-                                            "cs4",
-                                            "cs8",
-                                            "cs12",
-                                            "cs16",
-                                            "cs24",
-                                            "cs32",
-                                            "cs48",
-                                            "cs64",
-                                            "cs128",
-                                            "cs256",
-                                            "cs512",
-                                            "cs1024",
-                                            "cs16384",
-                                            "spare2",
-                                            "spare1"};
+  static const char* options[] = {"cs2",
+                                  "cs4",
+                                  "cs8",
+                                  "cs12",
+                                  "cs16",
+                                  "cs24",
+                                  "cs32",
+                                  "cs48",
+                                  "cs64",
+                                  "cs128",
+                                  "cs256",
+                                  "cs512",
+                                  "cs1024",
+                                  "cs16384",
+                                  "spare2",
+                                  "spare1"};
   return convert_enum_idx(options, 16, value, "pdcp_params_s::max_num_rohc_context_sessions_e_");
 }
 uint16_t pdcp_params_s::max_num_rohc_context_sessions_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {2, 4, 8, 12, 16, 24, 32, 48, 64, 128, 256, 512, 1024, 16384};
-  return convert_enum_idx(options, 14, value, "pdcp_params_s::max_num_rohc_context_sessions_e_");
+  static const uint16_t options[] = {2, 4, 8, 12, 16, 24, 32, 48, 64, 128, 256, 512, 1024, 16384};
+  return map_enum_number(options, 14, value, "pdcp_params_s::max_num_rohc_context_sessions_e_");
 }
 
 // RLC-Parameters ::= SEQUENCE
@@ -50944,7 +50937,7 @@ SRSASN_CODE rlc_params_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rlc_params_s::unpack(bit_ref& bref)
+SRSASN_CODE rlc_params_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(am_with_short_sn_present, 1));
@@ -50994,7 +50987,7 @@ SRSASN_CODE ue_nr_cap_v1530_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_nr_cap_v1530_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_nr_cap_v1530_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(fdd_add_ue_nr_cap_v1530_present, 1));
   HANDLE_CODE(bref.unpack(tdd_add_ue_nr_cap_v1530_present, 1));
@@ -51069,7 +51062,7 @@ SRSASN_CODE ue_nr_cap_add_xdd_mode_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_nr_cap_add_xdd_mode_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_nr_cap_add_xdd_mode_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(phy_params_xdd_diff_present, 1));
   HANDLE_CODE(bref.unpack(mac_params_xdd_diff_present, 1));
@@ -51164,7 +51157,7 @@ SRSASN_CODE ue_nr_cap_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_nr_cap_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_nr_cap_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(rlc_params_present, 1));
   HANDLE_CODE(bref.unpack(mac_params_present, 1));
@@ -51266,12 +51259,12 @@ void ue_nr_cap_s::to_json(json_writer& j) const
   }
   if (feature_set_combinations_present) {
     j.start_array("featureSetCombinations");
-    for (uint32_t i1 = 0; i1 < feature_set_combinations.size(); ++i1) {
+    for (const auto& e1 : feature_set_combinations) {
       j.start_array();
-      for (uint32_t i2 = 0; i2 < feature_set_combinations[i1].size(); ++i2) {
+      for (const auto& e2 : e1) {
         j.start_array();
-        for (uint32_t i3 = 0; i3 < feature_set_combinations[i1][i2].size(); ++i3) {
-          feature_set_combinations[i1][i2][i3].to_json(j);
+        for (const auto& e3 : e2) {
+          e3.to_json(j);
         }
         j.end_array();
       }
@@ -51297,7 +51290,7 @@ SRSASN_CODE as_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE as_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE as_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(rrc_recfg.unpack(bref));
@@ -51319,7 +51312,7 @@ SRSASN_CODE band_combination_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE band_combination_info_s::unpack(bit_ref& bref)
+SRSASN_CODE band_combination_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(band_combination_idx, bref, (uint32_t)1u, (uint32_t)65536u));
   HANDLE_CODE(unpack_dyn_seq_of(allowed_feature_sets_list, bref, 1, 128, integer_packer<uint8_t>(1, 128)));
@@ -51331,8 +51324,8 @@ void band_combination_info_s::to_json(json_writer& j) const
   j.start_obj();
   j.write_int("bandCombinationIndex", band_combination_idx);
   j.start_array("allowedFeatureSetsList");
-  for (uint32_t i1 = 0; i1 < allowed_feature_sets_list.size(); ++i1) {
-    j.write_int(allowed_feature_sets_list[i1]);
+  for (const auto& e1 : allowed_feature_sets_list) {
+    j.write_int(e1);
   }
   j.end_array();
   j.end_obj();
@@ -51347,7 +51340,7 @@ SRSASN_CODE reestab_ncell_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE reestab_ncell_info_s::unpack(bit_ref& bref)
+SRSASN_CODE reestab_ncell_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(cell_id.unpack(bref));
   HANDLE_CODE(key_g_node_b_star.unpack(bref));
@@ -51404,7 +51397,7 @@ SRSASN_CODE cfg_restrict_info_scg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cfg_restrict_info_scg_s::unpack(bit_ref& bref)
+SRSASN_CODE cfg_restrict_info_scg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(allowed_bc_list_mrdc_present, 1));
@@ -51448,8 +51441,8 @@ void cfg_restrict_info_scg_s::to_json(json_writer& j) const
   j.start_obj();
   if (allowed_bc_list_mrdc_present) {
     j.start_array("allowedBC-ListMRDC");
-    for (uint32_t i1 = 0; i1 < allowed_bc_list_mrdc.size(); ++i1) {
-      allowed_bc_list_mrdc[i1].to_json(j);
+    for (const auto& e1 : allowed_bc_list_mrdc) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -51496,7 +51489,7 @@ SRSASN_CODE reest_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE reest_info_s::unpack(bit_ref& bref)
+SRSASN_CODE reest_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(add_reestab_info_list_present, 1));
 
@@ -51515,8 +51508,8 @@ void reest_info_s::to_json(json_writer& j) const
   j.write_str("targetCellShortMAC-I", target_cell_short_mac_i.to_string());
   if (add_reestab_info_list_present) {
     j.start_array("additionalReestabInfoList");
-    for (uint32_t i1 = 0; i1 < add_reestab_info_list.size(); ++i1) {
-      add_reestab_info_list[i1].to_json(j);
+    for (const auto& e1 : add_reestab_info_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -51562,7 +51555,7 @@ SRSASN_CODE as_context_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE as_context_s::unpack(bit_ref& bref)
+SRSASN_CODE as_context_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(reest_info_present, 1));
@@ -51635,7 +51628,7 @@ SRSASN_CODE victim_sys_type_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE victim_sys_type_s::unpack(bit_ref& bref)
+SRSASN_CODE victim_sys_type_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(gps_present, 1));
   HANDLE_CODE(bref.unpack(glonass_present, 1));
@@ -51695,7 +51688,7 @@ SRSASN_CODE affected_carrier_freq_comb_info_mrdc_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE affected_carrier_freq_comb_info_mrdc_s::unpack(bit_ref& bref)
+SRSASN_CODE affected_carrier_freq_comb_info_mrdc_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(affected_carrier_freq_comb_mrdc_present, 1));
 
@@ -51730,14 +51723,14 @@ void affected_carrier_freq_comb_info_mrdc_s::to_json(json_writer& j) const
     j.start_obj();
     if (affected_carrier_freq_comb_mrdc.affected_carrier_freq_comb_eutra_present) {
       j.start_array("affectedCarrierFreqCombEUTRA");
-      for (uint32_t i1 = 0; i1 < affected_carrier_freq_comb_mrdc.affected_carrier_freq_comb_eutra.size(); ++i1) {
-        j.write_int(affected_carrier_freq_comb_mrdc.affected_carrier_freq_comb_eutra[i1]);
+      for (const auto& e1 : affected_carrier_freq_comb_mrdc.affected_carrier_freq_comb_eutra) {
+        j.write_int(e1);
       }
       j.end_array();
     }
     j.start_array("affectedCarrierFreqCombNR");
-    for (uint32_t i1 = 0; i1 < affected_carrier_freq_comb_mrdc.affected_carrier_freq_comb_nr.size(); ++i1) {
-      j.write_int(affected_carrier_freq_comb_mrdc.affected_carrier_freq_comb_nr[i1]);
+    for (const auto& e1 : affected_carrier_freq_comb_mrdc.affected_carrier_freq_comb_nr) {
+      j.write_int(e1);
     }
     j.end_array();
     j.end_obj();
@@ -51747,8 +51740,7 @@ void affected_carrier_freq_comb_info_mrdc_s::to_json(json_writer& j) const
 
 std::string affected_carrier_freq_comb_info_mrdc_s::interference_direction_mrdc_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "eutra-nr", "nr", "other", "utra-nr-other", "nr-other", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"eutra-nr", "nr", "other", "utra-nr-other", "nr-other", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 8, value, "affected_carrier_freq_comb_info_mrdc_s::interference_direction_mrdc_e_");
 }
 
@@ -51760,7 +51752,7 @@ SRSASN_CODE band_combination_info_sn_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE band_combination_info_sn_s::unpack(bit_ref& bref)
+SRSASN_CODE band_combination_info_sn_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(band_combination_idx, bref, (uint32_t)1u, (uint32_t)65536u));
   HANDLE_CODE(unpack_integer(requested_feature_sets, bref, (uint8_t)1u, (uint8_t)128u));
@@ -51783,7 +51775,7 @@ SRSASN_CODE ph_ul_carrier_scg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ph_ul_carrier_scg_s::unpack(bit_ref& bref)
+SRSASN_CODE ph_ul_carrier_scg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(ph_type1or3.unpack(bref));
@@ -51799,13 +51791,13 @@ void ph_ul_carrier_scg_s::to_json(json_writer& j) const
 
 std::string ph_ul_carrier_scg_s::ph_type1or3_opts::to_string() const
 {
-  static constexpr const char* options[] = {"type1", "type3"};
+  static const char* options[] = {"type1", "type3"};
   return convert_enum_idx(options, 2, value, "ph_ul_carrier_scg_s::ph_type1or3_e_");
 }
 uint8_t ph_ul_carrier_scg_s::ph_type1or3_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 3};
-  return convert_enum_idx(options, 2, value, "ph_ul_carrier_scg_s::ph_type1or3_e_");
+  static const uint8_t options[] = {1, 3};
+  return map_enum_number(options, 2, value, "ph_ul_carrier_scg_s::ph_type1or3_e_");
 }
 
 // PH-InfoSCG ::= SEQUENCE
@@ -51822,7 +51814,7 @@ SRSASN_CODE ph_info_scg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ph_info_scg_s::unpack(bit_ref& bref)
+SRSASN_CODE ph_info_scg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(ph_supplementary_ul_present, 1));
@@ -51856,7 +51848,7 @@ SRSASN_CODE fr_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE fr_info_s::unpack(bit_ref& bref)
+SRSASN_CODE fr_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(serv_cell_idx, bref, (uint8_t)0u, (uint8_t)31u));
   HANDLE_CODE(fr_type.unpack(bref));
@@ -51873,13 +51865,13 @@ void fr_info_s::to_json(json_writer& j) const
 
 std::string fr_info_s::fr_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"fr1", "fr2"};
+  static const char* options[] = {"fr1", "fr2"};
   return convert_enum_idx(options, 2, value, "fr_info_s::fr_type_e_");
 }
 uint8_t fr_info_s::fr_type_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 2};
-  return convert_enum_idx(options, 2, value, "fr_info_s::fr_type_e_");
+  static const uint8_t options[] = {1, 2};
+  return map_enum_number(options, 2, value, "fr_info_s::fr_type_e_");
 }
 
 // NR-FreqInfo ::= SEQUENCE
@@ -51894,7 +51886,7 @@ SRSASN_CODE nr_freq_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE nr_freq_info_s::unpack(bit_ref& bref)
+SRSASN_CODE nr_freq_info_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(measured_freq_present, 1));
@@ -51940,7 +51932,7 @@ SRSASN_CODE cg_cfg_v1540_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cg_cfg_v1540_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE cg_cfg_v1540_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(pscell_freq_present, 1));
   HANDLE_CODE(bref.unpack(report_cgi_request_present, 1));
@@ -51985,8 +51977,8 @@ void cg_cfg_v1540_ies_s::to_json(json_writer& j) const
   }
   if (ph_info_scg_present) {
     j.start_array("ph-InfoSCG");
-    for (uint32_t i1 = 0; i1 < ph_info_scg.size(); ++i1) {
-      ph_info_scg[i1].to_json(j);
+    for (const auto& e1 : ph_info_scg) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -52014,7 +52006,7 @@ SRSASN_CODE cfg_restrict_mod_req_scg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cfg_restrict_mod_req_scg_s::unpack(bit_ref& bref)
+SRSASN_CODE cfg_restrict_mod_req_scg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(requested_bc_mrdc_present, 1));
@@ -52055,7 +52047,7 @@ SRSASN_CODE drx_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE drx_info_s::unpack(bit_ref& bref)
+SRSASN_CODE drx_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(short_drx_present, 1));
 
@@ -52374,7 +52366,7 @@ SRSASN_CODE drx_info_s::drx_long_cycle_start_offset_c_::pack(bit_ref& bref) cons
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE drx_info_s::drx_long_cycle_start_offset_c_::unpack(bit_ref& bref)
+SRSASN_CODE drx_info_s::drx_long_cycle_start_offset_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -52449,31 +52441,31 @@ SRSASN_CODE drx_info_s::drx_long_cycle_start_offset_c_::unpack(bit_ref& bref)
 
 std::string drx_info_s::drx_long_cycle_start_offset_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ms10",   "ms20",   "ms32",   "ms40",   "ms60",   "ms64",   "ms70",
-                                            "ms80",   "ms128",  "ms160",  "ms256",  "ms320",  "ms512",  "ms640",
-                                            "ms1024", "ms1280", "ms2048", "ms2560", "ms5120", "ms10240"};
+  static const char* options[] = {"ms10",   "ms20",   "ms32",   "ms40",   "ms60",   "ms64",   "ms70",
+                                  "ms80",   "ms128",  "ms160",  "ms256",  "ms320",  "ms512",  "ms640",
+                                  "ms1024", "ms1280", "ms2048", "ms2560", "ms5120", "ms10240"};
   return convert_enum_idx(options, 20, value, "drx_info_s::drx_long_cycle_start_offset_c_::types");
 }
 uint16_t drx_info_s::drx_long_cycle_start_offset_c_::types_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {10,  20,  32,  40,  60,   64,   70,   80,   128,  160,
-                                         256, 320, 512, 640, 1024, 1280, 2048, 2560, 5120, 10240};
-  return convert_enum_idx(options, 20, value, "drx_info_s::drx_long_cycle_start_offset_c_::types");
+  static const uint16_t options[] = {10,  20,  32,  40,  60,   64,   70,   80,   128,  160,
+                                     256, 320, 512, 640, 1024, 1280, 2048, 2560, 5120, 10240};
+  return map_enum_number(options, 20, value, "drx_info_s::drx_long_cycle_start_offset_c_::types");
 }
 
 std::string drx_info_s::short_drx_s_::drx_short_cycle_opts::to_string() const
 {
-  static constexpr const char* options[] = {
-      "ms2",   "ms3",    "ms4",    "ms5",    "ms6",    "ms7",    "ms8",    "ms10",   "ms14",   "ms16",  "ms20",
-      "ms30",  "ms32",   "ms35",   "ms40",   "ms64",   "ms80",   "ms128",  "ms160",  "ms256",  "ms320", "ms512",
-      "ms640", "spare9", "spare8", "spare7", "spare6", "spare5", "spare4", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"ms2",    "ms3",    "ms4",    "ms5",    "ms6",    "ms7",    "ms8",    "ms10",
+                                  "ms14",   "ms16",   "ms20",   "ms30",   "ms32",   "ms35",   "ms40",   "ms64",
+                                  "ms80",   "ms128",  "ms160",  "ms256",  "ms320",  "ms512",  "ms640",  "spare9",
+                                  "spare8", "spare7", "spare6", "spare5", "spare4", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 32, value, "drx_info_s::short_drx_s_::drx_short_cycle_e_");
 }
 uint16_t drx_info_s::short_drx_s_::drx_short_cycle_opts::to_number() const
 {
-  static constexpr uint16_t options[] = {2,  3,  4,  5,  6,  7,   8,   10,  14,  16,  20, 30,
-                                         32, 35, 40, 64, 80, 128, 160, 256, 320, 512, 640};
-  return convert_enum_idx(options, 23, value, "drx_info_s::short_drx_s_::drx_short_cycle_e_");
+  static const uint16_t options[] = {2,  3,  4,  5,  6,  7,   8,   10,  14,  16,  20, 30,
+                                     32, 35, 40, 64, 80, 128, 160, 256, 320, 512, 640};
+  return map_enum_number(options, 23, value, "drx_info_s::short_drx_s_::drx_short_cycle_e_");
 }
 
 // MeasConfigSN ::= SEQUENCE
@@ -52488,7 +52480,7 @@ SRSASN_CODE meas_cfg_sn_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_cfg_sn_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_cfg_sn_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(measured_frequencies_sn_present, 1));
@@ -52504,8 +52496,8 @@ void meas_cfg_sn_s::to_json(json_writer& j) const
   j.start_obj();
   if (measured_frequencies_sn_present) {
     j.start_array("measuredFrequenciesSN");
-    for (uint32_t i1 = 0; i1 < measured_frequencies_sn.size(); ++i1) {
-      measured_frequencies_sn[i1].to_json(j);
+    for (const auto& e1 : measured_frequencies_sn) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -52559,7 +52551,7 @@ SRSASN_CODE cg_cfg_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cg_cfg_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE cg_cfg_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(scg_cell_group_cfg_present, 1));
   HANDLE_CODE(bref.unpack(scg_rb_cfg_present, 1));
@@ -52635,15 +52627,15 @@ void cg_cfg_ies_s::to_json(json_writer& j) const
   }
   if (fr_info_list_scg_present) {
     j.start_array("fr-InfoListSCG");
-    for (uint32_t i1 = 0; i1 < fr_info_list_scg.size(); ++i1) {
-      fr_info_list_scg[i1].to_json(j);
+    for (const auto& e1 : fr_info_list_scg) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (candidate_serving_freq_list_nr_present) {
     j.start_array("candidateServingFreqListNR");
-    for (uint32_t i1 = 0; i1 < candidate_serving_freq_list_nr.size(); ++i1) {
-      j.write_int(candidate_serving_freq_list_nr[i1]);
+    for (const auto& e1 : candidate_serving_freq_list_nr) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -52661,7 +52653,7 @@ SRSASN_CODE cg_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cg_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE cg_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(crit_exts.unpack(bref));
 
@@ -52766,7 +52758,7 @@ SRSASN_CODE cg_cfg_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cg_cfg_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE cg_cfg_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -52826,7 +52818,7 @@ SRSASN_CODE cg_cfg_s::crit_exts_c_::c1_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cg_cfg_s::crit_exts_c_::c1_c_::unpack(bit_ref& bref)
+SRSASN_CODE cg_cfg_s::crit_exts_c_::c1_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -52850,19 +52842,19 @@ SRSASN_CODE cg_cfg_s::crit_exts_c_::c1_c_::unpack(bit_ref& bref)
 
 std::string cg_cfg_s::crit_exts_c_::c1_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"cg-Config", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"cg-Config", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 4, value, "cg_cfg_s::crit_exts_c_::c1_c_::types");
 }
 
 std::string cg_cfg_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"c1", "criticalExtensionsFuture"};
+  static const char* options[] = {"c1", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "cg_cfg_s::crit_exts_c_::types");
 }
 uint8_t cg_cfg_s::crit_exts_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1};
-  return convert_enum_idx(options, 1, value, "cg_cfg_s::crit_exts_c_::types");
+  static const uint8_t options[] = {1};
+  return map_enum_number(options, 1, value, "cg_cfg_s::crit_exts_c_::types");
 }
 
 // PH-UplinkCarrierMCG ::= SEQUENCE
@@ -52873,7 +52865,7 @@ SRSASN_CODE ph_ul_carrier_mcg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ph_ul_carrier_mcg_s::unpack(bit_ref& bref)
+SRSASN_CODE ph_ul_carrier_mcg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(ph_type1or3.unpack(bref));
@@ -52889,13 +52881,13 @@ void ph_ul_carrier_mcg_s::to_json(json_writer& j) const
 
 std::string ph_ul_carrier_mcg_s::ph_type1or3_opts::to_string() const
 {
-  static constexpr const char* options[] = {"type1", "type3"};
+  static const char* options[] = {"type1", "type3"};
   return convert_enum_idx(options, 2, value, "ph_ul_carrier_mcg_s::ph_type1or3_e_");
 }
 uint8_t ph_ul_carrier_mcg_s::ph_type1or3_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1, 3};
-  return convert_enum_idx(options, 2, value, "ph_ul_carrier_mcg_s::ph_type1or3_e_");
+  static const uint8_t options[] = {1, 3};
+  return map_enum_number(options, 2, value, "ph_ul_carrier_mcg_s::ph_type1or3_e_");
 }
 
 // PH-InfoMCG ::= SEQUENCE
@@ -52912,7 +52904,7 @@ SRSASN_CODE ph_info_mcg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ph_info_mcg_s::unpack(bit_ref& bref)
+SRSASN_CODE ph_info_mcg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(ph_supplementary_ul_present, 1));
@@ -52956,7 +52948,7 @@ SRSASN_CODE cg_cfg_info_v1540_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cg_cfg_info_v1540_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE cg_cfg_info_v1540_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ph_info_mcg_present, 1));
   HANDLE_CODE(bref.unpack(meas_result_report_cgi_present, 1));
@@ -52979,8 +52971,8 @@ void cg_cfg_info_v1540_ies_s::to_json(json_writer& j) const
   j.start_obj();
   if (ph_info_mcg_present) {
     j.start_array("ph-InfoMCG");
-    for (uint32_t i1 = 0; i1 < ph_info_mcg.size(); ++i1) {
-      ph_info_mcg[i1].to_json(j);
+    for (const auto& e1 : ph_info_mcg) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -53009,7 +53001,7 @@ SRSASN_CODE mrdc_assist_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE mrdc_assist_info_s::unpack(bit_ref& bref)
+SRSASN_CODE mrdc_assist_info_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(unpack_dyn_seq_of(affected_carrier_freq_comb_info_list_mrdc, bref, 1, 128));
@@ -53020,8 +53012,8 @@ void mrdc_assist_info_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("affectedCarrierFreqCombInfoListMRDC");
-  for (uint32_t i1 = 0; i1 < affected_carrier_freq_comb_info_list_mrdc.size(); ++i1) {
-    affected_carrier_freq_comb_info_list_mrdc[i1].to_json(j);
+  for (const auto& e1 : affected_carrier_freq_comb_info_list_mrdc) {
+    e1.to_json(j);
   }
   j.end_array();
   j.end_obj();
@@ -53047,7 +53039,7 @@ SRSASN_CODE meas_cfg_mn_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_cfg_mn_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_cfg_mn_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(measured_frequencies_mn_present, 1));
@@ -53071,8 +53063,8 @@ void meas_cfg_mn_s::to_json(json_writer& j) const
   j.start_obj();
   if (measured_frequencies_mn_present) {
     j.start_array("measuredFrequenciesMN");
-    for (uint32_t i1 = 0; i1 < measured_frequencies_mn.size(); ++i1) {
-      measured_frequencies_mn[i1].to_json(j);
+    for (const auto& e1 : measured_frequencies_mn) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -53088,17 +53080,15 @@ void meas_cfg_mn_s::to_json(json_writer& j) const
 
 std::string meas_cfg_mn_s::gap_purpose_opts::to_string() const
 {
-  static constexpr const char* options[] = {"perUE", "perFR1"};
+  static const char* options[] = {"perUE", "perFR1"};
   return convert_enum_idx(options, 2, value, "meas_cfg_mn_s::gap_purpose_e_");
 }
 uint8_t meas_cfg_mn_s::gap_purpose_opts::to_number() const
 {
-  switch (value) {
-    case per_fr1:
-      return 1;
-    default:
-      invalid_enum_number(value, "meas_cfg_mn_s::gap_purpose_e_");
+  if (value == per_fr1) {
+    return 1;
   }
+  invalid_enum_number(value, "meas_cfg_mn_s::gap_purpose_e_");
   return 0;
 }
 
@@ -53162,7 +53152,7 @@ SRSASN_CODE cg_cfg_info_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cg_cfg_info_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE cg_cfg_info_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(ue_cap_info_present, 1));
   HANDLE_CODE(bref.unpack(candidate_cell_info_list_mn_present, 1));
@@ -53229,8 +53219,8 @@ void cg_cfg_info_ies_s::to_json(json_writer& j) const
   }
   if (candidate_cell_info_list_mn_present) {
     j.start_array("candidateCellInfoListMN");
-    for (uint32_t i1 = 0; i1 < candidate_cell_info_list_mn.size(); ++i1) {
-      candidate_cell_info_list_mn[i1].to_json(j);
+    for (const auto& e1 : candidate_cell_info_list_mn) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -53239,8 +53229,8 @@ void cg_cfg_info_ies_s::to_json(json_writer& j) const
   }
   if (meas_result_cell_list_sftd_present) {
     j.start_array("measResultCellListSFTD");
-    for (uint32_t i1 = 0; i1 < meas_result_cell_list_sftd.size(); ++i1) {
-      meas_result_cell_list_sftd[i1].to_json(j);
+    for (const auto& e1 : meas_result_cell_list_sftd) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -53285,12 +53275,12 @@ void cg_cfg_info_ies_s::to_json(json_writer& j) const
 
 std::string cg_cfg_info_ies_s::scg_fail_info_s_::fail_type_opts::to_string() const
 {
-  static constexpr const char* options[] = {"t310-Expiry",
-                                            "randomAccessProblem",
-                                            "rlc-MaxNumRetx",
-                                            "synchReconfigFailure-SCG",
-                                            "scg-reconfigFailure",
-                                            "srb3-IntegrityFailure"};
+  static const char* options[] = {"t310-Expiry",
+                                  "randomAccessProblem",
+                                  "rlc-MaxNumRetx",
+                                  "synchReconfigFailure-SCG",
+                                  "scg-reconfigFailure",
+                                  "srb3-IntegrityFailure"};
   return convert_enum_idx(options, 6, value, "cg_cfg_info_ies_s::scg_fail_info_s_::fail_type_e_");
 }
 uint16_t cg_cfg_info_ies_s::scg_fail_info_s_::fail_type_opts::to_number() const
@@ -53313,7 +53303,7 @@ SRSASN_CODE cg_cfg_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cg_cfg_info_s::unpack(bit_ref& bref)
+SRSASN_CODE cg_cfg_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(crit_exts.unpack(bref));
 
@@ -53418,7 +53408,7 @@ SRSASN_CODE cg_cfg_info_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cg_cfg_info_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE cg_cfg_info_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -53478,7 +53468,7 @@ SRSASN_CODE cg_cfg_info_s::crit_exts_c_::c1_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cg_cfg_info_s::crit_exts_c_::c1_c_::unpack(bit_ref& bref)
+SRSASN_CODE cg_cfg_info_s::crit_exts_c_::c1_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -53502,19 +53492,19 @@ SRSASN_CODE cg_cfg_info_s::crit_exts_c_::c1_c_::unpack(bit_ref& bref)
 
 std::string cg_cfg_info_s::crit_exts_c_::c1_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"cg-ConfigInfo", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"cg-ConfigInfo", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 4, value, "cg_cfg_info_s::crit_exts_c_::c1_c_::types");
 }
 
 std::string cg_cfg_info_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"c1", "criticalExtensionsFuture"};
+  static const char* options[] = {"c1", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "cg_cfg_info_s::crit_exts_c_::types");
 }
 uint8_t cg_cfg_info_s::crit_exts_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1};
-  return convert_enum_idx(options, 1, value, "cg_cfg_info_s::crit_exts_c_::types");
+  static const uint8_t options[] = {1};
+  return map_enum_number(options, 1, value, "cg_cfg_info_s::crit_exts_c_::types");
 }
 
 void cells_triggered_list_item_c_::destroy_() {}
@@ -53591,7 +53581,7 @@ SRSASN_CODE cells_triggered_list_item_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE cells_triggered_list_item_c_::unpack(bit_ref& bref)
+SRSASN_CODE cells_triggered_list_item_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -53612,7 +53602,7 @@ SRSASN_CODE cells_triggered_list_item_c_::unpack(bit_ref& bref)
 
 std::string cells_triggered_list_item_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"physCellId", "physCellIdEUTRA"};
+  static const char* options[] = {"physCellId", "physCellIdEUTRA"};
   return convert_enum_idx(options, 2, value, "cells_triggered_list_item_c_::types");
 }
 
@@ -53625,7 +53615,7 @@ SRSASN_CODE ho_cmd_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ho_cmd_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE ho_cmd_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
 
@@ -53652,7 +53642,7 @@ SRSASN_CODE ho_cmd_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ho_cmd_s::unpack(bit_ref& bref)
+SRSASN_CODE ho_cmd_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(crit_exts.unpack(bref));
 
@@ -53757,7 +53747,7 @@ SRSASN_CODE ho_cmd_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ho_cmd_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE ho_cmd_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -53817,7 +53807,7 @@ SRSASN_CODE ho_cmd_s::crit_exts_c_::c1_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ho_cmd_s::crit_exts_c_::c1_c_::unpack(bit_ref& bref)
+SRSASN_CODE ho_cmd_s::crit_exts_c_::c1_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -53841,19 +53831,19 @@ SRSASN_CODE ho_cmd_s::crit_exts_c_::c1_c_::unpack(bit_ref& bref)
 
 std::string ho_cmd_s::crit_exts_c_::c1_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"handoverCommand", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"handoverCommand", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 4, value, "ho_cmd_s::crit_exts_c_::c1_c_::types");
 }
 
 std::string ho_cmd_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"c1", "criticalExtensionsFuture"};
+  static const char* options[] = {"c1", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "ho_cmd_s::crit_exts_c_::types");
 }
 uint8_t ho_cmd_s::crit_exts_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1};
-  return convert_enum_idx(options, 1, value, "ho_cmd_s::crit_exts_c_::types");
+  static const uint8_t options[] = {1};
+  return map_enum_number(options, 1, value, "ho_cmd_s::crit_exts_c_::types");
 }
 
 // RRM-Config ::= SEQUENCE
@@ -53872,7 +53862,7 @@ SRSASN_CODE rrm_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE rrm_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE rrm_cfg_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(ue_inactive_time_present, 1));
@@ -53895,8 +53885,8 @@ void rrm_cfg_s::to_json(json_writer& j) const
   }
   if (candidate_cell_info_list_present) {
     j.start_array("candidateCellInfoList");
-    for (uint32_t i1 = 0; i1 < candidate_cell_info_list.size(); ++i1) {
-      candidate_cell_info_list[i1].to_json(j);
+    for (const auto& e1 : candidate_cell_info_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -53905,7 +53895,7 @@ void rrm_cfg_s::to_json(json_writer& j) const
 
 std::string rrm_cfg_s::ue_inactive_time_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "s1",    "s2",       "s3",    "s5",           "s7",      "s10",   "s15",     "s20",      "s25",     "s30",
       "s40",   "s50",      "min1",  "min1s20",      "min1s40", "min2",  "min2s30", "min3",     "min3s30", "min4",
       "min5",  "min6",     "min7",  "min8",         "min9",    "min10", "min12",   "min14",    "min17",   "min20",
@@ -53937,7 +53927,7 @@ SRSASN_CODE ho_prep_info_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ho_prep_info_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE ho_prep_info_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(source_cfg_present, 1));
   HANDLE_CODE(bref.unpack(rrm_cfg_present, 1));
@@ -53961,8 +53951,8 @@ void ho_prep_info_ies_s::to_json(json_writer& j) const
 {
   j.start_obj();
   j.start_array("ue-CapabilityRAT-List");
-  for (uint32_t i1 = 0; i1 < ue_cap_rat_list.size(); ++i1) {
-    ue_cap_rat_list[i1].to_json(j);
+  for (const auto& e1 : ue_cap_rat_list) {
+    e1.to_json(j);
   }
   j.end_array();
   if (source_cfg_present) {
@@ -53992,7 +53982,7 @@ SRSASN_CODE ho_prep_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ho_prep_info_s::unpack(bit_ref& bref)
+SRSASN_CODE ho_prep_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(crit_exts.unpack(bref));
 
@@ -54097,7 +54087,7 @@ SRSASN_CODE ho_prep_info_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ho_prep_info_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE ho_prep_info_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -54157,7 +54147,7 @@ SRSASN_CODE ho_prep_info_s::crit_exts_c_::c1_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ho_prep_info_s::crit_exts_c_::c1_c_::unpack(bit_ref& bref)
+SRSASN_CODE ho_prep_info_s::crit_exts_c_::c1_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -54181,19 +54171,19 @@ SRSASN_CODE ho_prep_info_s::crit_exts_c_::c1_c_::unpack(bit_ref& bref)
 
 std::string ho_prep_info_s::crit_exts_c_::c1_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"handoverPreparationInformation", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"handoverPreparationInformation", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 4, value, "ho_prep_info_s::crit_exts_c_::c1_c_::types");
 }
 
 std::string ho_prep_info_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"c1", "criticalExtensionsFuture"};
+  static const char* options[] = {"c1", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "ho_prep_info_s::crit_exts_c_::types");
 }
 uint8_t ho_prep_info_s::crit_exts_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1};
-  return convert_enum_idx(options, 1, value, "ho_prep_info_s::crit_exts_c_::types");
+  static const uint8_t options[] = {1};
+  return map_enum_number(options, 1, value, "ho_prep_info_s::crit_exts_c_::types");
 }
 
 // MeasTiming ::= SEQUENCE
@@ -54233,7 +54223,7 @@ SRSASN_CODE meas_timing_s::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_timing_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_timing_s::unpack(cbit_ref& bref)
 {
   bref.unpack(ext, 1);
   HANDLE_CODE(bref.unpack(freq_and_timing_present, 1));
@@ -54307,7 +54297,7 @@ SRSASN_CODE meas_timing_cfg_v1550_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_timing_cfg_v1550_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_timing_cfg_v1550_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
 
@@ -54344,7 +54334,7 @@ SRSASN_CODE meas_timing_cfg_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_timing_cfg_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_timing_cfg_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(meas_timing_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -54363,8 +54353,8 @@ void meas_timing_cfg_ies_s::to_json(json_writer& j) const
   j.start_obj();
   if (meas_timing_present) {
     j.start_array("measTiming");
-    for (uint32_t i1 = 0; i1 < meas_timing.size(); ++i1) {
-      meas_timing[i1].to_json(j);
+    for (const auto& e1 : meas_timing) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -54382,7 +54372,7 @@ SRSASN_CODE meas_timing_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_timing_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE meas_timing_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(crit_exts.unpack(bref));
 
@@ -54488,7 +54478,7 @@ SRSASN_CODE meas_timing_cfg_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_timing_cfg_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE meas_timing_cfg_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -54548,7 +54538,7 @@ SRSASN_CODE meas_timing_cfg_s::crit_exts_c_::c1_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE meas_timing_cfg_s::crit_exts_c_::c1_c_::unpack(bit_ref& bref)
+SRSASN_CODE meas_timing_cfg_s::crit_exts_c_::c1_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -54572,19 +54562,19 @@ SRSASN_CODE meas_timing_cfg_s::crit_exts_c_::c1_c_::unpack(bit_ref& bref)
 
 std::string meas_timing_cfg_s::crit_exts_c_::c1_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"measTimingConf", "spare3", "spare2", "spare1"};
+  static const char* options[] = {"measTimingConf", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 4, value, "meas_timing_cfg_s::crit_exts_c_::c1_c_::types");
 }
 
 std::string meas_timing_cfg_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"c1", "criticalExtensionsFuture"};
+  static const char* options[] = {"c1", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "meas_timing_cfg_s::crit_exts_c_::types");
 }
 uint8_t meas_timing_cfg_s::crit_exts_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1};
-  return convert_enum_idx(options, 1, value, "meas_timing_cfg_s::crit_exts_c_::types");
+  static const uint8_t options[] = {1};
+  return map_enum_number(options, 1, value, "meas_timing_cfg_s::crit_exts_c_::types");
 }
 
 // UERadioAccessCapabilityInformation-IEs ::= SEQUENCE
@@ -54596,7 +54586,7 @@ SRSASN_CODE ue_radio_access_cap_info_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_radio_access_cap_info_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_radio_access_cap_info_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
 
@@ -54623,7 +54613,7 @@ SRSASN_CODE ue_radio_access_cap_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_radio_access_cap_info_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_radio_access_cap_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(crit_exts.unpack(bref));
 
@@ -54729,7 +54719,7 @@ SRSASN_CODE ue_radio_access_cap_info_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_radio_access_cap_info_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE ue_radio_access_cap_info_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -54805,7 +54795,7 @@ SRSASN_CODE ue_radio_access_cap_info_s::crit_exts_c_::c1_c_::pack(bit_ref& bref)
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_radio_access_cap_info_s::crit_exts_c_::c1_c_::unpack(bit_ref& bref)
+SRSASN_CODE ue_radio_access_cap_info_s::crit_exts_c_::c1_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -54837,20 +54827,20 @@ SRSASN_CODE ue_radio_access_cap_info_s::crit_exts_c_::c1_c_::unpack(bit_ref& bre
 
 std::string ue_radio_access_cap_info_s::crit_exts_c_::c1_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "ueRadioAccessCapabilityInformation", "spare7", "spare6", "spare5", "spare4", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 8, value, "ue_radio_access_cap_info_s::crit_exts_c_::c1_c_::types");
 }
 
 std::string ue_radio_access_cap_info_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"c1", "criticalExtensionsFuture"};
+  static const char* options[] = {"c1", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "ue_radio_access_cap_info_s::crit_exts_c_::types");
 }
 uint8_t ue_radio_access_cap_info_s::crit_exts_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1};
-  return convert_enum_idx(options, 1, value, "ue_radio_access_cap_info_s::crit_exts_c_::types");
+  static const uint8_t options[] = {1};
+  return map_enum_number(options, 1, value, "ue_radio_access_cap_info_s::crit_exts_c_::types");
 }
 
 // UERadioPagingInformation-IEs ::= SEQUENCE
@@ -54865,7 +54855,7 @@ SRSASN_CODE ue_radio_paging_info_ies_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_radio_paging_info_ies_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_radio_paging_info_ies_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(supported_band_list_nr_for_paging_present, 1));
   HANDLE_CODE(bref.unpack(non_crit_ext_present, 1));
@@ -54881,8 +54871,8 @@ void ue_radio_paging_info_ies_s::to_json(json_writer& j) const
   j.start_obj();
   if (supported_band_list_nr_for_paging_present) {
     j.start_array("supportedBandListNRForPaging");
-    for (uint32_t i1 = 0; i1 < supported_band_list_nr_for_paging.size(); ++i1) {
-      j.write_int(supported_band_list_nr_for_paging[i1]);
+    for (const auto& e1 : supported_band_list_nr_for_paging) {
+      j.write_int(e1);
     }
     j.end_array();
   }
@@ -54901,7 +54891,7 @@ SRSASN_CODE ue_radio_paging_info_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_radio_paging_info_s::unpack(bit_ref& bref)
+SRSASN_CODE ue_radio_paging_info_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(crit_exts.unpack(bref));
 
@@ -55007,7 +54997,7 @@ SRSASN_CODE ue_radio_paging_info_s::crit_exts_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_radio_paging_info_s::crit_exts_c_::unpack(bit_ref& bref)
+SRSASN_CODE ue_radio_paging_info_s::crit_exts_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -55083,7 +55073,7 @@ SRSASN_CODE ue_radio_paging_info_s::crit_exts_c_::c1_c_::pack(bit_ref& bref) con
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE ue_radio_paging_info_s::crit_exts_c_::c1_c_::unpack(bit_ref& bref)
+SRSASN_CODE ue_radio_paging_info_s::crit_exts_c_::c1_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -55115,20 +55105,20 @@ SRSASN_CODE ue_radio_paging_info_s::crit_exts_c_::c1_c_::unpack(bit_ref& bref)
 
 std::string ue_radio_paging_info_s::crit_exts_c_::c1_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {
+  static const char* options[] = {
       "ueRadioPagingInformation", "spare7", "spare6", "spare5", "spare4", "spare3", "spare2", "spare1"};
   return convert_enum_idx(options, 8, value, "ue_radio_paging_info_s::crit_exts_c_::c1_c_::types");
 }
 
 std::string ue_radio_paging_info_s::crit_exts_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"c1", "criticalExtensionsFuture"};
+  static const char* options[] = {"c1", "criticalExtensionsFuture"};
   return convert_enum_idx(options, 2, value, "ue_radio_paging_info_s::crit_exts_c_::types");
 }
 uint8_t ue_radio_paging_info_s::crit_exts_c_::types_opts::to_number() const
 {
-  static constexpr uint8_t options[] = {1};
-  return convert_enum_idx(options, 1, value, "ue_radio_paging_info_s::crit_exts_c_::types");
+  static const uint8_t options[] = {1};
+  return map_enum_number(options, 1, value, "ue_radio_paging_info_s::crit_exts_c_::types");
 }
 
 // VarMeasConfig ::= SEQUENCE
@@ -55158,7 +55148,7 @@ SRSASN_CODE var_meas_cfg_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE var_meas_cfg_s::unpack(bit_ref& bref)
+SRSASN_CODE var_meas_cfg_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(meas_id_list_present, 1));
   HANDLE_CODE(bref.unpack(meas_obj_list_present, 1));
@@ -55189,22 +55179,22 @@ void var_meas_cfg_s::to_json(json_writer& j) const
   j.start_obj();
   if (meas_id_list_present) {
     j.start_array("measIdList");
-    for (uint32_t i1 = 0; i1 < meas_id_list.size(); ++i1) {
-      meas_id_list[i1].to_json(j);
+    for (const auto& e1 : meas_id_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (meas_obj_list_present) {
     j.start_array("measObjectList");
-    for (uint32_t i1 = 0; i1 < meas_obj_list.size(); ++i1) {
-      meas_obj_list[i1].to_json(j);
+    for (const auto& e1 : meas_obj_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
   if (report_cfg_list_present) {
     j.start_array("reportConfigList");
-    for (uint32_t i1 = 0; i1 < report_cfg_list.size(); ++i1) {
-      report_cfg_list[i1].to_json(j);
+    for (const auto& e1 : report_cfg_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -55294,7 +55284,7 @@ SRSASN_CODE var_meas_cfg_s::s_measure_cfg_c_::pack(bit_ref& bref) const
   }
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE var_meas_cfg_s::s_measure_cfg_c_::unpack(bit_ref& bref)
+SRSASN_CODE var_meas_cfg_s::s_measure_cfg_c_::unpack(cbit_ref& bref)
 {
   types e;
   e.unpack(bref);
@@ -55315,7 +55305,7 @@ SRSASN_CODE var_meas_cfg_s::s_measure_cfg_c_::unpack(bit_ref& bref)
 
 std::string var_meas_cfg_s::s_measure_cfg_c_::types_opts::to_string() const
 {
-  static constexpr const char* options[] = {"ssb-RSRP", "csi-RSRP"};
+  static const char* options[] = {"ssb-RSRP", "csi-RSRP"};
   return convert_enum_idx(options, 2, value, "var_meas_cfg_s::s_measure_cfg_c_::types");
 }
 
@@ -55332,7 +55322,7 @@ SRSASN_CODE var_meas_report_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE var_meas_report_s::unpack(bit_ref& bref)
+SRSASN_CODE var_meas_report_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(bref.unpack(cells_triggered_list_present, 1));
 
@@ -55350,8 +55340,8 @@ void var_meas_report_s::to_json(json_writer& j) const
   j.write_int("measId", meas_id);
   if (cells_triggered_list_present) {
     j.start_array("cellsTriggeredList");
-    for (uint32_t i1 = 0; i1 < cells_triggered_list.size(); ++i1) {
-      cells_triggered_list[i1].to_json(j);
+    for (const auto& e1 : cells_triggered_list) {
+      e1.to_json(j);
     }
     j.end_array();
   }
@@ -55368,7 +55358,7 @@ SRSASN_CODE var_resume_mac_input_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE var_resume_mac_input_s::unpack(bit_ref& bref)
+SRSASN_CODE var_resume_mac_input_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(source_pci, bref, (uint16_t)0u, (uint16_t)1007u));
   HANDLE_CODE(target_cell_id.unpack(bref));
@@ -55394,7 +55384,7 @@ SRSASN_CODE var_short_mac_input_s::pack(bit_ref& bref) const
 
   return SRSASN_SUCCESS;
 }
-SRSASN_CODE var_short_mac_input_s::unpack(bit_ref& bref)
+SRSASN_CODE var_short_mac_input_s::unpack(cbit_ref& bref)
 {
   HANDLE_CODE(unpack_integer(source_pci, bref, (uint16_t)0u, (uint16_t)1007u));
   HANDLE_CODE(target_cell_id.unpack(bref));

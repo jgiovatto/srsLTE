@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -26,10 +26,11 @@
 #include "srslte/common/gen_mch_tables.h"
 #include "srslte/common/log.h"
 #include "srslte/common/tti_sempahore.h"
-#include "srslte/interfaces/common_interfaces.h"
+#include "srslte/interfaces/radio_interfaces.h"
 #include "srslte/interfaces/ue_interfaces.h"
 #include "srslte/radio/radio.h"
 #include "srslte/srslte.h"
+#include "ta_control.h"
 #include <condition_variable>
 #include <mutex>
 #include <string.h>
@@ -63,8 +64,9 @@ public:
   float    cur_pusch_power                     = 0.0f;
   float    avg_rsrp[SRSLTE_MAX_CARRIERS]       = {};
   float    avg_rsrp_dbm[SRSLTE_MAX_CARRIERS]   = {};
-  float    avg_rsrq_db                         = 0.0f;
-  float    avg_rssi_dbm                        = 0.0f;
+  float    avg_rsrq_db[SRSLTE_MAX_CARRIERS]    = {};
+  float    avg_rssi_dbm[SRSLTE_MAX_CARRIERS]   = {};
+  float    avg_cfo_hz[SRSLTE_MAX_CARRIERS]     = {};
   float    rx_gain_offset                      = 0.0f;
   float    avg_snr_db_cqi[SRSLTE_MAX_CARRIERS] = {};
   float    avg_noise[SRSLTE_MAX_CARRIERS]      = {};
@@ -86,6 +88,9 @@ public:
   int last_dl_tbs[SRSLTE_MAX_HARQ_PROC][SRSLTE_MAX_CARRIERS][SRSLTE_MAX_CODEWORDS] = {};
 
   srslte::tti_semaphore<void*> semaphore;
+
+  // Time Aligment Controller, internal thread safe
+  ta_control ta;
 
   phy_common();
 
@@ -133,11 +138,8 @@ public:
                           srslte_pdsch_ack_resource_t resource);
   bool get_dl_pending_ack(srslte_ul_sf_cfg_t* sf, uint32_t cc_idx, srslte_pdsch_ack_cc_t* ack);
 
-  void worker_end(void*              h,
-                  bool               tx_enable,
-                  cf_t*              buffer[SRSLTE_MAX_RADIOS][SRSLTE_MAX_PORTS],
-                  uint32_t           nof_samples[SRSLTE_MAX_RADIOS],
-                  srslte_timestamp_t tx_time[SRSLTE_MAX_RADIOS]);
+  void
+  worker_end(void* h, bool tx_enable, srslte::rf_buffer_t& buffer, uint32_t nof_samples, srslte_timestamp_t tx_time);
 
   void set_cell(const srslte_cell_t& c);
   void set_nof_workers(uint32_t nof_workers);
@@ -165,6 +167,15 @@ public:
   void set_mcch();
   bool is_mbsfn_sf(srslte_mbsfn_cfg_t* cfg, uint32_t tti);
   void set_mch_period_stop(uint32_t stop);
+
+  /**
+   * Deduces the UL EARFCN from a DL EARFCN. If the UL-EARFCN was defined in the UE PHY arguments it will use the
+   * corresponding UL-EARFCN to the DL-EARFCN. Otherwise, it will use default.
+   *
+   * @param dl_earfcn
+   * @return the deduced UL EARFCN
+   */
+  uint32_t get_ul_earfcn(uint32_t dl_earfcn);
 
 private:
   bool                    have_mtch_stop = false;
@@ -214,6 +225,7 @@ private:
   received_ack_t pending_dl_ack[TTIMOD_SZ][SRSLTE_MAX_CARRIERS] = {};
   uint32_t       pending_dl_dai[TTIMOD_SZ][SRSLTE_MAX_CARRIERS] = {};
   std::mutex     pending_dl_ack_mutex;
+  std::mutex     pending_dl_grant_mutex;
 
   // Cross-carried grants scheduled from PCell
   typedef struct {
@@ -221,7 +233,7 @@ private:
     uint32_t        grant_cc_idx;
     srslte_dci_dl_t dl_dci;
   } pending_dl_grant_t;
-  pending_dl_grant_t pending_dl_grant[FDD_HARQ_DELAY_MS][SRSLTE_MAX_CARRIERS] = {};
+  pending_dl_grant_t pending_dl_grant[FDD_HARQ_DELAY_UL_MS][SRSLTE_MAX_CARRIERS] = {};
 
   srslte_cell_t cell = {};
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -39,6 +39,10 @@ public:
     // General
     bool enable = false;
 
+    // AWGN options
+    bool  awgn_enable  = false;
+    float awgn_n0_dBfs = -30.0f;
+
     // Fading options
     bool        fading_enable = false;
     std::string fading_model  = "none";
@@ -62,23 +66,25 @@ public:
     uint32_t rlf_t_off_ms = 2000;
   } args_t;
 
-  channel(const args_t& channel_args, uint32_t _nof_ports);
+  channel(const args_t& channel_args, uint32_t _nof_channels);
   ~channel();
   void set_logger(log_filter* _log_h);
   void set_srate(uint32_t srate);
-  void run(cf_t* in[SRSLTE_MAX_PORTS], cf_t* out[SRSLTE_MAX_PORTS], uint32_t len, const srslte_timestamp_t& t);
+  void run(cf_t* in[SRSLTE_MAX_CHANNELS], cf_t* out[SRSLTE_MAX_CHANNELS], uint32_t len, const srslte_timestamp_t& t);
 
 private:
-  srslte_channel_fading_t* fading[SRSLTE_MAX_PORTS] = {};
-  srslte_channel_delay_t*  delay[SRSLTE_MAX_PORTS]  = {};
-  srslte_channel_hst_t*    hst                      = nullptr; // HST has no buffers / no multiple instance is required
-  srslte_channel_rlf_t*    rlf                      = nullptr; // RLF has no buffers / no multiple instance is required
-  cf_t*                    buffer_in                = nullptr;
-  cf_t*                    buffer_out               = nullptr;
-  log_filter*              log_h                    = nullptr;
-  uint32_t                 nof_ports                = 0;
-  uint32_t                 current_srate            = 0;
-  args_t                   args                     = {};
+  float                    hst_init_phase              = 0.0f;
+  srslte_channel_fading_t* fading[SRSLTE_MAX_CHANNELS] = {};
+  srslte_channel_delay_t*  delay[SRSLTE_MAX_CHANNELS]  = {};
+  srslte_channel_awgn_t*   awgn                        = nullptr;
+  srslte_channel_hst_t*    hst                         = nullptr;
+  srslte_channel_rlf_t*    rlf                         = nullptr;
+  cf_t*                    buffer_in                   = nullptr;
+  cf_t*                    buffer_out                  = nullptr;
+  log_filter*              log_h                       = nullptr;
+  uint32_t                 nof_channels                = 0;
+  uint32_t                 current_srate               = 0;
+  args_t                   args                        = {};
 };
 
 typedef std::unique_ptr<channel> channel_ptr;

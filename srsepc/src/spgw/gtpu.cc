@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -52,7 +52,7 @@ spgw::gtpu::~gtpu()
   return;
 }
 
-int spgw::gtpu::init(spgw_args_t* args, spgw* spgw, gtpc_interface_gtpu* gtpc, srslte::log_filter* gtpu_log)
+int spgw::gtpu::init(spgw_args_t* args, spgw* spgw, gtpc_interface_gtpu* gtpc, srslte::log_ref gtpu_log)
 {
   int err;
 
@@ -214,7 +214,7 @@ void spgw::gtpu::handle_sgi_pdu(srslte::byte_buffer_t* msg)
     return;
   }
   if (ntohs(iph->tot_len) < 20) {
-    m_gtpu_log->warning("Invalid IP header length. IP lenght %d.\n", ntohs(iph->tot_len));
+    m_gtpu_log->warning("Invalid IP header length. IP length %d.\n", ntohs(iph->tot_len));
     return;
   }
 

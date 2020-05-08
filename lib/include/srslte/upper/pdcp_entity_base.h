@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -24,11 +24,12 @@
 
 #include "srslte/common/buffer_pool.h"
 #include "srslte/common/common.h"
-#include "srslte/common/log.h"
+#include "srslte/common/interfaces_common.h"
+#include "srslte/common/logmap.h"
 #include "srslte/common/security.h"
 #include "srslte/common/threads.h"
-#include "srslte/interfaces/ue_interfaces.h"
-#include <mutex>
+#include "srslte/common/timers.h"
+#include "srslte/interfaces/pdcp_interface_types.h"
 
 namespace srslte {
 
@@ -51,6 +52,10 @@ typedef enum {
 } pdcp_d_c_t;
 static const char pdcp_d_c_text[PDCP_D_C_N_ITEMS][20] = {"Control PDU", "Data PDU"};
 
+// Specifies in which direction security (integrity and ciphering) are enabled for PDCP
+typedef enum { DIRECTION_NONE = 0, DIRECTION_TX, DIRECTION_RX, DIRECTION_TXRX, DIRECTION_N_ITEMS } srslte_direction_t;
+static const char srslte_direction_text[DIRECTION_N_ITEMS][6] = {"none", "tx", "rx", "tx/rx"};
+
 /****************************************************************************
  * PDCP Entity interface
  * Common interface for LTE and NR PDCP entities
@@ -58,7 +63,7 @@ static const char pdcp_d_c_text[PDCP_D_C_N_ITEMS][20] = {"Control PDU", "Data PD
 class pdcp_entity_base
 {
 public:
-  pdcp_entity_base(srslte::timer_handler* timers_, srslte::log* log_);
+  pdcp_entity_base(srslte::task_handler_interface* task_executor_, srslte::log_ref log_);
   virtual ~pdcp_entity_base();
   virtual void reset()       = 0;
   virtual void reestablish() = 0;
@@ -68,15 +73,48 @@ public:
   bool is_drb() { return cfg.rb_type == PDCP_RB_IS_DRB; }
 
   // RRC interface
-  void enable_integrity() { do_integrity = true; }
-  void enable_encryption() { do_encryption = true; }
+  void enable_integrity(srslte_direction_t direction = DIRECTION_TXRX)
+  {
+    // if either DL or UL is already enabled, both are enabled
+    if (integrity_direction == DIRECTION_TX && direction == DIRECTION_RX) {
+      integrity_direction = DIRECTION_TXRX;
+    } else if (integrity_direction == DIRECTION_RX && direction == DIRECTION_TX) {
+      integrity_direction = DIRECTION_TXRX;
+    } else {
+      integrity_direction = direction;
+    }
+    log->debug("LCID=%d, integrity=%s\n", lcid, srslte_direction_text[integrity_direction]);
+  }
 
-  void config_security(uint8_t*                    k_rrc_enc_,
-                       uint8_t*                    k_rrc_int_,
-                       uint8_t*                    k_up_enc_,
-                       uint8_t*                    k_up_int_, // NR Only, pass nullptr in LTE
-                       CIPHERING_ALGORITHM_ID_ENUM cipher_algo_,
-                       INTEGRITY_ALGORITHM_ID_ENUM integ_algo_);
+  void enable_encryption(srslte_direction_t direction = DIRECTION_TXRX)
+  {
+    // if either DL or UL is already enabled, both are enabled
+    if (encryption_direction == DIRECTION_TX && direction == DIRECTION_RX) {
+      encryption_direction = DIRECTION_TXRX;
+    } else if (encryption_direction == DIRECTION_RX && direction == DIRECTION_TX) {
+      encryption_direction = DIRECTION_TXRX;
+    } else {
+      encryption_direction = direction;
+    }
+    log->debug("LCID=%d encryption=%s\n", lcid, srslte_direction_text[integrity_direction]);
+  }
+
+  void enable_security_timed(srslte_direction_t direction, uint32_t sn)
+  {
+    switch (direction) {
+      case DIRECTION_TX:
+        enable_security_tx_sn = sn;
+        break;
+      case DIRECTION_RX:
+        enable_security_rx_sn = sn;
+        break;
+      default:
+        log->error("Timed security activation for direction %s not supported.\n", srslte_direction_text[direction]);
+        break;
+    }
+  }
+
+  void config_security(as_security_config_t sec_cfg_);
 
   // GW/SDAP/RRC interface
   void write_sdu(unique_byte_buffer_t sdu, bool blocking);
@@ -90,13 +128,16 @@ public:
   uint32_t COUNT(uint32_t hfn, uint32_t sn);
 
 protected:
-  srslte::log*           log    = nullptr;
-  srslte::timer_handler* timers = nullptr;
+  srslte::log_ref                 log;
+  srslte::task_handler_interface* task_executor = nullptr;
 
-  bool     active        = false;
-  uint32_t lcid          = 0;
-  bool     do_integrity  = false;
-  bool     do_encryption = false;
+  bool               active               = false;
+  uint32_t           lcid                 = 0;
+  srslte_direction_t integrity_direction  = DIRECTION_NONE;
+  srslte_direction_t encryption_direction = DIRECTION_NONE;
+
+  int32_t enable_security_tx_sn = -1; // TX SN at which security will be enabled
+  int32_t enable_security_rx_sn = -1; // RX SN at which security will be enabled
 
   pdcp_config_t cfg = {1,
                        PDCP_RB_IS_DRB,
@@ -106,20 +147,20 @@ protected:
                        pdcp_t_reordering_t::ms500,
                        pdcp_discard_timer_t::infinity};
 
-  std::mutex mutex;
+  srslte::as_security_config_t sec_cfg = {};
 
-  uint8_t k_rrc_enc[32] = {};
-  uint8_t k_rrc_int[32] = {};
-  uint8_t k_up_enc[32]  = {};
-  uint8_t k_up_int[32]  = {};
-
-  CIPHERING_ALGORITHM_ID_ENUM cipher_algo = CIPHERING_ALGORITHM_ID_EEA0;
-  INTEGRITY_ALGORITHM_ID_ENUM integ_algo  = INTEGRITY_ALGORITHM_ID_EIA0;
-
+  // Security functions
   void integrity_generate(uint8_t* msg, uint32_t msg_len, uint32_t count, uint8_t* mac);
   bool integrity_verify(uint8_t* msg, uint32_t msg_len, uint32_t count, uint8_t* mac);
   void cipher_encrypt(uint8_t* msg, uint32_t msg_len, uint32_t count, uint8_t* ct);
   void cipher_decrypt(uint8_t* ct, uint32_t ct_len, uint32_t count, uint8_t* msg);
+
+  // Common packing functions
+  uint32_t read_data_header(const unique_byte_buffer_t& pdu);
+  void     discard_data_header(const unique_byte_buffer_t& pdu);
+  void     write_data_header(const srslte::unique_byte_buffer_t& sdu, uint32_t count);
+  void     extract_mac(const unique_byte_buffer_t& pdu, uint8_t* mac);
+  void     append_mac(const unique_byte_buffer_t& sdu, uint8_t* mac);
 };
 
 inline uint32_t pdcp_entity_base::HFN(uint32_t count)

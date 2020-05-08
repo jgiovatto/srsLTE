@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -22,7 +22,7 @@
 #ifndef SRSUE_PHY_METRICS_H
 #define SRSUE_PHY_METRICS_H
 
-#include "srslte/phy/common/phy_common.h"
+#include "srslte/srslte.h"
 
 namespace srsue {
 

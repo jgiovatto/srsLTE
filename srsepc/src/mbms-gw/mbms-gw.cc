@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -69,7 +69,7 @@ void mbms_gw::cleanup(void)
   pthread_mutex_unlock(&mbms_gw_instance_mutex);
 }
 
-int mbms_gw::init(mbms_gw_args_t* args, srslte::log_filter* mbms_gw_log)
+int mbms_gw::init(mbms_gw_args_t* args, srslte::log_ref mbms_gw_log)
 {
   int err;
   m_pool = srslte::byte_buffer_pool::get_instance();

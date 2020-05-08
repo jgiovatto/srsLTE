@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -26,7 +26,7 @@
 #include <stdint.h>
 
 #include "srslte/config.h"
-#include "srslte/phy/common/phy_common.h"
+#include "srslte/phy/common/phy_common_sl.h"
 
 /**
  * Master information block - Sidelink (MIB-SL and MIB-SL-V2X).
@@ -59,6 +59,8 @@ typedef struct SRSLTE_API {
   // TM4: (27 bits)
 
 } srslte_mib_sl_t;
+
+static const int srslte_mib_sl_bandwith_to_prb[6] = {6, 15, 25, 50, 75, 100};
 
 SRSLTE_API int srslte_mib_sl_init(srslte_mib_sl_t* q, srslte_sl_tm_t tm);
 

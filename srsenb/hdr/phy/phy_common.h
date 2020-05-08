@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -22,100 +22,123 @@
 #ifndef SRSENB_PHCH_COMMON_H
 #define SRSENB_PHCH_COMMON_H
 
+#include "phy_interfaces.h"
+#include "srsenb/hdr/phy/phy_ue_db.h"
 #include "srslte/common/gen_mch_tables.h"
 #include "srslte/common/interfaces_common.h"
 #include "srslte/common/log.h"
 #include "srslte/common/thread_pool.h"
 #include "srslte/common/threads.h"
-#include "srslte/interfaces/common_interfaces.h"
 #include "srslte/interfaces/enb_interfaces.h"
 #include "srslte/interfaces/enb_metrics_interface.h"
+#include "srslte/interfaces/radio_interfaces.h"
 #include "srslte/phy/channel/channel.h"
 #include "srslte/radio/radio.h"
 #include <map>
-#include <semaphore.h>
+#include <srslte/common/tti_sempahore.h>
 #include <string.h>
 
 namespace srsenb {
 
-typedef struct {
-  std::string            type;
-  srslte::phy_log_args_t log;
-
-  uint32_t nof_carriers;
-
-  float       max_prach_offset_us;
-  int         pusch_max_its;
-  bool        pusch_8bit_decoder;
-  float       tx_amplitude;
-  int         nof_phy_threads;
-  std::string equalizer_mode;
-  float       estimator_fil_w;
-  bool        pregenerate_signals;
-
-  srslte::channel::args_t dl_channel_args;
-  srslte::channel::args_t ul_channel_args;
-} phy_args_t;
-
 class phy_common
 {
 public:
-  phy_common(uint32_t nof_workers);
-  ~phy_common();
+  phy_common() = default;
 
-  void set_nof_workers(uint32_t nof_workers);
-
-  bool init(const srslte_cell_t& cell_, srslte::radio_interface_phy* radio_handler, stack_interface_phy_lte* mac);
+  bool
+       init(const phy_cell_cfg_list_t& cell_list_, srslte::radio_interface_phy* radio_handler, stack_interface_phy_lte* mac);
   void reset();
   void stop();
 
-  void
-  worker_end(uint32_t tx_mutex_cnt, cf_t* buffer[SRSLTE_MAX_PORTS], uint32_t nof_samples, srslte_timestamp_t tx_time);
+  /**
+   * TTI transmission semaphore, used for ensuring that PHY workers transmit following start order
+   */
+  srslte::tti_semaphore<void*> semaphore;
+
+  /**
+   * Performs common end worker transmission tasks such as transmission and stack TTI execution
+   *
+   * @param tx_sem_id Semaphore identifier, the worker thread pointer is used
+   * @param buffer baseband IQ sample buffer
+   * @param nof_samples number of samples to transmit
+   * @param tx_time timestamp to transmit samples
+   */
+  void worker_end(void* tx_sem_id, srslte::rf_buffer_t& buffer, uint32_t nof_samples, srslte_timestamp_t tx_time);
 
   // Common objects
-  srslte_cell_t cell   = {};
-  phy_args_t    params = {};
+  phy_args_t params = {};
 
-  // Physical Uplink Config common
-  srslte_ul_cfg_t ul_cfg_com = {};
+  uint32_t get_nof_carriers() { return static_cast<uint32_t>(cell_list.size()); };
+  uint32_t get_nof_prb(uint32_t cc_idx)
+  {
+    uint32_t ret = 0;
 
-  // Physical Downlink Config common
-  srslte_dl_cfg_t dl_cfg_com = {};
+    if (cc_idx < cell_list.size()) {
+      ret = cell_list[cc_idx].cell.nof_prb;
+    }
+
+    return ret;
+  };
+  uint32_t get_nof_ports(uint32_t cc_idx)
+  {
+    uint32_t ret = 0;
+
+    if (cc_idx < cell_list.size()) {
+      ret = cell_list[cc_idx].cell.nof_ports;
+    }
+
+    return ret;
+  };
+  double get_ul_freq_hz(uint32_t cc_idx)
+  {
+    double ret = 0.0f;
+
+    if (cc_idx < cell_list.size()) {
+      ret = cell_list[cc_idx].ul_freq_hz;
+    }
+
+    return ret;
+  };
+  double get_dl_freq_hz(uint32_t cc_idx)
+  {
+    double ret = 0.0;
+
+    if (cc_idx < cell_list.size()) {
+      ret = cell_list[cc_idx].dl_freq_hz;
+    }
+
+    return ret;
+  };
+  uint32_t get_rf_port(uint32_t cc_idx)
+  {
+    uint32_t ret = 0;
+
+    if (cc_idx < cell_list.size()) {
+      ret = cell_list[cc_idx].rf_port;
+    }
+
+    return ret;
+  };
+  srslte_cell_t get_cell(uint32_t cc_idx)
+  {
+    srslte_cell_t c = {};
+    if (cc_idx < cell_list.size()) {
+      c = cell_list[cc_idx].cell;
+    }
+    return c;
+  };
+
+  // Common Physical Uplink DMRS configuration
+  srslte_refsignal_dmrs_pusch_cfg_t dmrs_pusch_cfg = {};
 
   srslte::radio_interface_phy* radio      = nullptr;
   stack_interface_phy_lte*     stack      = nullptr;
   srslte::channel_ptr          dl_channel = nullptr;
 
-  // Common objects for schedulign grants
-  stack_interface_phy_lte::ul_sched_t ul_grants[TTIMOD_SZ] = {};
-  stack_interface_phy_lte::dl_sched_t dl_grants[TTIMOD_SZ] = {};
-
-  // Map of pending ACKs for each user
-  typedef struct {
-    bool     is_pending[TTIMOD_SZ][SRSLTE_MAX_TB];
-    uint16_t n_pdcch[TTIMOD_SZ];
-  } pending_ack_t;
-
-  class common_ue
-  {
-  public:
-    pending_ack_t  pending_ack                   = {};
-    uint8_t        ri                            = 0;
-    srslte_ra_tb_t last_tb[SRSLTE_MAX_HARQ_PROC] = {};
-  };
-
-  std::map<uint16_t, common_ue> common_ue_db;
-
-  void    ue_db_add_rnti(uint16_t rnti);
-  void    ue_db_rem_rnti(uint16_t rnti);
-  void    ue_db_clear(uint32_t tti);
-  void    ue_db_set_ack_pending(uint32_t tti, uint16_t rnti, uint32_t tb_idx, uint32_t n_pdcch);
-  bool    ue_db_is_ack_pending(uint32_t tti, uint16_t rnti, uint32_t tb_idx, uint32_t* last_n_pdcch = nullptr);
-  void    ue_db_set_ri(uint16_t rnti, uint8_t ri);
-  uint8_t ue_db_get_ri(uint16_t rnti);
-
-  void           ue_db_set_last_ul_tb(uint16_t rnti, uint32_t pid, srslte_ra_tb_t tb);
-  srslte_ra_tb_t ue_db_get_last_ul_tb(uint16_t rnti, uint32_t pid);
+  /**
+   * UE Database object, direct public access, all PHY threads should be able to access this attribute directly
+   */
+  phy_ue_db ue_db;
 
   void configure_mbsfn(phy_interface_stack_lte::phy_cfg_mbsfn_t* cfg);
   void build_mch_table();
@@ -123,29 +146,29 @@ public:
   bool is_mbsfn_sf(srslte_mbsfn_cfg_t* cfg, uint32_t phy_tti);
   void set_mch_period_stop(uint32_t stop);
 
+  // Getters and setters for ul grants which need to be shared between workers
+  const stack_interface_phy_lte::ul_sched_list_t& get_ul_grants(uint32_t tti);
+  void set_ul_grants(uint32_t tti, const stack_interface_phy_lte::ul_sched_list_t& ul_grants);
+  void clear_grants(uint16_t rnti);
+
 private:
-  std::vector<sem_t> tx_sem;
-  bool               is_first_tx = false;
+  // Common objects for scheduling grants
+  stack_interface_phy_lte::ul_sched_list_t ul_grants[TTIMOD_SZ] = {};
+  std::mutex                               grant_mutex          = {};
 
-  uint32_t nof_workers = 0;
-  uint32_t max_workers = 0;
+  phy_cell_cfg_list_t cell_list;
 
-  pthread_mutex_t user_mutex = {};
-
-  bool                                     have_mtch_stop = false;
-  pthread_mutex_t                          mtch_mutex     = {};
-  pthread_cond_t                           mtch_cvar      = {};
-  phy_interface_stack_lte::phy_cfg_mbsfn_t mbsfn;
-  bool                                     sib13_configured   = false;
-  bool                                     mcch_configured    = false;
-  uint8_t                                  mch_table[40]      = {};
-  uint8_t                                  mcch_table[10]     = {};
-  uint32_t                                 mch_period_stop    = 0;
-  uint8_t                                  mch_sf_idx_lut[10] = {};
+  bool                                     have_mtch_stop   = false;
+  pthread_mutex_t                          mtch_mutex       = {};
+  pthread_cond_t                           mtch_cvar        = {};
+  phy_interface_stack_lte::phy_cfg_mbsfn_t mbsfn            = {};
+  bool                                     sib13_configured = false;
+  bool                                     mcch_configured  = false;
+  uint8_t                                  mch_table[40]    = {};
+  uint8_t                                  mcch_table[10]   = {};
+  uint32_t                                 mch_period_stop  = 0;
   bool                                     is_mch_subframe(srslte_mbsfn_cfg_t* cfg, uint32_t phy_tti);
   bool                                     is_mcch_subframe(srslte_mbsfn_cfg_t* cfg, uint32_t phy_tti);
-
-  void add_rnti(uint16_t rnti);
 };
 
 } // namespace srsenb

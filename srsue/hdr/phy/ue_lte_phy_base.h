@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -28,7 +28,7 @@
 #define SRSUE_UE_LTE_PHY_BASE_H
 
 #include "srslte/common/log_filter.h"
-#include "srslte/interfaces/common_interfaces.h"
+#include "srslte/interfaces/radio_interfaces.h"
 #include "srsue/hdr/phy/ue_phy_base.h"
 
 namespace srsue {
@@ -44,8 +44,6 @@ public:
   virtual int  init(const phy_args_t& args_)                                                                       = 0;
   virtual int  init(const phy_args_t& args_, stack_interface_phy_lte* stack_, srslte::radio_interface_phy* radio_) = 0;
   virtual void stop()                                                                                              = 0;
-
-  virtual void set_earfcn(std::vector<uint32_t> earfcns) = 0;
 
   virtual void wait_initialize() = 0;
   virtual void start_plot()      = 0;

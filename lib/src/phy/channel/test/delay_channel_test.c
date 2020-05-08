@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -87,8 +87,8 @@ int main(int argc, char** argv)
 
   // Initialise buffers
   uint32_t size = srate_hz / 1000;
-  input_buffer  = srslte_vec_malloc(sizeof(cf_t) * size);
-  output_buffer = srslte_vec_malloc(sizeof(cf_t) * size);
+  input_buffer  = srslte_vec_cf_malloc(size);
+  output_buffer = srslte_vec_cf_malloc(size);
   if (!input_buffer || !output_buffer) {
     fprintf(stderr, "Error: Allocating memory\n");
     ret = SRSLTE_ERROR;

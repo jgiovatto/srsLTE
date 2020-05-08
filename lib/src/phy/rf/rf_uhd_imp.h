@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -18,6 +18,8 @@
  * and at http://www.gnu.org/licenses/.
  *
  */
+#ifndef SRSLTE_RF_UHD_IMP_H_
+#define SRSLTE_RF_UHD_IMP_H_
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -63,7 +65,7 @@ SRSLTE_API srslte_rf_info_t* rf_uhd_get_info(void* h);
 
 SRSLTE_API void rf_uhd_suppress_stdout(void* h);
 
-SRSLTE_API void rf_uhd_register_error_handler(void* h, srslte_rf_error_handler_t error_handler);
+SRSLTE_API void rf_uhd_register_error_handler(void* h, srslte_rf_error_handler_t error_handler, void* arg);
 
 SRSLTE_API double rf_uhd_set_rx_freq(void* h, uint32_t ch, double freq);
 
@@ -94,7 +96,7 @@ SRSLTE_API int rf_uhd_send_timed(void*  h,
                                  bool   is_end_of_burst);
 
 SRSLTE_API int rf_uhd_send_timed_multi(void*  h,
-                                       void*  data[SRSLTE_MAX_PORTS],
+                                       void** data,
                                        int    nsamples,
                                        time_t secs,
                                        double frac_secs,
@@ -102,3 +104,5 @@ SRSLTE_API int rf_uhd_send_timed_multi(void*  h,
                                        bool   blocking,
                                        bool   is_start_of_burst,
                                        bool   is_end_of_burst);
+
+#endif /* SRSLTE_RF_UHD_IMP_H_ */

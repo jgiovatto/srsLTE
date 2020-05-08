@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -27,8 +27,6 @@
 
 using namespace srsenb;
 using namespace asn1::rrc;
-
-srslte::scoped_tester_log log_h("ALL");
 
 namespace argparse {
 
@@ -76,7 +74,11 @@ public:
     uint32_t                     target_eci;
     srslte::plmn_id_t            target_plmn;
     srslte::unique_byte_buffer_t rrc_container;
-  } last_ho_required;
+  } last_ho_required = {};
+  struct enb_status_transfer_info {
+    uint16_t                        rnti;
+    std::vector<bearer_status_info> bearer_list;
+  } last_enb_status = {};
 
   bool send_ho_required(uint16_t                     rnti,
                         uint32_t                     target_eci,
@@ -116,7 +118,7 @@ int parse_default_cfg(rrc_cfg_t* rrc_cfg, srsenb::all_args_t& args)
   args.enb_files.sib_config = argparse::repository_dir + "/sib.conf.example";
   args.enb_files.rr_config  = argparse::repository_dir + "/rr.conf.example";
   args.enb_files.drb_config = argparse::repository_dir + "/drb.conf.example";
-  log_h.debug("sib file path=%s\n", args.enb_files.sib_config.c_str());
+  srslte::logmap::get("TEST")->debug("sib file path=%s\n", args.enb_files.sib_config.c_str());
 
   args.enb.dl_earfcn = 3400;
   args.enb.n_prb     = 50;
@@ -132,13 +134,24 @@ int parse_default_cfg(rrc_cfg_t* rrc_cfg, srsenb::all_args_t& args)
   return enb_conf_sections::parse_cfg_files(&args, rrc_cfg, &phy_cfg);
 }
 
+template <typename ASN1Type>
+bool unpack_asn1(ASN1Type& asn1obj, const srslte::unique_byte_buffer_t& pdu)
+{
+  asn1::cbit_ref bref{pdu->msg, pdu->N_bytes};
+  if (asn1obj.unpack(bref) != asn1::SRSASN_SUCCESS) {
+    srslte::logmap::get("TEST")->error("Failed to unpack ASN1 type\n");
+    return false;
+  }
+  return true;
+}
+
 void copy_msg_to_buffer(srslte::unique_byte_buffer_t& pdu, uint8_t* msg, size_t nof_bytes)
 {
   srslte::byte_buffer_pool* pool = srslte::byte_buffer_pool::get_instance();
   pdu                            = srslte::allocate_unique_buffer(*pool, true);
   memcpy(pdu->msg, msg, nof_bytes);
   pdu->N_bytes = nof_bytes;
-};
+}
 
 int bring_rrc_to_reconf_state(srsenb::rrc& rrc, srslte::timer_handler& timers, uint16_t rnti)
 {
@@ -173,18 +186,27 @@ int bring_rrc_to_reconf_state(srsenb::rrc& rrc, srslte::timer_handler& timers, u
       0x05, 0xf4, 0xf6, 0x7e, 0x72, 0x69, 0x00, 0x6b, 0x00, 0x05, 0x18, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x49, 0x00, 0x20,
       0x45, 0x25, 0xe4, 0x9a, 0x77, 0xc8, 0xd5, 0xcf, 0x26, 0x33, 0x63, 0xeb, 0x5b, 0xb9, 0xc3, 0x43, 0x9b, 0x9e, 0xb3,
       0x86, 0x1f, 0xa8, 0xa7, 0xcf, 0x43, 0x54, 0x07, 0xae, 0x42, 0x2b, 0x63, 0xb9};
-  LIBLTE_S1AP_S1AP_PDU_STRUCT s1ap_pdu;
-  LIBLTE_BYTE_MSG_STRUCT      byte_buf;
+  asn1::s1ap::s1ap_pdu_c s1ap_pdu;
+  srslte::byte_buffer_t  byte_buf;
   byte_buf.N_bytes = sizeof(s1ap_init_ctxt_setup_req);
   memcpy(byte_buf.msg, s1ap_init_ctxt_setup_req, byte_buf.N_bytes);
-  liblte_s1ap_unpack_s1ap_pdu(&byte_buf, &s1ap_pdu);
-  rrc.setup_ue_ctxt(rnti, &s1ap_pdu.choice.initiatingMessage.choice.InitialContextSetupRequest);
+  asn1::cbit_ref bref(byte_buf.msg, byte_buf.N_bytes);
+  TESTASSERT(s1ap_pdu.unpack(bref) == asn1::SRSASN_SUCCESS);
+  rrc.setup_ue_ctxt(rnti, s1ap_pdu.init_msg().value.init_context_setup_request());
   timers.step_all();
   rrc.tti_clock();
 
   // Send SecurityModeComplete
   uint8_t sec_mode_complete[] = {0x28, 0x00};
   copy_msg_to_buffer(pdu, sec_mode_complete, sizeof(sec_mode_complete));
+  rrc.write_pdu(rnti, 1, std::move(pdu));
+  timers.step_all();
+  rrc.tti_clock();
+
+  // send UE cap info
+  uint8_t ue_cap_info[] = {0x38, 0x01, 0x01, 0x0c, 0x98, 0x00, 0x00, 0x18, 0x00, 0x0f,
+                           0x30, 0x20, 0x80, 0x00, 0x01, 0x00, 0x0e, 0x01, 0x00, 0x00};
+  copy_msg_to_buffer(pdu, ue_cap_info, sizeof(ue_cap_info));
   rrc.write_pdu(rnti, 1, std::move(pdu));
   timers.step_all();
   rrc.tti_clock();

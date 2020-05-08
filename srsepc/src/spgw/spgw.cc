@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -66,7 +66,7 @@ void spgw::cleanup()
 }
 
 int spgw::init(spgw_args_t*                           args,
-               srslte::log_filter*                    gtpu_log,
+               srslte::log_ref                        gtpu_log,
                srslte::log_filter*                    gtpc_log,
                srslte::log_filter*                    spgw_log,
                const std::map<std::string, uint64_t>& ip_to_imsi)

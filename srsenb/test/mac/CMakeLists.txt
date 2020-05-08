@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -10,7 +10,7 @@
 #
 # srsLTE is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU Affero General Public License for more details.
 #
 # A copy of the GNU Affero General Public License can be found in
@@ -18,22 +18,41 @@
 # and at http://www.gnu.org/licenses/.
 #
 
-# Scheduler test
-add_executable(scheduler_test scheduler_test.cc)
-target_link_libraries(scheduler_test  srsenb_mac 
-                                      srsenb_phy 
-                                      srslte_common
-                                      srslte_phy
-                                      rrc_asn1
-                                      ${CMAKE_THREAD_LIBS_INIT} 
-                                      ${Boost_LIBRARIES})
+add_library(scheduler_test_common STATIC scheduler_test_common.cc)
+
+# Scheduler subcomponent testing
+add_executable(sched_grid_test sched_grid_test.cc)
+target_link_libraries(sched_grid_test srsenb_mac
+        srsenb_phy
+        srslte_common
+        srslte_mac
+        scheduler_test_common
+        ${CMAKE_THREAD_LIBS_INIT}
+        ${Boost_LIBRARIES})
+add_test(sched_grid_test sched_grid_test)
 
 # Scheduler test random
 add_executable(scheduler_test_rand scheduler_test_rand.cc)
-target_link_libraries(scheduler_test_rand  srsenb_mac 
-                                           srsenb_phy 
-                                           srslte_common
-                                           srslte_phy
-                                           rrc_asn1
-                                           ${CMAKE_THREAD_LIBS_INIT} 
-                                           ${Boost_LIBRARIES})
+target_link_libraries(scheduler_test_rand srsenb_mac
+        srsenb_phy
+        srslte_common
+        srslte_mac
+        scheduler_test_common
+        srslte_phy
+        rrc_asn1
+        ${CMAKE_THREAD_LIBS_INIT}
+        ${Boost_LIBRARIES})
+add_test(scheduler_test_rand scheduler_test_rand)
+
+# Scheduler test random for CA
+add_executable(scheduler_ca_test scheduler_ca_test.cc scheduler_test_common.cc)
+target_link_libraries(scheduler_ca_test srsenb_mac
+        srsenb_phy
+        srslte_common
+        srslte_mac
+        srslte_phy
+        scheduler_test_common
+        rrc_asn1
+        ${CMAKE_THREAD_LIBS_INIT}
+        ${Boost_LIBRARIES})
+add_test(scheduler_ca_test scheduler_ca_test)

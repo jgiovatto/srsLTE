@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2019 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -33,6 +28,7 @@
 
 /* Definitions */
 #define VERBOSE (0)
+#define ZMQ_MONITOR (0)
 #define NSAMPLES2NBYTES(X) (((uint32_t)(X)) * sizeof(cf_t))
 #define NBYTES2NSAMPLES(X) ((X) / sizeof(cf_t))
 #define ZMQ_MAX_BUFFER_SIZE (NSAMPLES2NBYTES(3072000)) // 10 subframes at 20 MHz
@@ -54,14 +50,18 @@ typedef struct {
   pthread_mutex_t mutex;
   cf_t*           zeros;
   void*           temp_buffer_convert;
-  uint32_t        frequency_hz_mhz;
+  uint32_t        frequency_mhz;
 } rf_zmq_tx_t;
 
 typedef struct {
-  char                id[ZMQ_ID_STRLEN];
-  uint32_t            socket_type;
-  rf_zmq_format_t     sample_format;
-  void*               sock;
+  char            id[ZMQ_ID_STRLEN];
+  uint32_t        socket_type;
+  rf_zmq_format_t sample_format;
+  void*           sock;
+#if ZMQ_MONITOR
+  void* socket_monitor;
+  bool  tx_connected;
+#endif
   uint64_t            nsamples;
   bool                running;
   pthread_t           thread;
@@ -70,6 +70,7 @@ typedef struct {
   cf_t*               temp_buffer;
   void*               temp_buffer_convert;
   uint32_t            frequency_mhz;
+  bool                fail_on_disconnect;
 } rf_zmq_rx_t;
 
 typedef struct {
@@ -77,6 +78,7 @@ typedef struct {
   uint32_t        socket_type;
   rf_zmq_format_t sample_format;
   uint32_t        frequency_mhz;
+  bool            fail_on_disconnect;
 } rf_zmq_opts_t;
 
 /*

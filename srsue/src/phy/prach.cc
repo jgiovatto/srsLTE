@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -55,7 +55,7 @@ void prach::init(uint32_t max_prb, srslte::log* log_h_)
 
   for (int i = 0; i < 64; i++) {
     for (int f = 0; f < 12; f++) {
-      buffer[f][i] = (cf_t*)srslte_vec_malloc(SRSLTE_PRACH_MAX_LEN * sizeof(cf_t));
+      buffer[f][i] = srslte_vec_cf_malloc(SRSLTE_PRACH_MAX_LEN);
       if (!buffer[f][i]) {
         perror("malloc");
         return;
@@ -67,7 +67,7 @@ void prach::init(uint32_t max_prb, srslte::log* log_h_)
     return;
   }
   srslte_cfo_set_tol(&cfo_h, 0);
-  signal_buffer = (cf_t*)srslte_vec_malloc(MAX_LEN_SF * 30720 * sizeof(cf_t));
+  signal_buffer = srslte_vec_cf_malloc(MAX_LEN_SF * 30720U);
   if (!signal_buffer) {
     perror("malloc");
     return;
@@ -230,8 +230,6 @@ cf_t* prach::generate(float cfo, uint32_t* nof_sf, float* target_power)
       f_idx = prach_obj.current_prach_idx;
       // For format4, choose odd or even position
       if (prach_obj.config_idx >= 48) {
-        if ((transmitted_tti / 10) % 2) {
-        }
         f_idx += 6;
       }
       if (f_idx >= 12) {
@@ -245,7 +243,7 @@ cf_t* prach::generate(float cfo, uint32_t* nof_sf, float* target_power)
 
     // pad guard symbols with zeros
     uint32_t nsf = (len - 1) / SRSLTE_SF_LEN_PRB(cell.nof_prb) + 1;
-    bzero(&signal_buffer[len], (nsf * SRSLTE_SF_LEN_PRB(cell.nof_prb) - len) * sizeof(cf_t));
+    srslte_vec_cf_zero(&signal_buffer[len], (nsf * SRSLTE_SF_LEN_PRB(cell.nof_prb) - len));
 
     *nof_sf = nsf;
 

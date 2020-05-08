@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -420,6 +420,25 @@ bool srslte_symbol_sz_isvalid(uint32_t symbol_sz)
   }
 }
 
+// Returns maximum number of CCE assuming CFI 3 and PHICH 1/6
+uint32_t srslte_max_cce(uint32_t nof_prb)
+{
+  switch (nof_prb) {
+    case 6:
+      return 6;
+    case 15:
+      return 12;
+    case 25:
+      return 21;
+    case 50:
+      return 43;
+    case 75:
+      return 65;
+    default:
+      return 87;
+  }
+}
+
 uint32_t srslte_voffset(uint32_t symbol_id, uint32_t cell_id, uint32_t nof_ports)
 {
   if (nof_ports == 1 && symbol_id == 0) {
@@ -484,10 +503,10 @@ uint32_t srslte_re_x_prb(uint32_t ns, uint32_t symbol, uint32_t nof_ports, uint3
 
 struct lte_band {
   uint8_t                     band;
-  float                       fd_low_mhz;
+  double                      fd_low_mhz;
   uint32_t                    dl_earfcn_offset;
   uint32_t                    ul_earfcn_offset;
-  float                       duplex_mhz;
+  double                      duplex_mhz;
   enum band_geographical_area area;
 };
 
@@ -588,7 +607,7 @@ char* srslte_mimotype2str(srslte_tx_scheme_t mimo_type)
   }
 }
 
-float get_fd(struct lte_band* band, uint32_t dl_earfcn)
+static double get_fd(struct lte_band* band, uint32_t dl_earfcn)
 {
   if (dl_earfcn >= band->dl_earfcn_offset) {
     return band->fd_low_mhz + 0.1 * (dl_earfcn - band->dl_earfcn_offset);
@@ -597,7 +616,7 @@ float get_fd(struct lte_band* band, uint32_t dl_earfcn)
   }
 }
 
-float get_fu(struct lte_band* band, uint32_t ul_earfcn)
+static double get_fu(struct lte_band* band, uint32_t ul_earfcn)
 {
   if (ul_earfcn >= band->ul_earfcn_offset) {
     return band->fd_low_mhz - band->duplex_mhz + 0.1 * (ul_earfcn - band->ul_earfcn_offset);
@@ -632,7 +651,7 @@ uint8_t srslte_band_get_band(uint32_t dl_earfcn)
   return lte_bands[i].band;
 }
 
-float srslte_band_fd(uint32_t dl_earfcn)
+double srslte_band_fd(uint32_t dl_earfcn)
 {
   uint32_t i = SRSLTE_NOF_LTE_BANDS - 1;
   if (dl_earfcn > lte_bands[i].dl_earfcn_offset) {
@@ -645,7 +664,7 @@ float srslte_band_fd(uint32_t dl_earfcn)
   return get_fd(&lte_bands[i], dl_earfcn);
 }
 
-float srslte_band_fu(uint32_t ul_earfcn)
+double srslte_band_fu(uint32_t ul_earfcn)
 {
   uint32_t i = SRSLTE_NOF_LTE_BANDS - 1;
   if (ul_earfcn > lte_bands[i].ul_earfcn_offset) {
@@ -813,44 +832,58 @@ char* srslte_nbiot_mode_string(srslte_nbiot_mode_t mode)
   }
 }
 
-///< Sidelink helpers
-
-///< Look-up tables for Sidelink channel symbols
-srslte_sl_symbol_t srslte_psbch_symbol_map_tm12[SRSLTE_CP_NORM_SF_NSYMB] = {SRSLTE_SIDELINK_DATA_SYMBOL,
-                                                                            SRSLTE_SIDELINK_SYNC_SYMBOL,
-                                                                            SRSLTE_SIDELINK_SYNC_SYMBOL,
-                                                                            SRSLTE_SIDELINK_DMRS_SYMBOL,
-                                                                            SRSLTE_SIDELINK_DATA_SYMBOL,
-                                                                            SRSLTE_SIDELINK_DATA_SYMBOL,
-                                                                            SRSLTE_SIDELINK_DATA_SYMBOL,
-                                                                            SRSLTE_SIDELINK_DATA_SYMBOL,
-                                                                            SRSLTE_SIDELINK_DATA_SYMBOL,
-                                                                            SRSLTE_SIDELINK_DATA_SYMBOL,
-                                                                            SRSLTE_SIDELINK_DMRS_SYMBOL,
-                                                                            SRSLTE_SIDELINK_SYNC_SYMBOL,
-                                                                            SRSLTE_SIDELINK_SYNC_SYMBOL,
-                                                                            SRSLTE_SIDELINK_GUARD_SYMBOL};
-
-srslte_sl_symbol_t srslte_psbch_symbol_map_tm34[SRSLTE_CP_NORM_SF_NSYMB] = {SRSLTE_SIDELINK_DATA_SYMBOL,
-                                                                            SRSLTE_SIDELINK_SYNC_SYMBOL,
-                                                                            SRSLTE_SIDELINK_SYNC_SYMBOL,
-                                                                            SRSLTE_SIDELINK_DATA_SYMBOL,
-                                                                            SRSLTE_SIDELINK_DMRS_SYMBOL,
-                                                                            SRSLTE_SIDELINK_DATA_SYMBOL,
-                                                                            SRSLTE_SIDELINK_DMRS_SYMBOL,
-                                                                            SRSLTE_SIDELINK_DATA_SYMBOL,
-                                                                            SRSLTE_SIDELINK_DATA_SYMBOL,
-                                                                            SRSLTE_SIDELINK_DMRS_SYMBOL,
-                                                                            SRSLTE_SIDELINK_DATA_SYMBOL,
-                                                                            SRSLTE_SIDELINK_SYNC_SYMBOL,
-                                                                            SRSLTE_SIDELINK_SYNC_SYMBOL,
-                                                                            SRSLTE_SIDELINK_GUARD_SYMBOL};
-
-bool srslte_psbch_is_symbol(srslte_sl_symbol_t type, srslte_sl_tm_t tm, uint32_t i)
+const char* srslte_ack_nack_feedback_mode_string(srslte_ack_nack_feedback_mode_t ack_nack_feedback_mode)
 {
-  if (tm <= SRSLTE_SIDELINK_TM2) {
-    return srslte_psbch_symbol_map_tm12[i] == type;
-  } else {
-    return srslte_psbch_symbol_map_tm34[i] == type;
+  switch (ack_nack_feedback_mode) {
+    case SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_NORMAL:
+      return "normal";
+    case SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_CS:
+      return "cs";
+    case SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_PUCCH3:
+      return "pucch3";
+    case SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_ERROR:
+    default:
+      return "error";
   }
+}
+
+srslte_ack_nack_feedback_mode_t srslte_string_ack_nack_feedback_mode(const char* str)
+{
+#define MAX_STR_LEN (8)
+  int  i       = 0;
+  char str2[MAX_STR_LEN] = {};
+
+  // Copy string in local buffer
+  strncpy(str2, str, MAX_STR_LEN - 1);
+  str2[MAX_STR_LEN - 1] = '\0';
+
+  // Convert to lower case
+  while (str2[i] |= ' ', str2[++i])
+    ;
+
+  // Format 1b with channel selection
+  if (strcmp(str2, "cs") == 0) {
+    return SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_CS;
+  }
+
+  // Detect PUCCH3
+  if (strcmp(str2, "pucch3") == 0) {
+    return SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_PUCCH3;
+  }
+
+  // Otherwise Normal
+  return SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_NORMAL;
+}
+
+uint32_t srslte_ri_nof_bits(const srslte_cell_t* cell)
+{
+  uint32_t ret = 0;
+
+  if (cell->nof_ports == 2) {
+    ret = 1;
+  } else if (cell->nof_ports > 2) {
+    ret = 2;
+  }
+
+  return ret;
 }

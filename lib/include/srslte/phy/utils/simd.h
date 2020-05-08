@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -94,6 +94,29 @@ typedef _Complex float cf_t;
   _mm256_fmaddsub_ps(                                                                                                  \
       A, _mm256_moveldup_ps(B), _mm256_fmsubadd_ps(_mm256_shuffle_ps(A, A, 0xB1), _mm256_movehdup_ps(B), C))
 #endif /* LV_HAVE_FMA */
+
+/*
+ * SIMD Vector bit alignment
+ */
+#ifdef LV_HAVE_AVX512
+#define SRSLTE_SIMD_BIT_ALIGN 512
+#define SRSLTE_IS_ALIGNED(PTR) (((size_t)(PTR)&0x3F) == 0)
+#else /* LV_HAVE_AVX512 */
+#ifdef LV_HAVE_AVX
+#define SRSLTE_SIMD_BIT_ALIGN 256
+#define SRSLTE_IS_ALIGNED(PTR) (((size_t)(PTR)&0x1F) == 0)
+#else /* LV_HAVE_AVX */
+#ifdef LV_HAVE_SSE
+#define SRSLTE_SIMD_BIT_ALIGN 128
+#define SRSLTE_IS_ALIGNED(PTR) (((size_t)(PTR)&0x0F) == 0)
+#else /* LV_HAVE_SSE */
+#define SRSLTE_SIMD_BIT_ALIGN 64
+#define SRSLTE_IS_ALIGNED(PTR) (1)
+#endif /* LV_HAVE_SSE */
+#endif /* LV_HAVE_AVX */
+#endif /* LV_HAVE_AVX512 */
+
+#define srslte_simd_aligned __attribute__((aligned(SRSLTE_SIMD_BIT_ALIGN / 8)))
 
 /* Memory Sizes for Single Floating Point and fixed point */
 #ifdef LV_HAVE_AVX512
@@ -544,6 +567,19 @@ static inline simd_f_t srslte_simd_f_abs(simd_f_t a)
 #endif /* LV_HAVE_SSE */
 #endif /* LV_HAVE_AVX2 */
 #endif /* LV_HAVE_AVX512 */
+}
+
+static inline void srslte_simd_f_fprintf(FILE* stream, simd_f_t a)
+{
+  float x[SRSLTE_SIMD_F_SIZE];
+
+  srslte_simd_f_storeu(x, a);
+
+  fprintf(stream, "[");
+  for (int i = 0; i < SRSLTE_SIMD_F_SIZE; i++) {
+    fprintf(stream, "%+2.5f, ", x[i]);
+  }
+  fprintf(stream, "];\n");
 }
 
 #endif /* SRSLTE_SIMD_F_SIZE */
@@ -1110,6 +1146,19 @@ static inline simd_cf_t srslte_simd_cf_zero(void)
   return ret;
 }
 
+static inline void srslte_simd_cf_fprintf(FILE* stream, simd_cf_t a)
+{
+  cf_t x[SRSLTE_SIMD_CF_SIZE];
+
+  srslte_simd_cfi_storeu(x, a);
+
+  fprintf(stream, "[");
+  for (int i = 0; i < SRSLTE_SIMD_CF_SIZE; i++) {
+    fprintf(stream, "%+2.5f%+2.5fi, ", __real__ x[i], __imag__ x[i]);
+  }
+  fprintf(stream, "];\n");
+}
+
 #endif /* SRSLTE_SIMD_CF_SIZE */
 
 #if SRSLTE_SIMD_I_SIZE
@@ -1210,6 +1259,44 @@ static inline simd_i_t srslte_simd_i_add(simd_i_t a, simd_i_t b)
 #endif /* LV_HAVE_AVX512 */
 }
 
+static inline simd_i_t srslte_simd_i_mul(simd_i_t a, simd_i_t b)
+{
+#ifdef LV_HAVE_AVX512
+  return _mm512_mullo_epi32(a, b);
+#else /* LV_HAVE_AVX512 */
+#ifdef LV_HAVE_AVX2
+  return _mm256_mullo_epi32(a, b);
+#else
+#ifdef LV_HAVE_SSE
+  return _mm_mul_epi32(a, b);
+#else
+#ifdef HAVE_NEON
+  return vmulq_s32(a, b);
+#endif /* HAVE_NEON */
+#endif /* LV_HAVE_SSE */
+#endif /* LV_HAVE_AVX2 */
+#endif /* LV_HAVE_AVX512 */
+}
+
+static inline simd_i_t srslte_simd_i_and(simd_i_t a, simd_i_t b)
+{
+#ifdef LV_HAVE_AVX512
+  return _mm512_and_si512(a, b);
+#else /* LV_HAVE_AVX512 */
+#ifdef LV_HAVE_AVX2
+  return _mm256_and_si256(a, b);
+#else
+#ifdef LV_HAVE_SSE
+  return _mm_and_si128(a, b);
+#else
+#ifdef HAVE_NEON
+  return vandq_s32(a, b);
+#endif /* HAVE_NEON */
+#endif /* LV_HAVE_SSE */
+#endif /* LV_HAVE_AVX2 */
+#endif /* LV_HAVE_AVX512 */
+}
+
 static inline simd_sel_t srslte_simd_f_max(simd_f_t a, simd_f_t b)
 {
 #ifdef LV_HAVE_AVX512
@@ -1227,6 +1314,56 @@ static inline simd_sel_t srslte_simd_f_max(simd_f_t a, simd_f_t b)
 #endif /* LV_HAVE_SSE */
 #endif /* LV_HAVE_AVX2 */
 #endif /* LV_HAVE_AVX512 */
+}
+
+static inline simd_sel_t srslte_simd_f_min(simd_f_t a, simd_f_t b)
+{
+#ifdef LV_HAVE_AVX512
+  return _mm512_cmp_ps_mask(a, b, _CMP_LT_OS);
+#else /* LV_HAVE_AVX512 */
+#ifdef LV_HAVE_AVX2
+  return _mm256_cmp_ps(a, b, _CMP_LT_OS);
+#else /* LV_HAVE_AVX2 */
+#ifdef LV_HAVE_SSE
+  return (simd_sel_t)_mm_cmplt_ps(a, b);
+#else /* LV_HAVE_SSE */
+#ifdef HAVE_NEON
+  return (simd_sel_t)vcltq_f32(a, b);
+#endif /* HAVE_NEON */
+#endif /* LV_HAVE_SSE */
+#endif /* LV_HAVE_AVX2 */
+#endif /* LV_HAVE_AVX512 */
+}
+
+static inline simd_f_t srslte_simd_f_select(simd_f_t a, simd_f_t b, simd_sel_t selector)
+{
+#ifdef LV_HAVE_AVX512
+  return _mm512_mask_blend_ps(selector, (__m512)a, (__m512)b);
+#else /* LV_HAVE_AVX512 */
+#ifdef LV_HAVE_AVX2
+  return _mm256_blendv_ps(a, b, selector);
+#else
+#ifdef LV_HAVE_SSE
+  return _mm_blendv_ps(a, b, selector);
+#else            /* LV_HAVE_SSE */
+#ifdef HAVE_NEON // CURRENTLY USES GENERIC IMPLEMENTATION FOR NEON
+  float*   a_ptr = (float*)&a;
+  float*   b_ptr = (float*)&b;
+  simd_f_t ret;
+  int*     sel   = (int*)&selector;
+  float*   c_ptr = (float*)&ret;
+  for (int i = 0; i < 4; i++) {
+    if (sel[i] == -1) {
+      c_ptr[i] = b_ptr[i];
+    } else {
+      c_ptr[i] = a_ptr[i];
+    }
+  }
+  return ret;
+#endif           /* HAVE_NEON */
+#endif           /* LV_HAVE_SSE */
+#endif           /* LV_HAVE_AVX2 */
+#endif           /* LV_HAVE_AVX512 */
 }
 
 static inline simd_i_t srslte_simd_i_select(simd_i_t a, simd_i_t b, simd_sel_t selector)

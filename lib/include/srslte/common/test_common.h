@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -28,27 +28,26 @@
 
 #include "srslte/common/log.h"
 #include "srslte/common/log_filter.h"
+#include "srslte/common/logmap.h"
 #include <cstdio>
 
 namespace srslte {
 
-// logger that we can instantiate in a specific test scope
+// Description: log filter that we can instantiate in a specific test scope, and cleans itself on scope exit
 // useful if we want to define specific logging policies within a scope (e.g. null logger, count number of errors,
 // exit on error, log special diagnostics on destruction). It restores the previous logger after exiting the scope
-class scoped_tester_log : public srslte::log_filter
+class test_log_filter : public srslte::log_filter
 {
 public:
-  explicit scoped_tester_log(std::string layer) : srslte::log_filter(layer)
+  explicit test_log_filter(std::string layer) : srslte::log_filter(std::move(layer))
   {
-    previous_log_test = current_log;
-    current_log       = this;
     set_level(srslte::LOG_LEVEL_DEBUG);
   }
-  scoped_tester_log(const scoped_tester_log&) = delete;
-  scoped_tester_log(scoped_tester_log&&)      = delete;
-  scoped_tester_log& operator=(const scoped_tester_log&) = delete;
-  scoped_tester_log& operator=(scoped_tester_log&&) = delete;
-  ~scoped_tester_log() override { current_log = previous_log_test; }
+  test_log_filter(const test_log_filter&) = delete;
+  test_log_filter(test_log_filter&&)      = delete;
+  test_log_filter& operator=(const test_log_filter&) = delete;
+  test_log_filter& operator=(test_log_filter&&) = delete;
+  ~test_log_filter() override                   = default;
 
   void error(const char* message, ...) override __attribute__((format(printf, 2, 3)))
   {
@@ -90,20 +89,13 @@ public:
 
   bool     exit_on_error = false;
   uint32_t error_counter = 0, warn_counter = 0;
-
-  static srslte::log* get_instance() { return current_log; }
-
-private:
-  srslte::log*        previous_log_test = nullptr;
-  static srslte::log* current_log;
 };
-srslte::log* scoped_tester_log::current_log = nullptr;
 
-// specialization of scoped_tester_log to store last logged message
-class nullsink_log : public scoped_tester_log
+// specialization of test_log_filter to store last logged message
+class nullsink_log : public test_log_filter
 {
 public:
-  explicit nullsink_log(std::string layer) : scoped_tester_log(std::move(layer)) {}
+  explicit nullsink_log(std::string layer) : test_log_filter(std::move(layer)) {}
 
   void debug(const char* message, ...) override __attribute__((format(printf, 2, 3)))
   {
@@ -158,25 +150,47 @@ private:
   }
 };
 
+template <typename Log>
+class scoped_log
+{
+public:
+  template <typename... Args>
+  explicit scoped_log(Args&&... args)
+  {
+    std::unique_ptr<Log> l{new Log{std::forward<Args>(args)...}};
+    // store previous log, and register the newly created one
+    prev_log    = srslte::logmap::deregister_log(l->get_service_name());
+    current_log = l.get();
+    srslte::logmap::register_log(std::move(l));
+  }
+  scoped_log(scoped_log<Log>&&) noexcept = default;
+  ~scoped_log()
+  {
+    srslte::logmap::deregister_log(current_log->get_service_name());
+    if (prev_log != nullptr) {
+      srslte::logmap::register_log(std::move(prev_log));
+    }
+  }
+
+  Log* operator->() { return current_log; }
+  Log* get() { return current_log; }
+
+private:
+  Log*                         current_log = nullptr;
+  std::unique_ptr<srslte::log> prev_log;
+};
+
 } // namespace srslte
 
 #define TESTERROR(fmt, ...)                                                                                            \
   do {                                                                                                                 \
-    if (srslte::scoped_tester_log::get_instance() == nullptr) {                                                        \
-      printf(fmt, ##__VA_ARGS__);                                                                                      \
-    } else {                                                                                                           \
-      srslte::scoped_tester_log::get_instance()->error(fmt, ##__VA_ARGS__);                                            \
-    }                                                                                                                  \
+    srslte::logmap::get("TEST")->error(fmt, ##__VA_ARGS__);                                                            \
     return SRSLTE_ERROR;                                                                                               \
   } while (0)
 
 #define TESTWARN(fmt, ...)                                                                                             \
   do {                                                                                                                 \
-    if (srslte::scoped_tester_log::get_instance() == nullptr) {                                                        \
-      printf(fmt, ##__VA_ARGS__);                                                                                      \
-    } else {                                                                                                           \
-      srslte::scoped_tester_log::get_instance()->warning(fmt, ##__VA_ARGS__);                                          \
-    }                                                                                                                  \
+    srslte::logmap::get("TEST")->warning(fmt, ##__VA_ARGS__);                                                          \
   } while (0)
 
 #define CONDERROR(cond, fmt, ...)                                                                                      \

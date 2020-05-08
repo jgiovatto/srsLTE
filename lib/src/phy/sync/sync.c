@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -80,7 +80,7 @@ int srslte_sync_init_decim(srslte_sync_t* q, uint32_t frame_size, uint32_t max_o
     q->max_offset      = max_offset;
     q->max_frame_size  = frame_size;
 
-    srslte_sync_cfo_reset(q);
+    srslte_sync_cfo_reset(q, 0.0f);
 
     if (srslte_cfo_init(&q->cfo_corr_frame, q->frame_size)) {
       ERROR("Error initiating CFO\n");
@@ -96,14 +96,14 @@ int srslte_sync_init_decim(srslte_sync_t* q, uint32_t frame_size, uint32_t max_o
     srslte_sync_set_cfo_tol(q, DEFAULT_CFO_TOL);
 
     for (int i = 0; i < 2; i++) {
-      q->cfo_i_corr[i] = srslte_vec_malloc(sizeof(cf_t) * q->frame_size);
+      q->cfo_i_corr[i] = srslte_vec_cf_malloc(q->frame_size);
       if (!q->cfo_i_corr[i]) {
         perror("malloc");
         goto clean_exit;
       }
     }
 
-    q->temp = srslte_vec_malloc(sizeof(cf_t) * 2 * q->frame_size);
+    q->temp = srslte_vec_cf_malloc(2 * q->frame_size);
     if (!q->temp) {
       perror("malloc");
       goto clean_exit;
@@ -314,7 +314,7 @@ static void generate_freq_sss(srslte_sync_t* q, uint32_t N_id_1)
   uint32_t k = q->fft_size / 2 - 31;
 
   for (int n = 0; n < 2; n++) {
-    bzero(symbol, q->fft_size * sizeof(cf_t));
+    srslte_vec_cf_zero(symbol, q->fft_size);
     for (uint32_t i = 0; i < SRSLTE_SSS_LEN; i++) {
       __real__ symbol[k + i] = sf[n][i];
       __imag__ symbol[k + i] = 0;
@@ -347,9 +347,9 @@ float srslte_sync_get_cfo(srslte_sync_t* q)
   return q->cfo_cp_mean + q->cfo_pss_mean + q->cfo_i_value;
 }
 
-void srslte_sync_cfo_reset(srslte_sync_t* q)
+void srslte_sync_cfo_reset(srslte_sync_t* q, float init_cfo_hz)
 {
-  q->cfo_cp_mean    = 0;
+  q->cfo_cp_mean    = init_cfo_hz / 15e3f;
   q->cfo_cp_is_set  = false;
   q->cfo_pss_mean   = 0;
   q->cfo_pss_is_set = false;
@@ -585,10 +585,10 @@ srslte_pss_t* srslte_sync_get_cur_pss_obj(srslte_sync_t* q)
 static float cfo_cp_estimate(srslte_sync_t* q, const cf_t* input)
 {
   uint32_t cp_offset = 0;
-  cp_offset =
-      srslte_cp_synch(&q->cp_synch, input, q->max_offset, q->cfo_cp_nsymbols, SRSLTE_CP_LEN_NORM(1, q->fft_size));
+  cp_offset          = srslte_cp_synch(
+      &q->cp_synch, input, q->max_offset, q->cfo_cp_nsymbols, (uint32_t)SRSLTE_CP_LEN_NORM(1, q->fft_size));
   cf_t  cp_corr_max = srslte_cp_synch_corr_output(&q->cp_synch, cp_offset);
-  float cfo         = -cargf(cp_corr_max) / M_PI / 2;
+  float cfo         = -cargf(cp_corr_max) / ((float)M_PI * 2.0f);
   return cfo;
 }
 
@@ -598,9 +598,9 @@ static int cfo_i_estimate(srslte_sync_t* q, const cf_t* input, int find_offset, 
   float         max_peak_value = -99;
   int           max_cfo_i      = 0;
   srslte_pss_t* pss_obj[3]     = {&q->pss_i[0], &q->pss, &q->pss_i[1]};
-  for (int cfo_i = 0; cfo_i < 3; cfo_i++) {
-    srslte_pss_set_N_id_2(pss_obj[cfo_i], q->N_id_2);
-    int p = srslte_pss_find_pss(pss_obj[cfo_i], &input[find_offset], &peak_value);
+  for (int cfo = 0; cfo < 3; cfo++) {
+    srslte_pss_set_N_id_2(pss_obj[cfo], q->N_id_2);
+    int p = srslte_pss_find_pss(pss_obj[cfo], &input[find_offset], &peak_value);
     if (p < 0) {
       return -1;
     }
@@ -610,7 +610,7 @@ static int cfo_i_estimate(srslte_sync_t* q, const cf_t* input, int find_offset, 
         *peak_pos = p;
       }
       q->peak_value = peak_value;
-      max_cfo_i     = cfo_i - 1;
+      max_cfo_i     = cfo - 1;
     }
   }
   if (cfo_i) {
@@ -843,7 +843,7 @@ srslte_sync_find(srslte_sync_t* q, const cf_t* input, uint32_t find_offset, uint
           q->threshold,
           15 * (srslte_sync_get_cfo(q)));
 
-  } else if (srslte_N_id_2_isvalid(q->N_id_2)) {
+  } else if (!srslte_N_id_2_isvalid(q->N_id_2)) {
     ERROR("Must call srslte_sync_set_N_id_2() first!\n");
   }
 

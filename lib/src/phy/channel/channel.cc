@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -25,24 +25,32 @@
 
 using namespace srslte;
 
-channel::channel(const channel::args_t& channel_args, uint32_t _nof_ports)
+channel::channel(const channel::args_t& channel_args, uint32_t _nof_channels)
 {
   int      ret         = SRSLTE_SUCCESS;
   uint32_t srate_max   = (uint32_t)srslte_symbol_sz(SRSLTE_MAX_PRB) * 15000;
   uint32_t buffer_size = (uint32_t)SRSLTE_SF_LEN_PRB(SRSLTE_MAX_PRB) * 5; // be safe, 5 Subframes
 
+  if (_nof_channels > SRSLTE_MAX_CHANNELS) {
+    fprintf(stderr,
+            "Error creating channel object: maximum number of channels exceeded (%d > %d)\n",
+            _nof_channels,
+            SRSLTE_MAX_CHANNELS);
+    return;
+  }
+
   // Copy args
   args = channel_args;
 
   // Allocate internal buffers
-  buffer_in  = (cf_t*)srslte_vec_malloc(sizeof(cf_t) * buffer_size);
-  buffer_out = (cf_t*)srslte_vec_malloc(sizeof(cf_t) * buffer_size);
+  buffer_in  = srslte_vec_cf_malloc(buffer_size);
+  buffer_out = srslte_vec_cf_malloc(buffer_size);
   if (!buffer_out || !buffer_in) {
     ret = SRSLTE_ERROR;
   }
 
-  nof_ports = _nof_ports;
-  for (uint32_t i = 0; i < nof_ports; i++) {
+  nof_channels = _nof_channels;
+  for (uint32_t i = 0; i < nof_channels; i++) {
     // Create fading channel
     if (channel_args.fading_enable && !channel_args.fading_model.empty() && channel_args.fading_model != "none" &&
         ret == SRSLTE_SUCCESS) {
@@ -64,6 +72,13 @@ channel::channel(const channel::args_t& channel_args, uint32_t _nof_ports)
     } else {
       delay[i] = nullptr;
     }
+  }
+
+  // Create AWGN channnel
+  if (channel_args.awgn_enable && ret == SRSLTE_SUCCESS) {
+    awgn = (srslte_channel_awgn_t*)calloc(sizeof(srslte_channel_awgn_t), 1);
+    ret  = srslte_channel_awgn_init(awgn, 1234);
+    srslte_channel_awgn_set_n0(awgn, args.awgn_n0_dBfs);
   }
 
   // Create high speed train
@@ -93,6 +108,11 @@ channel::~channel()
     free(buffer_out);
   }
 
+  if (awgn) {
+    srslte_channel_awgn_free(awgn);
+    free(awgn);
+  }
+
   if (hst) {
     srslte_channel_hst_free(hst);
     free(hst);
@@ -103,7 +123,7 @@ channel::~channel()
     free(rlf);
   }
 
-  for (uint32_t i = 0; i < nof_ports; i++) {
+  for (uint32_t i = 0; i < nof_channels; i++) {
     if (fading[i]) {
       srslte_channel_fading_free(fading[i]);
       free(fading[i]);
@@ -116,21 +136,44 @@ channel::~channel()
   }
 }
 
+extern "C" {
+static inline cf_t local_cexpf(float phase)
+{
+  cf_t ret;
+  __real__ ret = cosf(phase);
+  __imag__ ret = sinf(phase);
+  return ret;
+}
+}
+
 void channel::set_logger(log_filter* _log_h)
 {
   log_h = _log_h;
 }
 
-void channel::run(cf_t* in[SRSLTE_MAX_PORTS], cf_t* out[SRSLTE_MAX_PORTS], uint32_t len, const srslte_timestamp_t& t)
+void channel::run(cf_t*                     in[SRSLTE_MAX_CHANNELS],
+                  cf_t*                     out[SRSLTE_MAX_CHANNELS],
+                  uint32_t                  len,
+                  const srslte_timestamp_t& t)
 {
   // check input pointers
   if (in != nullptr && out != nullptr) {
     if (current_srate) {
-      for (uint32_t i = 0; i < nof_ports; i++) {
+      for (uint32_t i = 0; i < nof_channels; i++) {
         // Check buffers are not null
         if (in[i] != nullptr && out[i] != nullptr) {
           // Copy input buffer
           memcpy(buffer_in, in[i], sizeof(cf_t) * len);
+
+          if (hst) {
+            srslte_channel_hst_execute(hst, buffer_in, buffer_out, len, &t);
+            srslte_vec_sc_prod_ccc(buffer_out, local_cexpf(hst_init_phase), buffer_in, len);
+          }
+
+          if (awgn) {
+            srslte_channel_awgn_run_c(awgn, buffer_in, buffer_out, len);
+            memcpy(buffer_in, buffer_out, sizeof(cf_t) * len);
+          }
 
           if (fading[i]) {
             srslte_channel_fading_execute(fading[i], buffer_in, buffer_out, len, t.full_secs + t.frac_secs);
@@ -142,11 +185,6 @@ void channel::run(cf_t* in[SRSLTE_MAX_PORTS], cf_t* out[SRSLTE_MAX_PORTS], uint3
             memcpy(buffer_in, buffer_out, sizeof(cf_t) * len);
           }
 
-          if (hst) {
-            srslte_channel_hst_execute(hst, buffer_in, buffer_out, len, &t);
-            memcpy(buffer_in, buffer_out, sizeof(cf_t) * len);
-          }
-
           if (rlf) {
             srslte_channel_rlf_execute(rlf, buffer_in, buffer_out, len, &t);
             memcpy(buffer_in, buffer_out, sizeof(cf_t) * len);
@@ -154,6 +192,21 @@ void channel::run(cf_t* in[SRSLTE_MAX_PORTS], cf_t* out[SRSLTE_MAX_PORTS], uint3
 
           // Copy output buffer
           memcpy(out[i], buffer_in, sizeof(cf_t) * len);
+        }
+      }
+
+      if (hst) {
+        // Increment phase to keep it coherent between frames
+        hst_init_phase += (2 * M_PI * len * hst->fs_hz / hst->srate_hz);
+
+        // Positive Remainder
+        while (hst_init_phase > 2 * M_PI) {
+          hst_init_phase -= 2 * M_PI;
+        }
+
+        // Negative Remainder
+        while (hst_init_phase < -2 * M_PI) {
+          hst_init_phase += 2 * M_PI;
         }
       }
 
@@ -175,7 +228,7 @@ void channel::run(cf_t* in[SRSLTE_MAX_PORTS], cf_t* out[SRSLTE_MAX_PORTS], uint3
       }
 
     } else {
-      for (uint32_t i = 0; i < nof_ports; i++) {
+      for (uint32_t i = 0; i < nof_channels; i++) {
         // Check buffers are not null
         if (in[i] != nullptr && out[i] != nullptr && in[i] != out[i]) {
           memcpy(out[i], in[i], sizeof(cf_t) * len);
@@ -188,7 +241,7 @@ void channel::run(cf_t* in[SRSLTE_MAX_PORTS], cf_t* out[SRSLTE_MAX_PORTS], uint3
 void channel::set_srate(uint32_t srate)
 {
   if (current_srate != srate) {
-    for (uint32_t i = 0; i < nof_ports; i++) {
+    for (uint32_t i = 0; i < nof_channels; i++) {
       if (fading[i]) {
         srslte_channel_fading_free(fading[i]);
 
@@ -198,11 +251,13 @@ void channel::set_srate(uint32_t srate)
       if (delay[i]) {
         srslte_channel_delay_update_srate(delay[i], srate);
       }
-      current_srate = srate;
     }
 
     if (hst) {
       srslte_channel_hst_update_srate(hst, srate);
     }
+
+    // Update sampling rate
+    current_srate = srate;
   }
 }

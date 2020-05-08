@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -19,6 +19,7 @@
  *
  */
 
+#include "srslte/common/move_callback.h"
 #include "srslte/common/multiqueue.h"
 #include "srslte/common/thread_pool.h"
 #include <iostream>
@@ -320,6 +321,88 @@ int test_task_thread_pool3()
   return 0;
 }
 
+struct C {
+  std::unique_ptr<int> val{new int{5}};
+};
+struct D {
+  std::array<int, 64> big_val;
+  D() { big_val[0] = 6; }
+};
+
+int test_inplace_task()
+{
+  std::cout << "\n======= TEST inplace task: start =======\n";
+  int v = 0;
+
+  auto l0 = [&v]() { v = 1; };
+
+  srslte::move_callback<void()> t{l0};
+  srslte::move_callback<void()> t2{[v]() mutable { v = 2; }};
+  // sanity static checks
+  static_assert(task_details::is_move_callback<std::decay<decltype(t)>::type>::value, "failed check\n");
+  static_assert(
+      std::is_base_of<std::false_type, task_details::is_move_callback<std::decay<decltype(l0)>::type> >::value,
+      "failed check\n");
+
+  t();
+  t2();
+  TESTASSERT(v == 1);
+  v              = 2;
+  decltype(t) t3 = std::move(t);
+  t3();
+  TESTASSERT(v == 1);
+
+  C                             c;
+  srslte::move_callback<void()> t4{std::bind([&v](C& c) { v = *c.val; }, std::move(c))};
+  {
+    decltype(t4) t5;
+    t5 = std::move(t4);
+    t5();
+    TESTASSERT(v == 5);
+  }
+
+  D                             d;
+  srslte::move_callback<void()> t6 = [&v, d]() { v = d.big_val[0]; };
+  {
+    srslte::move_callback<void()> t7;
+    t6();
+    TESTASSERT(v == 6);
+    v  = 0;
+    t7 = std::move(t6);
+    t7();
+    TESTASSERT(v == 6);
+  }
+
+  auto l1 = std::bind([&v](C& c) { v = *c.val; }, C{});
+  auto l2 = [&v, d]() { v = d.big_val[0]; };
+  t       = std::move(l1);
+  t2      = l2;
+  v       = 0;
+  t();
+  TESTASSERT(v == 5);
+  t2();
+  TESTASSERT(v == 6);
+  TESTASSERT(t.is_in_small_buffer() and not t2.is_in_small_buffer());
+  std::swap(t, t2);
+  TESTASSERT(t2.is_in_small_buffer() and not t.is_in_small_buffer());
+  v = 0;
+  t();
+  TESTASSERT(v == 6);
+  t2();
+  TESTASSERT(v == 5);
+
+  // TEST: task works in const contexts
+  t       = l2;
+  auto l3 = [](const srslte::move_callback<void()>& task) { task(); };
+  v       = 0;
+  l3(t);
+  TESTASSERT(v == 6);
+
+  std::cout << "outcome: Success\n";
+  std::cout << "========================================\n";
+  return 0;
+}
+
 int main()
 {
   TESTASSERT(test_multiqueue() == 0);
@@ -330,4 +413,6 @@ int main()
   TESTASSERT(test_task_thread_pool() == 0);
   TESTASSERT(test_task_thread_pool2() == 0);
   TESTASSERT(test_task_thread_pool3() == 0);
+
+  TESTASSERT(test_inplace_task() == 0);
 }

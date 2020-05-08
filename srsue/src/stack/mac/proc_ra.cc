@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -19,28 +19,22 @@
  *
  */
 
-#define Error(fmt, ...) log_h->error(fmt, ##__VA_ARGS__)
-#define Warning(fmt, ...) log_h->warning(fmt, ##__VA_ARGS__)
-#define Info(fmt, ...) log_h->info(fmt, ##__VA_ARGS__)
-#define Debug(fmt, ...) log_h->debug(fmt, ##__VA_ARGS__)
-
+#include "srsue/hdr/stack/mac/proc_ra.h"
+#include "srslte/common/log_helper.h"
+#include "srsue/hdr/stack/mac/mux.h"
 #include <inttypes.h> // for printing uint64_t
-#include <signal.h>
 #include <stdint.h>
 #include <stdlib.h>
-
-#include "srsue/hdr/stack/mac/mac.h"
-#include "srsue/hdr/stack/mac/mux.h"
-#include "srsue/hdr/stack/mac/proc_ra.h"
 
 /* Random access procedure as specified in Section 5.1 of 36.321 */
 
 namespace srsue {
 
 const char* state_str[] = {"RA:    INIT:   ",
+                           "RA:    INIT:   ",
                            "RA:    PDCCH:  ",
                            "RA:    Rx:     ",
-                           "RA:    Backof: ",
+                           "RA:    Backoff: ",
                            "RA:    ConRes: ",
                            "RA:    WaitComplt: ",
                            "RA:    Complt: "};
@@ -58,12 +52,11 @@ int delta_preamble_db_table[5] = {0, 0, -3, -3, 8};
 // Initializes memory and pointers to other objects
 void ra_proc::init(phy_interface_mac_lte*               phy_h_,
                    rrc_interface_mac*                   rrc_,
-                   srslte::log*                         log_h_,
+                   srslte::log_ref                      log_h_,
                    mac_interface_rrc::ue_rnti_t*        rntis_,
                    srslte::timer_handler::unique_timer* time_alignment_timer_,
-                   srslte::timer_handler::unique_timer  contention_resolution_timer_,
                    mux*                                 mux_unit_,
-                   stack_interface_mac*                 stack_)
+                   srslte::task_handler_interface*      stack_)
 {
   phy_h    = phy_h_;
   log_h    = log_h_;
@@ -73,7 +66,7 @@ void ra_proc::init(phy_interface_mac_lte*               phy_h_,
   stack    = stack_;
 
   time_alignment_timer        = time_alignment_timer_;
-  contention_resolution_timer = std::move(contention_resolution_timer_);
+  contention_resolution_timer = stack->get_unique_timer();
 
   srslte_softbuffer_rx_init(&softbuffer_rar, 10);
 
@@ -98,10 +91,10 @@ void ra_proc::start_pcap(srslte::mac_pcap* pcap_)
 }
 
 /* Sets a new configuration. The configuration is applied by initialization() function */
-void ra_proc::set_config(srslte::rach_cfg_t& rach_cfg)
+void ra_proc::set_config(srslte::rach_cfg_t& rach_cfg_)
 {
   std::unique_lock<std::mutex> ul(mutex);
-  new_cfg = rach_cfg;
+  new_cfg = rach_cfg_;
 }
 
 /* Reads the configuration and configures internal variables */
@@ -155,6 +148,7 @@ void ra_proc::step(uint32_t tti_)
     case START_WAIT_COMPLETION:
       state_completition();
       break;
+    case WAITING_PHY_CONFIG:
     case WAITING_COMPLETION:
       // do nothing, bc we are waiting for the phy to finish
       break;
@@ -235,36 +229,67 @@ void ra_proc::state_contention_resolution()
  */
 void ra_proc::state_completition()
 {
-  state = WAITING_COMPLETION;
-  stack->wait_ra_completion(rntis->crnti);
-  //  phy_h->set_crnti(rntis->crnti);
-  //  state = IDLE;
+  state            = WAITING_COMPLETION;
+  uint16_t rnti    = rntis->crnti;
+  uint32_t task_id = current_task_id;
+  stack->enqueue_background_task([this, rnti, task_id](uint32_t worker_id) {
+    phy_h->set_crnti(rnti);
+    // signal MAC RA proc to go back to idle
+    notify_ra_completed(task_id);
+  });
 }
 
-void ra_proc::notify_ra_completed()
+void ra_proc::notify_phy_config_completed(uint32_t task_id)
 {
-  if (state != WAITING_COMPLETION) {
-    rError("Received unexpected notification of RA completion\n");
+  if (current_task_id == task_id) {
+    if (state != WAITING_PHY_CONFIG) {
+      rError("Received unexpected notification of PHY configuration completed\n");
+    } else {
+      rDebug("RA waiting PHY configuration completed\n");
+    }
+    // Jump directly to Resource selection
+    resource_selection();
   } else {
-    rInfo("RA waiting procedure completed\n");
+    rError("Received old notification of PHY configuration (old task_id=%d, current_task_id=%d)\n",
+           task_id,
+           current_task_id);
   }
-  state = IDLE;
+}
+
+void ra_proc::notify_ra_completed(uint32_t task_id)
+{
+  if (current_task_id == task_id) {
+    if (state != WAITING_COMPLETION) {
+      rError("Received unexpected notification of RA completion\n");
+    } else {
+      rInfo("RA waiting procedure completed\n");
+    }
+    state = IDLE;
+  } else {
+    rError("Received old notification of RA completition (old task_id=%d, current_task_id=%d)\n",
+           task_id,
+           current_task_id);
+  }
 }
 
 /* RA procedure initialization as defined in 5.1.1 */
 void ra_proc::initialization()
 {
   read_params();
+  current_task_id++;
   transmitted_contention_id   = 0;
   preambleTransmissionCounter = 1;
   mux_unit->msg3_flush();
   backoff_param_ms = 0;
 
   // Instruct phy to configure PRACH
-  phy_h->configure_prach_params();
-
-  // Jump directly to Resource selection
-  resource_selection();
+  state            = WAITING_PHY_CONFIG;
+  uint32_t task_id = current_task_id;
+  stack->enqueue_background_task([this, task_id](uint32_t worker_id) {
+    phy_h->configure_prach_params();
+    // notify back MAC
+    stack->notify_background_task_result([this, task_id]() { notify_phy_config_completed(task_id); });
+  });
 }
 
 /* Resource selection as defined in 5.1.2 */
@@ -391,10 +416,10 @@ void ra_proc::new_grant_dl(mac_interface_phy_lte::mac_grant_dl_t grant, mac_inte
 /* Called upon the successful decoding of a TB addressed to RA-RNTI.
  * Processes the reception of a RAR as defined in 5.1.4
  */
-void ra_proc::tb_decoded_ok(const uint32_t tti)
+void ra_proc::tb_decoded_ok(const uint8_t cc_idx, const uint32_t tti)
 {
   if (pcap) {
-    pcap->write_dl_ranti(rar_pdu_buffer, rar_grant_nbytes, ra_rnti, true, tti);
+    pcap->write_dl_ranti(rar_pdu_buffer, rar_grant_nbytes, ra_rnti, true, tti, cc_idx);
   }
 
   rDebug("RAR decoded successfully TBS=%d\n", rar_grant_nbytes);
@@ -493,7 +518,7 @@ void ra_proc::response_error()
       rDebug("Backoff wait interval %d\n", backoff_interval);
       state = BACKOFF_WAIT;
     } else {
-      rDebug("Transmitting inmediatly (%d/%d)\n", preambleTransmissionCounter, rach_cfg.preambleTransMax);
+      rDebug("Transmitting immediately (%d/%d)\n", preambleTransmissionCounter, rach_cfg.preambleTransMax);
       resource_selection();
     }
   }
@@ -572,6 +597,11 @@ bool ra_proc::contention_resolution_id_received(uint64_t rx_contention_id)
 
   rDebug("MAC PDU Contains Contention Resolution ID CE\n");
 
+  if (state != CONTENTION_RESOLUTION) {
+    rError("Received contention resolution in wrong state. Aborting.\n");
+    response_error();
+  }
+
   // MAC PDU successfully decoded and contains MAC CE contention Id
   contention_resolution_timer.stop();
 
@@ -604,22 +634,17 @@ void ra_proc::pdcch_to_crnti(bool is_new_uplink_transmission)
   }
 }
 
-bool ra_proc::update_rar_window(int* rar_window_start, int* rar_window_length)
+void ra_proc::update_rar_window(int& rar_window_start, int& rar_window_length)
 {
-  if (state == RESPONSE_RECEPTION) {
-    if (rar_window_length) {
-      *rar_window_length = rach_cfg.responseWindowSize;
-    }
-    if (rar_window_start) {
-      *rar_window_start = rar_window_st;
-    }
-    return true;
+  if (state != RESPONSE_RECEPTION) {
+    // reset RAR window params to default values to disable RAR search
+    rar_window_start  = -1;
+    rar_window_length = -1;
   } else {
-    if (rar_window_length) {
-      *rar_window_length = -1;
-    }
-    return false;
+    rar_window_length = rach_cfg.responseWindowSize;
+    rar_window_start  = rar_window_st;
   }
+  rDebug("rar_window_start=%d, rar_window_length=%d\n", rar_window_start, rar_window_length);
 }
 
 // Restart timer at each Msg3 HARQ retransmission (5.1.5)

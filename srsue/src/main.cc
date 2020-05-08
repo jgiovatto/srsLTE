@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -19,26 +19,24 @@
  *
  */
 
-#include <pthread.h>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-
-#include <boost/program_options.hpp>
-#include <boost/program_options/parsers.hpp>
-#include <fstream>
-#include <iostream>
-#include <string>
-
 #include "srslte/common/config_file.h"
 #include "srslte/common/crash_handler.h"
+#include "srslte/common/logmap.h"
 #include "srslte/common/metrics_hub.h"
+#include "srslte/common/signal_handler.h"
 #include "srslte/srslte.h"
 #include "srslte/version.h"
 #include "srsue/hdr/metrics_csv.h"
 #include "srsue/hdr/metrics_stdout.h"
 #include "srsue/hdr/ue.h"
+#include <boost/program_options.hpp>
+#include <boost/program_options/parsers.hpp>
+#include <iostream>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string>
+#include <unistd.h>
 
 extern bool simulate_rlf;
 
@@ -50,10 +48,8 @@ namespace bpo = boost::program_options;
  *  Local static variables
  ***********************************************************************/
 
-static int             sigcnt         = 0;
-static bool            running        = true;
-static bool            do_metrics     = false;
-static metrics_stdout* metrics_screen = nullptr;
+static bool                do_metrics     = false;
+static metrics_stdout*     metrics_screen = nullptr;
 
 /**********************************************************************
  *  Program arguments processing
@@ -75,23 +71,42 @@ static int parse_args(all_args_t* args, int argc, char* argv[])
     ("ue.phy", bpo::value<string>(&args->phy.type)->default_value("lte"), "Type of the PHY [lte]")
     ("ue.stack", bpo::value<string>(&args->stack.type)->default_value("lte"), "Type of the upper stack [lte]")
 
-    ("rf.dl_earfcn", bpo::value<string>(&args->phy.dl_earfcn)->default_value("3400"), "Downlink EARFCN list")
-    ("rf.freq_offset", bpo::value<float>(&args->rf.freq_offset)->default_value(0), "(optional) Frequency offset")
-    ("rf.dl_freq",     bpo::value<float>(&args->phy.dl_freq)->default_value(-1),      "Downlink Frequency (if positive overrides EARFCN)")
-    ("rf.ul_freq",     bpo::value<float>(&args->phy.ul_freq)->default_value(-1),      "Uplink Frequency (if positive overrides EARFCN)")
-    ("rf.rx_gain", bpo::value<float>(&args->rf.rx_gain)->default_value(-1), "Front-end receiver gain")
-    ("rf.tx_gain", bpo::value<float>(&args->rf.tx_gain)->default_value(-1), "Front-end transmitter gain")
-    ("rf.nof_radios", bpo::value<uint32_t>(&args->rf.nof_radios)->default_value(1), "Number of available RF devices")
-    ("rf.nof_rf_channels", bpo::value<uint32_t>(&args->rf.nof_rf_channels)->default_value(1), "Number of RF channels per radio")
-    ("rf.nof_rx_ant", bpo::value<uint32_t>(&args->rf.nof_rx_ant)->default_value(1), "Number of RX antennas per channel")
+    ("rf.dl_earfcn",    bpo::value<string>(&args->phy.dl_earfcn)->default_value("3400"), "Downlink EARFCN list")
+    ("rf.ul_earfcn",    bpo::value<string>(&args->phy.ul_earfcn), "Uplink EARFCN list. Optional.")
+    ("rf.freq_offset",  bpo::value<float>(&args->rf.freq_offset)->default_value(0), "(optional) Frequency offset")
+    ("rf.dl_freq",      bpo::value<float>(&args->phy.dl_freq)->default_value(-1),      "Downlink Frequency (if positive overrides EARFCN)")
+    ("rf.ul_freq",      bpo::value<float>(&args->phy.ul_freq)->default_value(-1),      "Uplink Frequency (if positive overrides EARFCN)")
+    ("rf.rx_gain",      bpo::value<float>(&args->rf.rx_gain)->default_value(-1), "Front-end receiver gain")
+    ("rf.tx_gain",      bpo::value<float>(&args->rf.tx_gain)->default_value(-1), "Front-end transmitter gain")
+    ("rf.nof_carriers", bpo::value<uint32_t>(&args->rf.nof_carriers)->default_value(1), "Number of carriers")
+    ("rf.nof_antennas", bpo::value<uint32_t>(&args->rf.nof_antennas)->default_value(1), "Number of antennas per carrier")
 
     ("rf.device_name", bpo::value<string>(&args->rf.device_name)->default_value("auto"), "Front-end device name")
-    ("rf.device_args", bpo::value<string>(&args->rf.device_args[0])->default_value("auto"), "Front-end device arguments")
-    ("rf.device_args_2", bpo::value<string>(&args->rf.device_args[1])->default_value("auto"), "Front-end device 2 arguments")
-    ("rf.device_args_3", bpo::value<string>(&args->rf.device_args[2])->default_value("auto"), "Front-end device 3 arguments")
+    ("rf.device_args", bpo::value<string>(&args->rf.device_args)->default_value("auto"), "Front-end device arguments")
     ("rf.time_adv_nsamples", bpo::value<string>(&args->rf.time_adv_nsamples)->default_value("auto"), "Transmission time advance")
-    ("rf.burst_preamble_us", bpo::value<string>(&args->rf.burst_preamble)->default_value("auto"), "Transmission time advance")
     ("rf.continuous_tx", bpo::value<string>(&args->rf.continuous_tx)->default_value("auto"), "Transmit samples continuously to the radio or on bursts (auto/yes/no). Default is auto (yes for UHD, no for rest)")
+
+    ("rf.bands.rx[0].min", bpo::value<float>(&args->rf.ch_rx_bands[0].min)->default_value(0), "Lower frequency boundary for CH0-RX")
+    ("rf.bands.rx[0].max", bpo::value<float>(&args->rf.ch_rx_bands[0].max)->default_value(0), "Higher frequency boundary for CH0-RX")
+    ("rf.bands.rx[1].min", bpo::value<float>(&args->rf.ch_rx_bands[1].min)->default_value(0), "Lower frequency boundary for CH1-RX")
+    ("rf.bands.rx[1].max", bpo::value<float>(&args->rf.ch_rx_bands[1].max)->default_value(0), "Higher frequency boundary for CH1-RX")
+    ("rf.bands.rx[2].min", bpo::value<float>(&args->rf.ch_rx_bands[2].min)->default_value(0), "Lower frequency boundary for CH2-RX")
+    ("rf.bands.rx[2].max", bpo::value<float>(&args->rf.ch_rx_bands[2].max)->default_value(0), "Higher frequency boundary for CH2-RX")
+    ("rf.bands.rx[3].min", bpo::value<float>(&args->rf.ch_rx_bands[3].min)->default_value(0), "Lower frequency boundary for CH3-RX")
+    ("rf.bands.rx[3].max", bpo::value<float>(&args->rf.ch_rx_bands[3].max)->default_value(0), "Higher frequency boundary for CH3-RX")
+    ("rf.bands.rx[4].min", bpo::value<float>(&args->rf.ch_rx_bands[4].min)->default_value(0), "Lower frequency boundary for CH4-RX")
+    ("rf.bands.rx[4].max", bpo::value<float>(&args->rf.ch_rx_bands[4].max)->default_value(0), "Higher frequency boundary for CH4-RX")
+
+    ("rf.bands.tx[0].min", bpo::value<float>(&args->rf.ch_tx_bands[0].min)->default_value(0), "Lower frequency boundary for CH1-TX")
+    ("rf.bands.tx[0].max", bpo::value<float>(&args->rf.ch_tx_bands[0].max)->default_value(0), "Higher frequency boundary for CH1-TX")
+    ("rf.bands.tx[1].min", bpo::value<float>(&args->rf.ch_tx_bands[1].min)->default_value(0), "Lower frequency boundary for CH1-TX")
+    ("rf.bands.tx[1].max", bpo::value<float>(&args->rf.ch_tx_bands[1].max)->default_value(0), "Higher frequency boundary for CH1-TX")
+    ("rf.bands.tx[2].min", bpo::value<float>(&args->rf.ch_tx_bands[2].min)->default_value(0), "Lower frequency boundary for CH2-TX")
+    ("rf.bands.tx[2].max", bpo::value<float>(&args->rf.ch_tx_bands[2].max)->default_value(0), "Higher frequency boundary for CH2-TX")
+    ("rf.bands.tx[3].min", bpo::value<float>(&args->rf.ch_tx_bands[3].min)->default_value(0), "Lower frequency boundary for CH3-TX")
+    ("rf.bands.tx[3].max", bpo::value<float>(&args->rf.ch_tx_bands[3].max)->default_value(0), "Higher frequency boundary for CH3-TX")
+    ("rf.bands.tx[4].min", bpo::value<float>(&args->rf.ch_tx_bands[4].min)->default_value(0), "Lower frequency boundary for CH4-TX")
+    ("rf.bands.tx[4].max", bpo::value<float>(&args->rf.ch_tx_bands[4].max)->default_value(0), "Higher frequency boundary for CH4-TX")
 
     ("rrc.feature_group", bpo::value<uint32_t>(&args->stack.rrc.feature_group)->default_value(0xe6041000), "Hex value of the featureGroupIndicators field in the"
                                                                                            "UECapabilityInformation message. Default 0xe6041000")
@@ -114,10 +129,10 @@ static int parse_args(all_args_t* args, int argc, char* argv[])
     ("pcap.filename", bpo::value<string>(&args->stack.pcap.filename)->default_value("ue.pcap"), "MAC layer capture filename")
     ("pcap.nas_enable",   bpo::value<bool>(&args->stack.pcap.nas_enable)->default_value(false), "Enable NAS packet captures for wireshark")
     ("pcap.nas_filename", bpo::value<string>(&args->stack.pcap.nas_filename)->default_value("ue_nas.pcap"), "NAS layer capture filename (useful when NAS encryption is enabled)")
-    
+
     ("gui.enable", bpo::value<bool>(&args->gui.enable)->default_value(false), "Enable GUI plots")
 
-    ("log.rf_level", bpo::value<string>(&args->rf.log_level)->default_value("error"), "RF log level")
+    ("log.rf_level", bpo::value<string>(&args->rf.log_level), "RF log level")
     ("log.phy_level", bpo::value<string>(&args->phy.log.phy_level), "PHY log level")
     ("log.phy_lib_level", bpo::value<string>(&args->phy.log.phy_lib_level), "PHY lib log level")
     ("log.phy_hex_limit", bpo::value<int>(&args->phy.log.phy_hex_limit), "PHY log hex dump limit")
@@ -152,11 +167,14 @@ static int parse_args(all_args_t* args, int argc, char* argv[])
     ("usim.pin", bpo::value<string>(&args->stack.usim.pin), "PIN in case real SIM card is used")
     ("usim.reader", bpo::value<string>(&args->stack.usim.reader)->default_value(""), "Force specific PCSC reader. Default: Try all available readers.")
 
+    ("gw.netns", bpo::value<string>(&args->gw.netns)->default_value(""), "Network namespace to for TUN device (empty for default netns)")
     ("gw.ip_devname", bpo::value<string>(&args->gw.tun_dev_name)->default_value("tun_srsue"), "Name of the tun_srsue device")
     ("gw.ip_netmask", bpo::value<string>(&args->gw.tun_dev_netmask)->default_value("255.255.255.0"), "Netmask of the tun_srsue device")
 
     /* Downlink Channel emulator section */
     ("channel.dl.enable", bpo::value<bool>(&args->phy.dl_channel_args.enable)->default_value(false), "Enable/Disable internal Downlink channel emulator")
+    ("channel.dl.awgn.enable", bpo::value<bool>(&args->phy.dl_channel_args.awgn_enable)->default_value(false), "Enable/Disable AWGN simulator")
+    ("channel.dl.awgn.n0", bpo::value<float>(&args->phy.dl_channel_args.awgn_n0_dBfs)->default_value(-30.0f), "Noise level in decibels full scale (dBfs)")
     ("channel.dl.fading.enable", bpo::value<bool>(&args->phy.dl_channel_args.fading_enable)->default_value(false), "Enable/Disable Fading model")
     ("channel.dl.fading.model", bpo::value<std::string>(&args->phy.dl_channel_args.fading_model)->default_value("none"), "Fading model + maximum doppler (E.g. none, epa5, eva70, etu300, etc)")
     ("channel.dl.delay.enable", bpo::value<bool>(&args->phy.dl_channel_args.delay_enable)->default_value(false), "Enable/Disable Delay simulator")
@@ -174,6 +192,8 @@ static int parse_args(all_args_t* args, int argc, char* argv[])
 
     /* Uplink Channel emulator section */
     ("channel.ul.enable", bpo::value<bool>(&args->phy.ul_channel_args.enable)->default_value(false), "Enable/Disable internal Uplink channel emulator")
+    ("channel.ul.awgn.enable", bpo::value<bool>(&args->phy.ul_channel_args.awgn_enable)->default_value(false), "Enable/Disable AWGN simulator")
+    ("channel.ul.awgn.n0", bpo::value<float>(&args->phy.ul_channel_args.awgn_n0_dBfs)->default_value(-30.0f), "Noise level in decibels full scale (dBfs)")
     ("channel.ul.fading.enable", bpo::value<bool>(&args->phy.ul_channel_args.fading_enable)->default_value(false), "Enable/Disable Fading model")
     ("channel.ul.fading.model", bpo::value<std::string>(&args->phy.ul_channel_args.fading_model)->default_value("none"), "Fading model + maximum doppler (E.g. none, epa5, eva70, etu300, etc)")
     ("channel.ul.delay.enable", bpo::value<bool>(&args->phy.ul_channel_args.delay_enable)->default_value(false), "Enable/Disable Delay simulator")
@@ -197,10 +217,6 @@ static int parse_args(all_args_t* args, int argc, char* argv[])
     ("phy.sync_cpu_affinity",
      bpo::value<int>(&args->phy.sync_cpu_affinity)->default_value(-1),
      "index of the core used by the sync thread")
-
-    ("phy.pregenerate_signals",
-     bpo::value<bool>(&args->phy.pregenerate_signals)->default_value(false),
-     "Pregenerate uplink signals after attach. Improves CPU performance.")
 
     ("phy.rx_gain_offset",
      bpo::value<float>(&args->phy.rx_gain_offset)->default_value(62),
@@ -235,8 +251,12 @@ static int parse_args(all_args_t* args, int argc, char* argv[])
      "Sets the noise estimation algorithm. (Default refs)")
 
     ("phy.pdsch_max_its",
-     bpo::value<int>(&args->phy.pdsch_max_its)->default_value(8),
+     bpo::value<uint32_t>(&args->phy.pdsch_max_its)->default_value(8),
      "Maximum number of turbo decoder iterations")
+
+    ("phy.meas_evm",
+     bpo::value<bool>(&args->phy.meas_evm)->default_value(false),
+     "Measure PDSCH EVM, increases CPU load (default false)")
 
     ("phy.nof_phy_threads",
      bpo::value<int>(&args->phy.nof_phy_threads)->default_value(3),
@@ -253,6 +273,11 @@ static int parse_args(all_args_t* args, int argc, char* argv[])
     ("phy.intra_freq_meas_period_ms",
        bpo::value<uint32_t>(&args->phy.intra_freq_meas_period_ms)->default_value(200),
        "Period of intra-frequency neighbour cell measurement in ms. Maximum as per 3GPP is 200 ms.")
+
+    ("phy.correct_sync_error",
+       bpo::value<bool>(&args->phy.correct_sync_error)->default_value(false),
+       "Channel estimator measures and pre-compensates time synchronization error. Increases CPU usage, improves PDSCH "
+       "decoding in high SFO and high speed UE scenarios.")
 
     ("phy.cfo_is_doppler",
        bpo::value<bool>(&args->phy.cfo_is_doppler)->default_value(false),
@@ -296,10 +321,6 @@ static int parse_args(all_args_t* args, int argc, char* argv[])
      bpo::value<uint32_t>(&args->phy.cfo_loop_pss_conv)->default_value(DEFAULT_PSS_STABLE_TIMEOUT),
      "After the PSS estimation is below cfo_loop_pss_tol for cfo_loop_pss_timeout times consecutively, RS adjustments are allowed.")
 
-    ("phy.sic_pss_enabled",
-     bpo::value<bool>(&args->phy.sic_pss_enabled)->default_value(false),
-     "Applies Successive Interference Cancellation to PSS signals when searching for neighbour cells. Must be disabled if cells have identical channel and timing.")
-
     ("phy.interpolate_subframe_enabled",
      bpo::value<bool>(&args->phy.interpolate_subframe_enabled)->default_value(false),
      "Interpolates in the time domain the channel estimates within 1 subframe.")
@@ -336,7 +357,32 @@ static int parse_args(all_args_t* args, int argc, char* argv[])
        bpo::value<float>(&args->phy.force_ul_amplitude)->default_value(0.0),
        "Forces the peak amplitude in the PUCCH, PUSCH and SRS (set 0.0 to 1.0, set to 0 or negative for disabling)")
 
-    /* general options */
+    ("phy.in_sync_rsrp_dbm_th",
+     bpo::value<float>(&args->phy.in_sync_rsrp_dbm_th)->default_value(-130.0f),
+     "RSRP threshold (in dBm) above which the UE considers to be in-sync")
+
+    ("phy.in_sync_snr_db_th",
+     bpo::value<float>(&args->phy.in_sync_snr_db_th)->default_value(3.0f),
+     "SNR threshold (in dB) above which the UE considers to be in-sync")
+
+    ("phy.nof_in_sync_events",
+     bpo::value<uint32_t>(&args->phy.nof_in_sync_events)->default_value(10),
+     "Number of PHY in-sync events before sending an in-sync event to RRC")
+
+    ("phy.nof_out_of_sync_events",
+     bpo::value<uint32_t>(&args->phy.nof_out_of_sync_events)->default_value(20),
+     "Number of PHY out-sync events before sending an out-sync event to RRC")
+
+    // UE simulation args
+    ("sim.airplane_t_on_ms",
+     bpo::value<int>(&args->stack.nas.sim.airplane_t_on_ms)->default_value(-1),
+     "On-time for airplane mode (in ms)")
+
+    ("sim.airplane_t_off_ms",
+     bpo::value<int>(&args->stack.nas.sim.airplane_t_off_ms)->default_value(-1),
+     "Off-time for airplane mode (in ms)")
+
+     /* general options */
     ("general.metrics_period_secs",
        bpo::value<float>(&args->general.metrics_period_secs)->default_value(1.0),
       "Periodicity for metrics in seconds")
@@ -347,8 +393,20 @@ static int parse_args(all_args_t* args, int argc, char* argv[])
 
     ("general.metrics_csv_filename",
        bpo::value<string>(&args->general.metrics_csv_filename)->default_value("/tmp/ue_metrics.csv"),
-       "Metrics CSV filename");
-    
+       "Metrics CSV filename")
+
+    ("general.metrics_csv_append",
+           bpo::value<bool>(&args->general.metrics_csv_append)->default_value(false),
+           "Set to true to append new output to existing CSV file")
+
+    ("general.metrics_csv_flush_period_sec",
+           bpo::value<int>(&args->general.metrics_csv_flush_period_sec)->default_value(-1),
+           "Periodicity in s to flush CSV file to disk (-1 for auto)")
+
+    ("stack.have_tti_time_stats",
+        bpo::value<bool>(&args->stack.have_tti_time_stats)->default_value(true),
+        "Calculate TTI execution statistics");
+
   // Positional options - config file location
   bpo::options_description position("Positional options");
   position.add_options()
@@ -369,23 +427,20 @@ static int parse_args(all_args_t* args, int argc, char* argv[])
     bpo::notify(vm);
   } catch (bpo::error& e) {
     cerr << e.what() << endl;
-    running = false;
     return SRSLTE_ERROR;
   }
   // help option was given - print usage and exit
   if (vm.count("help")) {
     cout << "Usage: " << argv[0] << " [OPTIONS] config_file" << endl << endl;
     cout << common << endl << general << endl;
-    running = false;
-    return SRSLTE_SUCCESS;
+    exit(SRSLTE_SUCCESS);
   }
 
   // print version number and exit
   if (vm.count("version")) {
     cout << "Version " << srslte_get_version_major() << "." << srslte_get_version_minor() << "."
          << srslte_get_version_patch() << endl;
-    running = false;
-    return SRSLTE_SUCCESS;
+    exit(SRSLTE_SUCCESS);
   }
 
   // if no config file given, check users home path
@@ -393,7 +448,6 @@ static int parse_args(all_args_t* args, int argc, char* argv[])
 
     if (!config_exists(config_file, "ue.conf")) {
       cout << "Failed to read UE configuration file " << config_file << " - exiting" << endl;
-      running = false;
       return SRSLTE_ERROR;
     }
   }
@@ -402,7 +456,6 @@ static int parse_args(all_args_t* args, int argc, char* argv[])
   ifstream conf(config_file.c_str(), ios::in);
   if (conf.fail()) {
     cout << "Failed to read configuration file " << config_file << " - exiting" << endl;
-    running = false;
     return SRSLTE_ERROR;
   }
 
@@ -412,14 +465,12 @@ static int parse_args(all_args_t* args, int argc, char* argv[])
     bpo::notify(vm);
   } catch (const boost::program_options::error& e) {
     cerr << e.what() << endl;
-    running = false;
     return SRSLTE_ERROR;
   }
 
   // Check conflicting OP/OPc options and which is being used
   if (vm.count("usim.op") && !vm["usim.op"].defaulted() && vm.count("usim.opc") && !vm["usim.opc"].defaulted()) {
     cout << "Conflicting options OP and OPc. Please configure either one or the other." << endl;
-    running = false;
     return SRSLTE_ERROR;
   } else {
     args->stack.usim.using_op = vm.count("usim.op");
@@ -490,16 +541,6 @@ static int parse_args(all_args_t* args, int argc, char* argv[])
   return SRSLTE_SUCCESS;
 }
 
-static void sig_int_handler(int)
-{
-  sigcnt++;
-  running = false;
-  cout << "Stopping srsUE... Press Ctrl+C " << (10 - sigcnt) << " more times to force stop" << endl;
-  if (sigcnt >= 10) {
-    exit(-1);
-  }
-}
-
 static void* input_loop(void*)
 {
   string key;
@@ -523,7 +564,8 @@ static void* input_loop(void*)
         simulate_rlf = true;
         cout << "Sending Radio Link Failure" << endl;
       } else if (key == "q") {
-        running = false;
+        // let the signal handler do the job
+        raise(SIGTERM);
       }
     }
   }
@@ -532,20 +574,16 @@ static void* input_loop(void*)
 
 int main(int argc, char* argv[])
 {
-  signal(SIGINT, sig_int_handler);
-  signal(SIGTERM, sig_int_handler);
+  srslte_register_signal_handler();
   srslte_debug_handle_crash(argc, argv);
 
   all_args_t args = {};
-  int        ret  = parse_args(&args, argc, argv);
-  if (!running) {
-    return ret;
-  }
-
-  srslte::logger_stdout logger_stdout;
-  srslte::logger_file   logger_file;
+  if (parse_args(&args, argc, argv) != SRSLTE_SUCCESS) {
+    return SRSLTE_ERROR;
+  };
 
   // Setup logging
+  srslte::logger_stdout logger_stdout;
   srslte::logger* logger = nullptr;
   if (args.log.filename == "stdout") {
     logger = &logger_stdout;
@@ -553,6 +591,7 @@ int main(int argc, char* argv[])
     logger_file.init(args.log.filename, args.log.file_max_size);
     logger = &logger_file;
   }
+  srslte::logmap::set_default_logger(logger);
 
   // Create UE instance
   srsue::ue ue;
@@ -569,10 +608,13 @@ int main(int argc, char* argv[])
   metricshub.add_listener(metrics_screen);
   metrics_screen->set_ue_handle(&ue);
 
-  metrics_csv metrics_file(args.general.metrics_csv_filename);
+  metrics_csv metrics_file(args.general.metrics_csv_filename, args.general.metrics_csv_append);
   if (args.general.metrics_csv_enable) {
     metricshub.add_listener(&metrics_file);
     metrics_file.set_ue_handle(&ue);
+    if (args.general.metrics_csv_flush_period_sec > 0) {
+      metrics_file.set_flush_period((uint32_t)args.general.metrics_csv_flush_period_sec);
+    }
   }
 
   pthread_t input;
@@ -593,6 +635,7 @@ int main(int argc, char* argv[])
   pthread_cancel(input);
   pthread_join(input, nullptr);
   metricshub.stop();
+  metrics_file.stop();
   ue.stop();
   cout << "---  exiting  ---" << endl;
 

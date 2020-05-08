@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -28,7 +28,7 @@ void rlc::init(pdcp_interface_rlc*    pdcp_,
                rrc_interface_rlc*     rrc_,
                mac_interface_rlc*     mac_,
                srslte::timer_handler* timers_,
-               srslte::log*           log_h_)
+               srslte::log_ref        log_h_)
 {
   pdcp   = pdcp_;
   rrc    = rrc_;
@@ -56,7 +56,7 @@ void rlc::add_user(uint16_t rnti)
 {
   pthread_rwlock_rdlock(&rwlock);
   if (users.count(rnti) == 0) {
-    std::unique_ptr<srslte::rlc> obj(new srslte::rlc(log_h));
+    std::unique_ptr<srslte::rlc> obj(new srslte::rlc(log_h->get_service_name().c_str()));
     obj->init(&users[rnti], &users[rnti], timers, RB_ID_SRB0);
     users[rnti].rnti   = rnti;
     users[rnti].pdcp   = pdcp;
@@ -121,6 +121,30 @@ bool rlc::has_bearer(uint16_t rnti, uint32_t lcid)
   return result;
 }
 
+bool rlc::suspend_bearer(uint16_t rnti, uint32_t lcid)
+{
+  pthread_rwlock_rdlock(&rwlock);
+  bool result = false;
+  if (users.count(rnti)) {
+    users[rnti].rlc->suspend_bearer(lcid);
+    result = true;
+  }
+  pthread_rwlock_unlock(&rwlock);
+  return result;
+}
+
+bool rlc::resume_bearer(uint16_t rnti, uint32_t lcid)
+{
+  pthread_rwlock_rdlock(&rwlock);
+  bool result = false;
+  if (users.count(rnti)) {
+    users[rnti].rlc->resume_bearer(lcid);
+    result = true;
+  }
+  pthread_rwlock_unlock(&rwlock);
+  return result;
+}
+
 void rlc::read_pdu_pcch(uint8_t* payload, uint32_t buffer_size)
 {
   rrc->read_pdu_pcch(payload, buffer_size);
@@ -169,12 +193,6 @@ void rlc::write_pdu(uint16_t rnti, uint32_t lcid, uint8_t* payload, uint32_t nof
   pthread_rwlock_unlock(&rwlock);
 }
 
-void rlc::read_pdu_bcch_dlsch(uint32_t sib_index, uint8_t* payload)
-{
-  // RLC is transparent for BCCH
-  rrc->read_pdu_bcch_dlsch(sib_index, payload);
-}
-
 void rlc::write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu)
 {
   uint32_t tx_queue;
@@ -200,13 +218,10 @@ void rlc::write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t s
 
 void rlc::discard_sdu(uint16_t rnti, uint32_t lcid, uint32_t discard_sn)
 {
-
-  uint32_t tx_queue;
-
   pthread_rwlock_rdlock(&rwlock);
   if (users.count(rnti)) {
     users[rnti].rlc->discard_sdu(lcid, discard_sn);
-    tx_queue = users[rnti].rlc->get_buffer_state(lcid);
+    uint32_t tx_queue = users[rnti].rlc->get_buffer_state(lcid);
 
     // In the eNodeB, there is no polling for buffer state from the scheduler, thus
     // communicate buffer state every time a new SDU is discarded

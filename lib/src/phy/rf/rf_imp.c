@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -100,7 +100,7 @@ const char* srslte_rf_get_devname(srslte_rf_t* rf)
   return ((rf_dev_t*)rf->dev)->name;
 }
 
-int srslte_rf_open_devname(srslte_rf_t* rf, char* devname, char* args, uint32_t nof_channels)
+int srslte_rf_open_devname(srslte_rf_t* rf, const char* devname, char* args, uint32_t nof_channels)
 {
   rf->thread_gain_run = false;
   /* Try to open the device if name is provided */
@@ -108,7 +108,7 @@ int srslte_rf_open_devname(srslte_rf_t* rf, char* devname, char* args, uint32_t 
     if (devname[0] != '\0') {
       int i = 0;
       while (available_devices[i] != NULL) {
-        if (!strcmp(available_devices[i]->name, devname)) {
+        if (!strcasecmp(available_devices[i]->name, devname)) {
           rf->dev = available_devices[i];
           return available_devices[i]->srslte_rf_open_multi(args, &rf->handler, nof_channels);
         }
@@ -166,9 +166,9 @@ void srslte_rf_suppress_stdout(srslte_rf_t* rf)
   ((rf_dev_t*)rf->dev)->srslte_rf_suppress_stdout(rf->handler);
 }
 
-void srslte_rf_register_error_handler(srslte_rf_t* rf, srslte_rf_error_handler_t error_handler)
+void srslte_rf_register_error_handler(srslte_rf_t* rf, srslte_rf_error_handler_t error_handler, void* arg)
 {
-  ((rf_dev_t*)rf->dev)->srslte_rf_register_error_handler(rf->handler, error_handler);
+  ((rf_dev_t*)rf->dev)->srslte_rf_register_error_handler(rf->handler, error_handler, arg);
 }
 
 int srslte_rf_open(srslte_rf_t* h, char* args)
@@ -306,7 +306,7 @@ int srslte_rf_send_timed3(srslte_rf_t* rf,
 }
 
 int srslte_rf_send_timed_multi(srslte_rf_t* rf,
-                               void*        data[4],
+                               void**       data,
                                int          nsamples,
                                time_t       secs,
                                double       frac_secs,
@@ -321,7 +321,7 @@ int srslte_rf_send_timed_multi(srslte_rf_t* rf,
 }
 
 int srslte_rf_send_multi(srslte_rf_t* rf,
-                         void*        data[4],
+                         void**       data,
                          int          nsamples,
                          bool         blocking,
                          bool         is_start_of_burst,

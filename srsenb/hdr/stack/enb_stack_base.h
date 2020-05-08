@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -56,7 +56,8 @@ typedef struct {
 typedef struct {
   mac_args_t       mac;
   s1ap_args_t      s1ap;
-  pcap_args_t      pcap;
+  pcap_args_t      mac_pcap;
+  pcap_args_t      s1ap_pcap;
   stack_log_args_t log;
   embms_args_t     embms;
 } stack_args_t;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -41,7 +41,7 @@ int srslte_cfo_init(srslte_cfo_t* h, uint32_t nsamples)
   if (srslte_cexptab_init(&h->tab, SRSLTE_CFO_CEXPTAB_SIZE)) {
     goto clean;
   }
-  h->cur_cexp = srslte_vec_malloc(sizeof(cf_t) * nsamples);
+  h->cur_cexp = srslte_vec_cf_malloc(nsamples);
   if (!h->cur_cexp) {
     goto clean;
   }

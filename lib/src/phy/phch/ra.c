@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -32,8 +32,6 @@
 #include <strings.h>
 
 #include "tbs_tables.h"
-
-#define min(a, b) (a < b ? a : b)
 
 /* Convert Type2 scheduling L_crb and RB_start to RIV value */
 uint32_t srslte_ra_type2_to_riv(uint32_t L_crb, uint32_t RB_start, uint32_t nof_prb)
@@ -125,9 +123,11 @@ uint32_t srslte_ra_type2_n_vrb_dl(uint32_t nof_prb, bool ngap_is_1)
 }
 
 /* Modulation and TBS index table for PDSCH from 3GPP TS 36.213 v10.3.0 table 7.1.7.1-1 */
-static int srslte_ra_dl_tbs_idx_from_mcs(uint32_t mcs)
+static int srslte_ra_dl_tbs_idx_from_mcs(uint32_t mcs, bool use_tbs_index_alt)
 {
-  if (mcs < 29) {
+  if (use_tbs_index_alt && mcs < 28) {
+    return dl_mcs_tbs_idx_table2[mcs];
+  } else if (!use_tbs_index_alt && mcs < 29) {
     return dl_mcs_tbs_idx_table[mcs];
   } else {
     return SRSLTE_ERROR;
@@ -143,19 +143,33 @@ static int srslte_ra_ul_tbs_idx_from_mcs(uint32_t mcs)
   }
 }
 
-int srslte_ra_tbs_idx_from_mcs(uint32_t mcs, bool is_ul)
+int srslte_ra_tbs_idx_from_mcs(uint32_t mcs, bool use_tbs_index_alt, bool is_ul)
 {
-  return (is_ul) ? srslte_ra_ul_tbs_idx_from_mcs(mcs) : srslte_ra_dl_tbs_idx_from_mcs(mcs);
+  return (is_ul) ? srslte_ra_ul_tbs_idx_from_mcs(mcs) : srslte_ra_dl_tbs_idx_from_mcs(mcs, use_tbs_index_alt);
 }
 
-srslte_mod_t srslte_ra_dl_mod_from_mcs(uint32_t mcs)
+srslte_mod_t srslte_ra_dl_mod_from_mcs(uint32_t mcs, bool use_tbs_index_alt)
 {
-  if (mcs <= 10 || mcs == 29) {
-    return SRSLTE_MOD_QPSK;
-  } else if (mcs <= 17 || mcs == 30) {
-    return SRSLTE_MOD_16QAM;
+  if (use_tbs_index_alt) {
+    // 3GPP 36.213 R12 Table 7.1.7.1-1A
+    if (mcs < 5 || mcs == 28) {
+      return SRSLTE_MOD_QPSK;
+    } else if (mcs < 11 || mcs == 29) {
+      return SRSLTE_MOD_16QAM;
+    } else if (mcs < 20 || mcs == 30) {
+      return SRSLTE_MOD_64QAM;
+    } else {
+      return SRSLTE_MOD_256QAM;
+    }
   } else {
-    return SRSLTE_MOD_64QAM;
+    // 3GPP 36.213 R12 Table 7.1.7.1-1
+    if (mcs < 10 || mcs == 29) {
+      return SRSLTE_MOD_QPSK;
+    } else if (mcs < 17 || mcs == 30) {
+      return SRSLTE_MOD_16QAM;
+    } else {
+      return SRSLTE_MOD_64QAM;
+    }
   }
 }
 
@@ -173,11 +187,19 @@ srslte_mod_t srslte_ra_ul_mod_from_mcs(uint32_t mcs)
   }
 }
 
-static int srslte_ra_dl_mcs_from_tbs_idx(uint32_t tbs_idx)
+static int srslte_ra_dl_mcs_from_tbs_idx(uint32_t tbs_idx, bool use_tbs_index_alt)
 {
-  for (int i = 0; i < 29; i++) {
-    if (tbs_idx == dl_mcs_tbs_idx_table[i]) {
-      return i;
+  if (use_tbs_index_alt) {
+    for (int i = 0; i < 28; i++) {
+      if (tbs_idx == dl_mcs_tbs_idx_table2[i]) {
+        return i;
+      }
+    }
+  } else {
+    for (int i = 0; i < 29; i++) {
+      if (tbs_idx == dl_mcs_tbs_idx_table[i]) {
+        return i;
+      }
     }
   }
   return SRSLTE_ERROR;
@@ -193,15 +215,15 @@ static int srslte_ra_ul_mcs_from_tbs_idx(uint32_t tbs_idx)
   return SRSLTE_ERROR;
 }
 
-int srslte_ra_mcs_from_tbs_idx(uint32_t tbs_idx, bool is_ul)
+int srslte_ra_mcs_from_tbs_idx(uint32_t tbs_idx, bool use_tbs_index_alt, bool is_ul)
 {
-  return is_ul ? srslte_ra_ul_mcs_from_tbs_idx(tbs_idx) : srslte_ra_dl_mcs_from_tbs_idx(tbs_idx);
+  return is_ul ? srslte_ra_ul_mcs_from_tbs_idx(tbs_idx) : srslte_ra_dl_mcs_from_tbs_idx(tbs_idx, use_tbs_index_alt);
 }
 
 /* Table 7.1.7.2.1-1: Transport block size table on 36.213 */
 int srslte_ra_tbs_from_idx(uint32_t tbs_idx, uint32_t n_prb)
 {
-  if (tbs_idx < 34 && n_prb > 0 && n_prb <= SRSLTE_MAX_PRB) {
+  if (tbs_idx < SRSLTE_RA_NOF_TBS_IDX && n_prb > 0 && n_prb <= SRSLTE_MAX_PRB) {
     return tbs_table[tbs_idx][n_prb - 1];
   } else {
     return SRSLTE_ERROR;

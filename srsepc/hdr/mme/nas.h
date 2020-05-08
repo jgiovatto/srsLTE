@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -24,7 +24,6 @@
 
 #include "srslte/asn1/gtpc_ies.h"
 #include "srslte/asn1/liblte_mme.h"
-#include "srslte/asn1/liblte_s1ap.h"
 #include "srslte/common/buffer_pool.h"
 #include "srslte/common/security.h"
 #include "srslte/interfaces/epc_interfaces.h"
@@ -151,7 +150,7 @@ typedef struct {
 class nas
 {
 public:
-  nas(nas_init_t args, nas_if_t itf, srslte::log* nas_log);
+  nas(const nas_init_t& args, const nas_if_t& itf, srslte::log* nas_log);
   void reset();
 
   /***********************
@@ -161,16 +160,16 @@ public:
   static bool handle_attach_request(uint32_t                enb_ue_s1ap_id,
                                     struct sctp_sndrcvinfo* enb_sri,
                                     srslte::byte_buffer_t*  nas_rx,
-                                    nas_init_t              args,
-                                    nas_if_t                itf,
+                                    const nas_init_t&       args,
+                                    const nas_if_t&         itf,
                                     srslte::log*            nas_log);
 
   static bool handle_imsi_attach_request_unknown_ue(uint32_t                                    enb_ue_s1ap_id,
                                                     struct sctp_sndrcvinfo*                     enb_sri,
                                                     const LIBLTE_MME_ATTACH_REQUEST_MSG_STRUCT& attach_req,
                                                     const LIBLTE_MME_PDN_CONNECTIVITY_REQUEST_MSG_STRUCT& pdn_con_req,
-                                                    nas_init_t                                            args,
-                                                    nas_if_t                                              itf,
+                                                    const nas_init_t&                                     args,
+                                                    const nas_if_t&                                       itf,
                                                     srslte::log*                                          nas_log);
 
   static bool handle_imsi_attach_request_known_ue(nas*                                                  nas_ctx,
@@ -179,16 +178,16 @@ public:
                                                   const LIBLTE_MME_ATTACH_REQUEST_MSG_STRUCT&           attach_req,
                                                   const LIBLTE_MME_PDN_CONNECTIVITY_REQUEST_MSG_STRUCT& pdn_con_req,
                                                   srslte::byte_buffer_t*                                nas_rx,
-                                                  nas_init_t                                            args,
-                                                  nas_if_t                                              itf,
+                                                  const nas_init_t&                                     args,
+                                                  const nas_if_t&                                       itf,
                                                   srslte::log*                                          nas_log);
 
   static bool handle_guti_attach_request_unknown_ue(uint32_t                                    enb_ue_s1ap_id,
                                                     struct sctp_sndrcvinfo*                     enb_sri,
                                                     const LIBLTE_MME_ATTACH_REQUEST_MSG_STRUCT& attach_req,
                                                     const LIBLTE_MME_PDN_CONNECTIVITY_REQUEST_MSG_STRUCT& pdn_con_req,
-                                                    nas_init_t                                            args,
-                                                    nas_if_t                                              itf,
+                                                    const nas_init_t&                                     args,
+                                                    const nas_if_t&                                       itf,
                                                     srslte::log*                                          nas_log);
 
   static bool handle_guti_attach_request_known_ue(nas*                                                  nas_ctx,
@@ -197,8 +196,8 @@ public:
                                                   const LIBLTE_MME_ATTACH_REQUEST_MSG_STRUCT&           attach_req,
                                                   const LIBLTE_MME_PDN_CONNECTIVITY_REQUEST_MSG_STRUCT& pdn_con_req,
                                                   srslte::byte_buffer_t*                                nas_rx,
-                                                  nas_init_t                                            args,
-                                                  nas_if_t                                              itf,
+                                                  const nas_init_t&                                     args,
+                                                  const nas_if_t&                                       itf,
                                                   srslte::log*                                          nas_log);
 
   // Service request messages
@@ -206,8 +205,8 @@ public:
                                      uint32_t                enb_ue_s1ap_id,
                                      struct sctp_sndrcvinfo* enb_sri,
                                      srslte::byte_buffer_t*  nas_rx,
-                                     nas_init_t              args,
-                                     nas_if_t                itf,
+                                     const nas_init_t&       args,
+                                     const nas_if_t&         itf,
                                      srslte::log*            nas_log);
 
   // Dettach request messages
@@ -215,8 +214,8 @@ public:
                                     uint32_t                enb_ue_s1ap_id,
                                     struct sctp_sndrcvinfo* enb_sri,
                                     srslte::byte_buffer_t*  nas_rx,
-                                    nas_init_t              args,
-                                    nas_if_t                itf,
+                                    const nas_init_t&       args,
+                                    const nas_if_t&         itf,
                                     srslte::log*            nas_log);
 
   // Tracking area update request messages
@@ -224,8 +223,8 @@ public:
                                                   uint32_t                enb_ue_s1ap_id,
                                                   struct sctp_sndrcvinfo* enb_sri,
                                                   srslte::byte_buffer_t*  nas_rx,
-                                                  nas_init_t              args,
-                                                  nas_if_t                itf,
+                                                  const nas_init_t&       args,
+                                                  const nas_if_t&         itf,
                                                   srslte::log*            nas_log);
 
   /* Uplink NAS messages handling */
@@ -247,6 +246,7 @@ public:
   bool pack_identity_request(srslte::byte_buffer_t* nas_buffer);
   bool pack_emm_information(srslte::byte_buffer_t* nas_buffer);
   bool pack_service_reject(srslte::byte_buffer_t* nas_buffer, uint8_t emm_cause);
+  bool pack_tracking_area_update_reject(srslte::byte_buffer_t* nas_buffer, uint8_t emm_cause);
   bool pack_attach_accept(srslte::byte_buffer_t* nas_buffer);
 
   /* Security functions */

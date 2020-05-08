@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -32,7 +32,9 @@
 namespace srsue {
 namespace scell {
 
-class async_scell_recv : private thread
+#define SF_BUFFER_MAX_SAMPLES (5 * SRSLTE_SF_LEN_MAX)
+
+class async_scell_recv : private srslte::thread
 {
 public:
   async_scell_recv();
@@ -84,7 +86,7 @@ private:
     {
       for (uint32_t i = 0; i < nof_ports; i++) {
         // It needs to support cell search
-        buffer[i] = (cf_t*)srslte_vec_malloc(sizeof(cf_t) * SRSLTE_SF_LEN_MAX * 5);
+        buffer[i] = srslte_vec_cf_malloc(SF_BUFFER_MAX_SAMPLES);
         if (!buffer[i]) {
           fprintf(stderr, "Error allocating buffer\n");
         }

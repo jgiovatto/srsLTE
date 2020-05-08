@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -38,7 +38,7 @@ namespace srslte {
 class rlc_um_base : public rlc_common
 {
 public:
-  rlc_um_base(srslte::log*               log_,
+  rlc_um_base(srslte::log_ref            log_,
               uint32_t                   lcid_,
               srsue::pdcp_interface_rlc* pdcp_,
               srsue::rrc_interface_rlc*  rrc_,
@@ -73,7 +73,7 @@ protected:
   public:
     rlc_um_base_tx(rlc_um_base* parent_);
     virtual ~rlc_um_base_tx();
-    virtual bool     configure(rlc_config_t cfg, std::string rb_name) = 0;
+    virtual bool     configure(const rlc_config_t& cfg, std::string rb_name) = 0;
     int              build_data_pdu(uint8_t* payload, uint32_t nof_bytes);
     void             stop();
     void             reestablish();
@@ -87,7 +87,7 @@ protected:
 
   protected:
     byte_buffer_pool* pool = nullptr;
-    srslte::log*      log  = nullptr;
+    srslte::log_ref   log;
     std::string       rb_name;
 
     rlc_config_t cfg = {};
@@ -120,8 +120,8 @@ protected:
     virtual void handle_data_pdu(uint8_t* payload, uint32_t nof_bytes) = 0;
 
   protected:
-    byte_buffer_pool*          pool   = nullptr;
-    srslte::log*               log    = nullptr;
+    byte_buffer_pool*          pool = nullptr;
+    srslte::log_ref            log;
     srslte::timer_handler*     timers = nullptr;
     srsue::pdcp_interface_rlc* pdcp   = nullptr;
     srsue::rrc_interface_rlc*  rrc    = nullptr;
@@ -135,16 +135,14 @@ protected:
 
     uint32_t& lcid;
 
-    std::mutex mutex;
-
     // helper functions
     virtual void debug_state() = 0;
   };
 
   // Common variables needed by parent class
-  srsue::rrc_interface_rlc*  rrc    = nullptr;
-  srsue::pdcp_interface_rlc* pdcp   = nullptr;
-  srslte::log*               log    = nullptr;
+  srsue::rrc_interface_rlc*  rrc  = nullptr;
+  srsue::pdcp_interface_rlc* pdcp = nullptr;
+  srslte::log_ref            log;
   srslte::timer_handler*     timers = nullptr;
   uint32_t                   lcid   = 0;
   rlc_config_t               cfg    = {};

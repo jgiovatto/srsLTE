@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -40,7 +40,7 @@ namespace srslte {
 class rlc : public srsue::rlc_interface_mac, public srsue::rlc_interface_pdcp, public srsue::rlc_interface_rrc
 {
 public:
-  rlc(log* rlc_log_);
+  rlc(const char* logname);
   virtual ~rlc();
   void init(srsue::pdcp_interface_rlc* pdcp_,
             srsue::rrc_interface_rlc*  rrc_,
@@ -58,15 +58,16 @@ public:
 
   // MAC interface
   bool     has_data(const uint32_t lcid);
+  bool     is_suspended(const uint32_t lcid);
   uint32_t get_buffer_state(const uint32_t lcid);
   uint32_t get_total_mch_buffer_state(uint32_t lcid);
   int      read_pdu(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes);
   int      read_pdu_mch(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes);
   int      get_increment_sequence_num();
   void     write_pdu(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes);
-  void     write_pdu_bcch_bch(uint8_t* payload, uint32_t nof_bytes);
+  void     write_pdu_bcch_bch(srslte::unique_byte_buffer_t pdu);
   void     write_pdu_bcch_dlsch(uint8_t* payload, uint32_t nof_bytes);
-  void     write_pdu_pcch(uint8_t* payload, uint32_t nof_bytes);
+  void     write_pdu_pcch(srslte::unique_byte_buffer_t pdu);
   void     write_pdu_mch(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes);
 
   // RRC interface
@@ -74,7 +75,7 @@ public:
   void reestablish(uint32_t lcid);
   void reset();
   void empty_queue();
-  void add_bearer(uint32_t lcid, rlc_config_t cnfg);
+  void add_bearer(uint32_t lcid, const rlc_config_t& cnfg);
   void add_bearer_mrb(uint32_t lcid);
   void del_bearer(uint32_t lcid);
   void del_bearer_mrb(uint32_t lcid);
@@ -86,11 +87,11 @@ public:
 private:
   void reset_metrics();
 
-  byte_buffer_pool*          pool    = nullptr;
-  srslte::log*               rlc_log = nullptr;
-  srsue::pdcp_interface_rlc* pdcp    = nullptr;
-  srsue::rrc_interface_rlc*  rrc     = nullptr;
-  srslte::timer_handler*     timers  = nullptr;
+  byte_buffer_pool*          pool = nullptr;
+  srslte::log_ref            rlc_log;
+  srsue::pdcp_interface_rlc* pdcp   = nullptr;
+  srsue::rrc_interface_rlc*  rrc    = nullptr;
+  srslte::timer_handler*     timers = nullptr;
 
   typedef std::map<uint16_t, rlc_common*>  rlc_map_t;
   typedef std::pair<uint16_t, rlc_common*> rlc_map_pair_t;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -131,7 +131,7 @@ int base_init()
 
   flen = SRSLTE_SF_LEN(srslte_symbol_sz(cell.nof_prb));
 
-  input_buffer[0] = malloc(flen * sizeof(cf_t));
+  input_buffer[0] = srslte_vec_cf_malloc(flen);
   if (!input_buffer[0]) {
     perror("malloc");
     exit(-1);

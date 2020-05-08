@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -23,10 +23,10 @@
 #define SRSUE_DEMUX_H
 
 #include "srslte/common/log.h"
-#include "srslte/common/pdu.h"
-#include "srslte/common/pdu_queue.h"
 #include "srslte/common/timers.h"
 #include "srslte/interfaces/ue_interfaces.h"
+#include "srslte/mac/pdu.h"
+#include "srslte/mac/pdu_queue.h"
 
 /* Logical Channel Demultiplexing and MAC CE dissassemble */
 
@@ -42,7 +42,7 @@ public:
 class demux : public srslte::pdu_queue::process_callback
 {
 public:
-  demux(srslte::log* log_);
+  demux(srslte::log_ref log_h_);
   void init(phy_interface_mac_common*            phy_h_,
             rlc_interface_mac*                   rlc,
             mac_interface_demux*                 mac,
@@ -68,6 +68,12 @@ private:
   const static int MAX_BCCH_PDU_LEN = 1024;
   uint8_t          bcch_buffer[MAX_BCCH_PDU_LEN]; // BCCH PID has a dedicated buffer
 
+  // args
+  srslte::log_ref           log_h;
+  phy_interface_mac_common* phy_h = nullptr;
+  rlc_interface_mac*        rlc   = nullptr;
+  mac_interface_demux*      mac   = nullptr;
+
   srslte::sch_pdu mac_msg;
   srslte::mch_pdu mch_mac_msg;
   srslte::sch_pdu pending_mac_msg;
@@ -75,16 +81,12 @@ private:
   void            process_sch_pdu_rt(uint8_t* buff, uint32_t nof_bytes);
   void            process_sch_pdu(srslte::sch_pdu* pdu);
   void            process_mch_pdu(srslte::mch_pdu* pdu);
-
-  bool process_ce(srslte::sch_subh* subheader);
+  bool            process_ce(srslte::sch_subh* subheader);
+  void            parse_ta_cmd(srslte::sch_subh* subh);
 
   bool is_uecrid_successful;
 
-  phy_interface_mac_common*            phy_h                = nullptr;
-  srslte::log*                         log_h                = nullptr;
   srslte::timer_handler::unique_timer* time_alignment_timer = nullptr;
-  rlc_interface_mac*                   rlc                  = nullptr;
-  mac_interface_demux*                 mac                  = nullptr;
 
   // Buffer of PDUs
   srslte::pdu_queue pdus;

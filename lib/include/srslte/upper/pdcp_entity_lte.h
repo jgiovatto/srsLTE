@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -46,11 +46,11 @@ namespace srslte {
 class pdcp_entity_lte final : public pdcp_entity_base
 {
 public:
-  pdcp_entity_lte(srsue::rlc_interface_pdcp* rlc_,
-                  srsue::rrc_interface_pdcp* rrc_,
-                  srsue::gw_interface_pdcp*  gw_,
-                  srslte::timer_handler*     timers_,
-                  srslte::log*               log_);
+  pdcp_entity_lte(srsue::rlc_interface_pdcp*      rlc_,
+                  srsue::rrc_interface_pdcp*      rrc_,
+                  srsue::gw_interface_pdcp*       gw_,
+                  srslte::task_handler_interface* task_executor_,
+                  srslte::log_ref                 log_);
   ~pdcp_entity_lte();
   void init(uint32_t lcid_, pdcp_config_t cfg_);
   void reset();
@@ -60,18 +60,26 @@ public:
   void write_sdu(unique_byte_buffer_t sdu, bool blocking);
   void get_bearer_status(uint16_t* dlsn, uint16_t* dlhfn, uint16_t* ulsn, uint16_t* ulhfn);
 
-  uint32_t get_dl_count();
-  uint32_t get_ul_count();
-
   // RLC interface
   void write_pdu(unique_byte_buffer_t pdu);
+
+  // State variable setters (should be used only for testing)
+  void set_tx_count(uint32_t tx_count_) { tx_count = tx_count_; }
+  void set_rx_hfn(uint32_t rx_hfn_) { rx_hfn = rx_hfn_; }
+  void set_next_pdcp_rx_sn(uint32_t next_pdcp_rx_sn_) { next_pdcp_rx_sn = next_pdcp_rx_sn_; }
+  void set_last_submitted_pdcp_rx_sn(uint32_t last_submitted_pdcp_rx_sn_)
+  {
+    last_submitted_pdcp_rx_sn = last_submitted_pdcp_rx_sn_;
+  }
+
+  // Config helpers
+  bool check_valid_config();
 
 private:
   srsue::rlc_interface_pdcp* rlc = nullptr;
   srsue::rrc_interface_pdcp* rrc = nullptr;
   srsue::gw_interface_pdcp*  gw  = nullptr;
 
-  uint32_t rx_count = 0;
   uint32_t tx_count = 0;
 
   uint32_t rx_hfn                    = 0;
@@ -80,22 +88,10 @@ private:
   uint32_t last_submitted_pdcp_rx_sn = 0;
   uint32_t maximum_pdcp_sn           = 0;
 
-  void handle_um_drb_pdu(const srslte::unique_byte_buffer_t& pdu);
-  void handle_am_drb_pdu(const srslte::unique_byte_buffer_t& pdu);
+  void handle_srb_pdu(srslte::unique_byte_buffer_t pdu);
+  void handle_um_drb_pdu(srslte::unique_byte_buffer_t pdu);
+  void handle_am_drb_pdu(srslte::unique_byte_buffer_t pdu);
 };
-
-/****************************************************************************
- * Pack/Unpack helper functions
- * Ref: 3GPP TS 36.323 v10.1.0
- ***************************************************************************/
-
-void pdcp_pack_control_pdu(uint32_t sn, byte_buffer_t* sdu);
-void pdcp_unpack_control_pdu(byte_buffer_t* sdu, uint32_t* sn);
-
-void pdcp_pack_data_pdu_short_sn(uint32_t sn, byte_buffer_t* sdu);
-void pdcp_unpack_data_pdu_short_sn(byte_buffer_t* sdu, uint32_t* sn);
-void pdcp_pack_data_pdu_long_sn(uint32_t sn, byte_buffer_t* sdu);
-void pdcp_unpack_data_pdu_long_sn(byte_buffer_t* sdu, uint32_t* sn);
 
 } // namespace srslte
 #endif // SRSLTE_PDCP_ENTITY_LTE_H

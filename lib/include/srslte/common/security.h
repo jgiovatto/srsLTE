@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -60,6 +60,16 @@ typedef enum {
   SECURITY_DIRECTION_N_ITEMS,
 } security_direction_t;
 static const char security_direction_text[INTEGRITY_ALGORITHM_ID_N_ITEMS][20] = {"Uplink", "Downlink"};
+
+using as_key_t = std::array<uint8_t, 32>;
+struct as_security_config_t {
+  as_key_t                    k_rrc_int;
+  as_key_t                    k_rrc_enc;
+  as_key_t                    k_up_int;
+  as_key_t                    k_up_enc;
+  INTEGRITY_ALGORITHM_ID_ENUM integ_algo;
+  CIPHERING_ALGORITHM_ID_ENUM cipher_algo;
+};
 
 /******************************************************************************
  * Key Generation

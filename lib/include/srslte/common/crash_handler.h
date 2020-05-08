@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -19,13 +19,10 @@
  *
  */
 
-/******************************************************************************
- *  File:         debug.h
- *
- *  Description:  Debug output utilities.
- *
- *  Reference:
- *****************************************************************************/
+/**
+ * @file crash_handler.h
+ * @brief Common handler to catch segfaults and write backtrace to file.
+ */
 
 #ifndef SRSLTE_CRASH_HANDLER_H
 #define SRSLTE_CRASH_HANDLER_H

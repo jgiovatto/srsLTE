@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -18,8 +18,10 @@
  * and at http://www.gnu.org/licenses/.
  *
  */
+#ifndef SRSLTE_LTE_TABLES_H_
+#define SRSLTE_LTE_TABLES_H_
 
-typedef _Complex float cf_t;
+#include <srslte/config.h>
 
 #define BPSK_LEVEL M_SQRT1_2
 
@@ -54,3 +56,5 @@ void set_16QAMtable(cf_t* table);
 void set_64QAMtable(cf_t* table);
 
 void set_256QAMtable(cf_t* table);
+
+#endif /* SRSLTE_LTE_TABLES_H_ */

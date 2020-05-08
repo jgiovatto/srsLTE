@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -47,18 +47,23 @@ int srslte_ue_ul_init(srslte_ue_ul_t* q, cf_t* out_buffer, uint32_t max_prb)
 
     bzero(q, sizeof(srslte_ue_ul_t));
 
-    q->sf_symbols = srslte_vec_malloc(SRSLTE_SF_LEN_PRB(max_prb) * sizeof(cf_t));
+    q->sf_symbols = srslte_vec_cf_malloc(SRSLTE_SF_LEN_PRB(max_prb));
     if (!q->sf_symbols) {
       perror("malloc");
       goto clean_exit;
     }
 
-    if (srslte_ofdm_tx_init(&q->fft, SRSLTE_CP_NORM, q->sf_symbols, out_buffer, max_prb)) {
+    srslte_ofdm_cfg_t ofdm_cfg = {};
+    ofdm_cfg.nof_prb           = max_prb;
+    ofdm_cfg.in_buffer         = q->sf_symbols;
+    ofdm_cfg.out_buffer        = out_buffer;
+    ofdm_cfg.cp                = SRSLTE_CP_NORM;
+    ofdm_cfg.freq_shift_f      = 0.5f;
+    ofdm_cfg.normalize         = true;
+    if (srslte_ofdm_tx_init_cfg(&q->fft, &ofdm_cfg)) {
       ERROR("Error initiating FFT\n");
       goto clean_exit;
     }
-    srslte_ofdm_set_freq_shift(&q->fft, 0.5);
-    srslte_ofdm_set_normalize(&q->fft, true);
 
     if (srslte_cfo_init(&q->cfo, MAX_SFLEN)) {
       ERROR("Error creating CFO object\n");
@@ -77,13 +82,13 @@ int srslte_ue_ul_init(srslte_ue_ul_t* q, cf_t* out_buffer, uint32_t max_prb)
       ERROR("Error initiating srslte_refsignal_ul\n");
       goto clean_exit;
     }
-    q->refsignal = srslte_vec_malloc(2 * SRSLTE_NRE * max_prb * sizeof(cf_t));
+    q->refsignal = srslte_vec_cf_malloc(2 * SRSLTE_NRE * max_prb);
     if (!q->refsignal) {
       perror("malloc");
       goto clean_exit;
     }
 
-    q->srs_signal = srslte_vec_malloc(SRSLTE_NRE * max_prb * sizeof(cf_t));
+    q->srs_signal = srslte_vec_cf_malloc(SRSLTE_NRE * max_prb);
     if (!q->srs_signal) {
       perror("malloc");
       goto clean_exit;
@@ -207,10 +212,21 @@ int srslte_ue_ul_dci_to_pusch_grant(srslte_ue_ul_t*       q,
                                     srslte_dci_ul_t*      dci,
                                     srslte_pusch_grant_t* grant)
 {
+  if (srslte_ra_ul_dci_to_grant(&q->cell, sf, &cfg->ul_cfg.hopping, dci, grant)) {
+    char str[128];
+    srslte_dci_ul_info(dci, str, sizeof(str));
+    ERROR("Converting DCI to UL grant from %s\n", str);
+    return SRSLTE_ERROR;
+  }
+
   // Update shortened before computing grant
   srslte_refsignal_srs_pusch_shortened(&q->signals, sf, &cfg->ul_cfg.srs, &cfg->ul_cfg.pusch);
 
-  return srslte_ra_ul_dci_to_grant(&q->cell, sf, &cfg->ul_cfg.hopping, dci, grant);
+  /* Update RE assuming if shortened is true */
+  if (sf->shortened) {
+    srslte_ra_ul_compute_nof_re(grant, q->cell.cp, true);
+  }
+  return SRSLTE_SUCCESS;
 }
 
 void srslte_ue_ul_pusch_hopping(srslte_ue_ul_t*       q,
@@ -218,6 +234,9 @@ void srslte_ue_ul_pusch_hopping(srslte_ue_ul_t*       q,
                                 srslte_ue_ul_cfg_t*   cfg,
                                 srslte_pusch_grant_t* grant)
 {
+  if (cfg->ul_cfg.srs.configured && cfg->ul_cfg.hopping.hopping_enabled) {
+    ERROR("UL SRS and frequency hopping not currently supported\n");
+  }
   return srslte_ra_ul_pusch_hopping(&q->hopping, sf, &cfg->ul_cfg.hopping, grant);
 }
 
@@ -295,7 +314,7 @@ static int pusch_encode(srslte_ue_ul_t* q, srslte_ul_sf_cfg_t* sf, srslte_ue_ul_
 
   if (q != NULL) {
 
-    bzero(q->sf_symbols, sizeof(cf_t) * SRSLTE_NOF_RE(q->cell));
+    srslte_vec_cf_zero(q->sf_symbols, SRSLTE_NOF_RE(q->cell));
 
     if (srslte_pusch_encode(&q->pusch, sf, &cfg->ul_cfg.pusch, data, q->sf_symbols)) {
       ERROR("Error encoding PUSCH\n");
@@ -417,7 +436,7 @@ static int srs_encode(srslte_ue_ul_t* q, uint32_t tti, srslte_ue_ul_cfg_t* cfg)
   int ret = SRSLTE_ERROR_INVALID_INPUTS;
   if (q && cfg) {
 
-    bzero(q->sf_symbols, sizeof(cf_t) * SRSLTE_NOF_RE(q->cell));
+    srslte_vec_cf_zero(q->sf_symbols, SRSLTE_NOF_RE(q->cell));
 
     add_srs(q, cfg, tti);
 
@@ -474,447 +493,16 @@ float srs_power(srslte_ue_ul_t* q, srslte_ue_ul_cfg_t* cfg, float PL)
   return p_srs;
 }
 
-/* Choose PUCCH format based on pending transmission as described in 10.1 of 36.213 */
-static srslte_pucch_format_t
-get_format(srslte_pucch_cfg_t* cfg, srslte_uci_cfg_t* uci_cfg, srslte_uci_value_t* uci_value, srslte_cp_t cp)
-{
-  srslte_pucch_format_t format = SRSLTE_PUCCH_FORMAT_ERROR;
-  // No CQI data
-  if (!uci_cfg->cqi.data_enable && uci_cfg->cqi.ri_len == 0) {
-    // PUCCH Format 3 condition specified in:
-    // 3GPP 36.213 10.1.2.2.2 PUCCH format 3 HARQ-ACK procedure
-    if (cfg->ack_nack_feedback_mode == SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_PUCCH3 &&
-        srslte_uci_cfg_total_ack(uci_cfg) > 1) {
-      format = SRSLTE_PUCCH_FORMAT_3;
-    }
-    // 1-bit ACK + optional SR
-    else if (srslte_uci_cfg_total_ack(uci_cfg) == 1) {
-      format = SRSLTE_PUCCH_FORMAT_1A;
-    }
-    // 2-bit ACK + optional SR
-    else if (srslte_uci_cfg_total_ack(uci_cfg) >= 2 && srslte_uci_cfg_total_ack(uci_cfg) <= 4) {
-      format = SRSLTE_PUCCH_FORMAT_1B; // with channel selection if > 2
-    }
-    // If UCI value is provided, use SR signal only, otherwise SR request opportunity
-    else if (uci_cfg->is_scheduling_request_tti || (uci_value && uci_value->scheduling_request)) {
-      format = SRSLTE_PUCCH_FORMAT_1;
-    } else {
-      fprintf(stderr,
-              "Error selecting PUCCH format: Unsupported number of ACK bits %d\n",
-              srslte_uci_cfg_total_ack(uci_cfg));
-    }
-  }
-  // CQI data
-  else {
-    // CQI and no ack
-    if (srslte_uci_cfg_total_ack(uci_cfg) == 0) {
-      format = SRSLTE_PUCCH_FORMAT_2;
-    }
-    // CQI + 1-bit ACK
-    else if (srslte_uci_cfg_total_ack(uci_cfg) == 1 && SRSLTE_CP_ISNORM(cp)) {
-      format = SRSLTE_PUCCH_FORMAT_2A;
-    }
-    // CQI + 2-bit ACK
-    else if (srslte_uci_cfg_total_ack(uci_cfg) == 2) {
-      format = SRSLTE_PUCCH_FORMAT_2B;
-    }
-    // CQI + 2-bit ACK + cyclic prefix
-    else if (srslte_uci_cfg_total_ack(uci_cfg) == 1 && SRSLTE_CP_ISEXT(cp)) {
-      format = SRSLTE_PUCCH_FORMAT_2B;
-    }
-  }
-  return format;
-}
-
-// Selection of n_pucch for PUCCH Format 1a and 1b with channel selection for 1 and 2 CC
-static uint32_t get_npucch_cs(srslte_pucch_cfg_t* cfg, srslte_uci_cfg_t* uci_cfg, srslte_uci_value_t* uci_value)
-{
-  uint32_t n_pucch      = 0;
-  uint8_t* b            = uci_value->ack.ack_value;
-  uint32_t n_pucch_i[4] = {};
-
-  // Determine the 4 PUCCH resources n_pucch_j associated with HARQ-ACK(j)
-  uint32_t k = 0;
-  for (int i = 0; i < 2; i++) {
-    // If grant has been scheduled in PCell
-    if (uci_cfg->ack[i].grant_cc_idx == 0) {
-      for (uint32_t j = 0; j < uci_cfg->ack[i].nof_acks; j++) {
-        if (k < 4) {
-          n_pucch_i[k++] = uci_cfg->ack[i].ncce[0] + cfg->N_pucch_1 + j;
-        } else {
-          fprintf(stderr, "get_npucch_cs(): Too many ack bits\n");
-        }
-      }
-    } else {
-      for (uint32_t j = 0; j < uci_cfg->ack[i].nof_acks; j++) {
-        if (k < 4) {
-          n_pucch_i[k++] = cfg->n1_pucch_an_cs[uci_cfg->ack[i].tpc_for_pucch % 4][j];
-        } else {
-          fprintf(stderr, "get_npucch_cs(): Too many ack bits\n");
-        }
-      }
-    }
-  }
-
-  // Do resource selection and bit mapping according to tables 10.1.2.2.1-3, 10.1.2.2.1-4 and 10.1.2.2.1-5
-  switch (srslte_uci_cfg_total_ack(uci_cfg)) {
-    case 1:
-      // 1-bit is Format1A always
-      n_pucch = n_pucch_i[0];
-      break;
-    case 2:
-      if (b[1] != 1) {
-        /* n_pucch1_0 */
-        n_pucch = n_pucch_i[0];
-      } else {
-        /* n_pucch1_1 */
-        n_pucch = n_pucch_i[1];
-      }
-      if (b[0] == 1) {
-        b[0] = 1;
-        b[1] = 1;
-      } else {
-        b[0] = 0;
-        b[1] = 0;
-      }
-      break;
-    case 3:
-      if (b[0] != 1 && b[1] != 1) {
-        /* n_pucch1_2 */
-        n_pucch = n_pucch_i[2];
-      } else if (b[2] == 1) {
-        /* n_pucch1_1 */
-        n_pucch = n_pucch_i[1];
-      } else {
-        /* n_pucch1_0 */
-        n_pucch = n_pucch_i[0];
-      }
-      if (b[0] != 1 && b[1] != 1 && b[2] != 1) {
-        b[0] = 0;
-        b[1] = 0;
-      } else if (b[0] != 1 && b[1] == 1) {
-        b[0] = 0;
-        b[1] = 1;
-      } else if (b[0] == 1 && b[1] != 1) {
-        b[0] = 1;
-        b[1] = 0;
-      } else {
-        b[0] = 1;
-        b[1] = 1;
-      }
-      break;
-    case 4:
-      if (b[2] != 1 && b[3] != 1) {
-        /* n_pucch1_0 */
-        n_pucch = n_pucch_i[0];
-      } else if (b[1] == 1 && b[2] == 1) {
-        /* n_pucch1_1 */
-        n_pucch = n_pucch_i[1];
-      } else if (b[0] == 1) {
-        /* n_pucch1_2 */
-        n_pucch = n_pucch_i[2];
-      } else {
-        /* n_pucch1_3 */
-        n_pucch = n_pucch_i[3];
-      }
-      if (b[2] != 1 && b[3] != 1) {
-        /* n_pucch1_0 */
-        b[0] = (uint8_t)(b[0] != 1 ? 0 : 1);
-        b[1] = (uint8_t)(b[1] != 1 ? 0 : 1);
-      } else if (b[1] == 1 && b[2] == 1) {
-        /* n_pucch1_1 */
-        b[0] = (uint8_t)(b[0] != 1 ? 0 : 1);
-        b[1] = (uint8_t)(b[3] != 1 ? 0 : 1);
-      } else if (b[0] == 1) {
-        /* n_pucch1_2 */
-        b[0] = (uint8_t)((b[3] != 1 ? 0 : 1) & (b[2] != 1 ? 1 : 0));
-        b[1] = (uint8_t)((b[3] != 1 ? 0 : 1) & ((b[1] != 1 ? 0 : 1) ^ (b[2] != 1 ? 0 : 1)));
-      } else {
-        /* n_pucch1_3 */
-        b[0] = (uint8_t)((b[1] != 1 ? 0 : 1) & (b[0] != 1 ? 1 : 0));
-        b[1] = (uint8_t)((b[3] != 1 ? 0 : 1) & ((b[1] != 1 ? 0 : 1) ^ (b[2] != 1 ? 0 : 1)));
-      }
-      break;
-  }
-
-  return n_pucch;
-}
-
-static void set_b01(uint8_t* b, uint8_t x)
-{
-  switch (x) {
-    case 0:
-      b[0] = 0;
-      b[1] = 0;
-      break;
-    case 1:
-      b[0] = 0;
-      b[1] = 1;
-      break;
-    case 2:
-      b[0] = 1;
-      b[1] = 0;
-      break;
-    case 3:
-      b[0] = 1;
-      b[1] = 1;
-      break;
-  }
-}
-
-#define is_ack(h) (h == 1)
-#define is_nack(h) (h == 0)
-#define is_nackdtx(h) ((h & 1) == 0)
-#define is_dtx(h) (h == 2)
-
-// n_pucch and b0b1 selection for TDD, tables 10.1-2, 10.1-3 and 10.1-4
-static uint32_t get_npucch_tdd(uint32_t n_pucch[4], srslte_uci_cfg_t* uci_cfg, srslte_uci_value_t* uci_value)
-{
-  uint8_t* b = uci_value->ack.ack_value;
-  switch (uci_cfg->ack[0].nof_acks) {
-    case 1:
-      return n_pucch[0];
-    case 2:
-      if (is_ack(b[0]) && is_ack(b[1])) {
-        set_b01(b, 3);
-        return n_pucch[1];
-      } else if (is_ack(b[0]) && is_nackdtx(b[1])) {
-        set_b01(b, 1);
-        return n_pucch[0];
-      } else if (is_nackdtx(b[0]) && is_ack(b[1])) {
-        set_b01(b, 0);
-        return n_pucch[1];
-      } else if (is_nackdtx(b[0]) && is_nack(b[1])) {
-        set_b01(b, 2);
-        return n_pucch[1];
-      } else if (is_nack(b[0]) && is_dtx(b[1])) {
-        set_b01(b, 2);
-        return n_pucch[0];
-      }
-      break;
-    case 3:
-      uci_cfg->ack[0].nof_acks = 2;
-      if (is_ack(b[0]) && is_ack(b[1]) && is_ack(b[2])) {
-        set_b01(b, 3);
-        return n_pucch[2];
-      } else if (is_ack(b[0]) && is_ack(b[1]) && is_nackdtx(b[2])) {
-        set_b01(b, 3);
-        return n_pucch[1];
-      } else if (is_ack(b[0]) && is_nackdtx(b[1]) && is_ack(b[2])) {
-        set_b01(b, 3);
-        return n_pucch[0];
-      } else if (is_ack(b[0]) && is_nackdtx(b[1]) && is_nackdtx(b[2])) {
-        set_b01(b, 1);
-        return n_pucch[0];
-      } else if (is_nackdtx(b[0]) && is_ack(b[1]) && is_ack(b[2])) {
-        set_b01(b, 2);
-        return n_pucch[2];
-      } else if (is_nackdtx(b[0]) && is_ack(b[1]) && is_nackdtx(b[2])) {
-        set_b01(b, 0);
-        return n_pucch[1];
-      } else if (is_nackdtx(b[0]) && is_nackdtx(b[1]) && is_ack(b[2])) {
-        set_b01(b, 0);
-        return n_pucch[2];
-      } else if (is_dtx(b[0]) && is_dtx(b[1]) && is_nack(b[2])) {
-        set_b01(b, 1);
-        return n_pucch[2];
-      } else if (is_dtx(b[0]) && is_nack(b[1]) && is_nackdtx(b[2])) {
-        set_b01(b, 2);
-        return n_pucch[1];
-      } else if (is_nack(b[0]) && is_nackdtx(b[1]) && is_nackdtx(b[2])) {
-        set_b01(b, 2);
-        return n_pucch[0];
-      }
-      break;
-    case 4:
-      uci_cfg->ack[0].nof_acks = 2;
-      if (is_ack(b[0]) && is_ack(b[1]) && is_ack(b[2]) && is_ack(b[3])) {
-        set_b01(b, 3);
-        return n_pucch[1];
-      } else if (is_ack(b[0]) && is_ack(b[1]) && is_ack(b[2]) && is_nackdtx(b[3])) {
-        set_b01(b, 2);
-        return n_pucch[1];
-      } else if (is_nackdtx(b[0]) && is_nackdtx(b[1]) && is_nack(b[2]) && is_dtx(b[3])) {
-        set_b01(b, 3);
-        return n_pucch[2];
-      } else if (is_ack(b[0]) && is_ack(b[1]) && is_nackdtx(b[2]) && is_ack(b[3])) {
-        set_b01(b, 2);
-        return n_pucch[1];
-      } else if (is_nack(b[0]) && is_dtx(b[1]) && is_dtx(b[2]) && is_dtx(b[3])) {
-        set_b01(b, 2);
-        return n_pucch[0];
-      } else if (is_ack(b[0]) && is_ack(b[1]) && is_nackdtx(b[2]) && is_nackdtx(b[3])) {
-        set_b01(b, 2);
-        return n_pucch[1];
-      } else if (is_ack(b[0]) && is_nackdtx(b[1]) && is_ack(b[2]) && is_ack(b[3])) {
-        set_b01(b, 1);
-        return n_pucch[3];
-      } else if (is_nackdtx(b[0]) && is_nackdtx(b[1]) && is_nackdtx(b[2]) && is_nack(b[3])) {
-        set_b01(b, 3);
-        return n_pucch[3];
-      } else if (is_ack(b[0]) && is_nackdtx(b[1]) && is_ack(b[2]) && is_nack(b[3])) {
-        set_b01(b, 2);
-        return n_pucch[1];
-      } else if (is_ack(b[0]) && is_nackdtx(b[1]) && is_nackdtx(b[2]) && is_ack(b[3])) {
-        set_b01(b, 1);
-        return n_pucch[0];
-      } else if (is_ack(b[0]) && is_nackdtx(b[1]) && is_nackdtx(b[2]) && is_nackdtx(b[3])) {
-        set_b01(b, 3);
-        return n_pucch[0];
-      } else if (is_nackdtx(b[0]) && is_ack(b[1]) && is_ack(b[2]) && is_ack(b[3])) {
-        set_b01(b, 1);
-        return n_pucch[3];
-      } else if (is_nackdtx(b[0]) && is_nack(b[1]) && is_dtx(b[2]) && is_dtx(b[3])) {
-        set_b01(b, 0);
-        return n_pucch[1];
-      } else if (is_nackdtx(b[0]) && is_ack(b[1]) && is_ack(b[2]) && is_nackdtx(b[3])) {
-        set_b01(b, 2);
-        return n_pucch[2];
-      } else if (is_nackdtx(b[0]) && is_ack(b[1]) && is_nackdtx(b[2]) && is_ack(b[3])) {
-        set_b01(b, 2);
-        return n_pucch[3];
-      } else if (is_nackdtx(b[0]) && is_ack(b[1]) && is_nackdtx(b[2]) && is_nackdtx(b[3])) {
-        set_b01(b, 1);
-        return n_pucch[1];
-      } else if (is_nackdtx(b[0]) && is_nackdtx(b[1]) && is_ack(b[2]) && is_ack(b[3])) {
-        set_b01(b, 1);
-        return n_pucch[3];
-      } else if (is_nackdtx(b[0]) && is_nackdtx(b[1]) && is_ack(b[2]) && is_nackdtx(b[3])) {
-        set_b01(b, 0);
-        return n_pucch[2];
-      } else if (is_nackdtx(b[0]) && is_nackdtx(b[1]) && is_nackdtx(b[2]) && is_ack(b[3])) {
-        set_b01(b, 0);
-        return n_pucch[3];
-      }
-  }
-  return 0;
-}
-
-static uint32_t get_Np(uint32_t p, uint32_t nof_prb)
-{
-  if (p == 0) {
-    return 0;
-  } else {
-    return nof_prb * (SRSLTE_NRE * p - 4) / 36;
-  }
-}
-
-static uint32_t n_pucch_i_tdd(uint32_t ncce, uint32_t N_pucch_1, uint32_t nof_prb, uint32_t M, uint32_t m)
-{
-  uint32_t Np = 0, Np_1 = 0;
-  for (uint32_t p = 0; p < 4; p++) {
-    Np   = get_Np(p, nof_prb);
-    Np_1 = get_Np(p + 1, nof_prb);
-    if (ncce >= Np && ncce < Np_1) {
-      uint32_t npucch = (M - m - 1) * Np + m * Np_1 + ncce + N_pucch_1;
-      return npucch;
-    }
-  }
-  ERROR("Could not find Np value for ncce=%d\n", ncce);
-  return 0;
-}
-
-/** Choose PUCCH resource as described in 3GPP 36.213 version 10.13.0 section 10.1.2.2 */
-static uint32_t
-get_npucch(srslte_pucch_cfg_t* cfg, srslte_uci_cfg_t* uci_cfg, srslte_uci_value_t* uci_value, srslte_cell_t* cell)
-{
-  uint32_t n_pucch_res = 0;
-
-  if (uci_cfg->is_scheduling_request_tti) {
-    return cfg->n_pucch_sr;
-  }
-
-  if (uci_value) {
-    if (uci_value->scheduling_request) {
-      return cfg->n_pucch_sr;
-    }
-  }
-
-  if (!uci_value || !cell || !uci_cfg) {
-    fprintf(stderr, "get_npucch(): Invalid parameters\n");
-    return 0;
-  }
-
-  if (cfg->format < SRSLTE_PUCCH_FORMAT_2) {
-    if (cfg->sps_enabled) {
-      n_pucch_res = cfg->n_pucch_1[uci_cfg->ack[0].tpc_for_pucch % 4];
-    } else {
-      if (cell->frame_type == SRSLTE_FDD) {
-        switch (cfg->ack_nack_feedback_mode) {
-          case SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_PUCCH3:
-            n_pucch_res = cfg->n3_pucch_an_list[uci_cfg->ack[0].tpc_for_pucch % SRSLTE_PUCCH_SIZE_AN_CS];
-            break;
-          case SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_CS:
-            n_pucch_res = get_npucch_cs(cfg, uci_cfg, uci_value);
-            break;
-          default:
-            n_pucch_res = uci_cfg->ack[0].ncce[0] + cfg->N_pucch_1;
-            break;
-        }
-      } else {
-        // only 1 CC supported in TDD
-        if (!uci_cfg->ack[0].tdd_is_multiplex || uci_cfg->ack[0].tdd_ack_M == 1) {
-          n_pucch_res = n_pucch_i_tdd(uci_cfg->ack[0].ncce[0],
-                                      cfg->N_pucch_1,
-                                      cell->nof_prb,
-                                      uci_cfg->ack[0].tdd_ack_M,
-                                      uci_cfg->ack[0].tdd_ack_m);
-        } else {
-          if (uci_cfg->ack[0].tdd_ack_M <= 4) {
-            uint32_t n_pucch[4] = {};
-            for (uint32_t i = 0; i < uci_cfg->ack[0].tdd_ack_M; i++) {
-              n_pucch[i] =
-                  n_pucch_i_tdd(uci_cfg->ack[0].ncce[i], cfg->N_pucch_1, cell->nof_prb, uci_cfg->ack[0].tdd_ack_M, i);
-            }
-            n_pucch_res = get_npucch_tdd(n_pucch, uci_cfg, uci_value);
-          } else {
-            ERROR("Invalid M=%d in PUCCH TDD multiplexing\n", uci_cfg->ack[0].tdd_ack_M);
-          }
-        }
-      }
-    }
-  } else {
-    n_pucch_res = cfg->n_pucch_2;
-  }
-
-  return n_pucch_res;
-}
-
 /* Procedure for determining PUCCH assignment 10.1 36.213 */
-void srslte_ue_ul_pucch_resource_selection(srslte_cell_t*      cell,
-                                           srslte_pucch_cfg_t* cfg,
-                                           srslte_uci_cfg_t*   uci_cfg,
-                                           srslte_uci_value_t* uci_value)
+void srslte_ue_ul_pucch_resource_selection(const srslte_cell_t*      cell,
+                                           srslte_pucch_cfg_t*       cfg,
+                                           const srslte_uci_cfg_t*   uci_cfg,
+                                           const srslte_uci_value_t* uci_value,
+                                           uint8_t                   b[SRSLTE_UCI_MAX_ACK_BITS])
 {
-  // Drop CQI if there is collision with ACK
-  if (!cfg->simul_cqi_ack && srslte_uci_cfg_total_ack(uci_cfg) > 0 && uci_cfg->cqi.data_enable) {
-    uci_cfg->cqi.data_enable = false;
-  }
-
-  cfg->format  = get_format(cfg, uci_cfg, uci_value, cell->cp);
-  cfg->n_pucch = get_npucch(cfg, uci_cfg, uci_value, cell);
-
-  if (uci_value) {
-    if (cfg->format == SRSLTE_PUCCH_FORMAT_3) {
-      fprintf(stderr, "Warning: PUCCH3 under development\n");
-      uint8_t* b = uci_value->ack.ack_value;
-      uint8_t  temp[SRSLTE_UCI_MAX_ACK_BITS + 1];
-
-      uint32_t k = uci_cfg->ack[0].nof_acks;
-      for (; k < uci_cfg->ack[0].nof_acks; k++) {
-        temp[k] = (uint8_t)((b[k] == 1) ? 1 : 0);
-      }
-      memcpy(temp, uci_value->ack.ack_value, uci_cfg->ack[0].nof_acks);
-      if (uci_cfg->is_scheduling_request_tti) {
-        temp[uci_cfg->ack[0].nof_acks] = (uint8_t)(uci_value->scheduling_request ? 1 : 0);
-        k++;
-      }
-      srslte_uci_encode_ack_sr_pucch3(temp, k, b);
-      for (k = 32; k < SRSLTE_PUCCH3_NOF_BITS; k++) {
-        b[k] = b[k % 32];
-      }
-    }
-  }
+  // Get PUCCH Resources
+  cfg->format  = srslte_pucch_proc_select_format(cell, cfg, uci_cfg, uci_value);
+  cfg->n_pucch = srslte_pucch_proc_get_npucch(cell, cfg, uci_cfg, uci_value, b);
 }
 
 /* Choose PUCCH format as in Sec 10.1 of 36.213 and generate PUCCH signal
@@ -925,22 +513,23 @@ pucch_encode(srslte_ue_ul_t* q, srslte_ul_sf_cfg_t* sf, srslte_ue_ul_cfg_t* cfg,
   int ret = SRSLTE_ERROR_INVALID_INPUTS;
 
   if (q != NULL && cfg != NULL) {
-
-    ret = SRSLTE_ERROR;
+    srslte_uci_value_t uci_value2 = *uci_data; ///< Make copy of UCI Data, so the original input does not get altered
+    ret                           = SRSLTE_ERROR;
 
     if (!srslte_pucch_cfg_isvalid(&cfg->ul_cfg.pucch, q->cell.nof_prb)) {
       ERROR("Invalid PUCCH configuration\n");
       return ret;
     }
 
-    bzero(q->sf_symbols, sizeof(cf_t) * SRSLTE_NOF_RE(q->cell));
+    srslte_vec_cf_zero(q->sf_symbols, SRSLTE_NOF_RE(q->cell));
 
     // Prepare configuration
-    srslte_ue_ul_pucch_resource_selection(&q->cell, &cfg->ul_cfg.pucch, &cfg->ul_cfg.pucch.uci_cfg, uci_data);
+    srslte_ue_ul_pucch_resource_selection(
+        &q->cell, &cfg->ul_cfg.pucch, &cfg->ul_cfg.pucch.uci_cfg, uci_data, uci_value2.ack.ack_value);
 
     srslte_refsignal_srs_pucch_shortened(&q->signals, sf, &cfg->ul_cfg.srs, &cfg->ul_cfg.pucch);
 
-    if (srslte_pucch_encode(&q->pucch, sf, &cfg->ul_cfg.pucch, uci_data, q->sf_symbols)) {
+    if (srslte_pucch_encode(&q->pucch, sf, &cfg->ul_cfg.pucch, &uci_value2, q->sf_symbols)) {
       ERROR("Error encoding TB\n");
       return ret;
     }
@@ -958,6 +547,10 @@ pucch_encode(srslte_ue_ul_t* q, srslte_ul_sf_cfg_t* sf, srslte_ue_ul_cfg_t* cfg,
     apply_cfo(q, cfg);
     apply_norm(q, cfg, (float)q->cell.nof_prb / 15 / 10);
 
+    char txt[256];
+    srslte_pucch_tx_info(&cfg->ul_cfg.pucch, uci_data, txt, sizeof(txt));
+    INFO("[PUCCH] Encoded %s\n", txt);
+
     ret = SRSLTE_SUCCESS;
   }
 
@@ -965,7 +558,7 @@ pucch_encode(srslte_ue_ul_t* q, srslte_ul_sf_cfg_t* sf, srslte_ue_ul_cfg_t* cfg,
 }
 
 /* Returns 1 if a SR needs to be sent at current_tti given I_sr, as defined in Section 10.1 of 36.213 */
-int srslte_ue_ul_sr_send_tti(srslte_pucch_cfg_t* cfg, uint32_t current_tti)
+int srslte_ue_ul_sr_send_tti(const srslte_pucch_cfg_t* cfg, uint32_t current_tti)
 {
   if (!cfg->sr_configured) {
     return SRSLTE_SUCCESS;
@@ -1038,7 +631,7 @@ int srslte_ue_ul_encode(srslte_ue_ul_t* q, srslte_ul_sf_cfg_t* sf, srslte_ue_ul_
 
     /* If all bits are DTX, do not transmit HARQ */
     if (dtx_count == srslte_uci_cfg_total_ack(&cfg->ul_cfg.pusch.uci_cfg)) {
-      for (int i = 0; i < 2; i++) { // Format 1b-CS only supports 2 CC
+      for (int i = 0; i < SRSLTE_MAX_CARRIERS; i++) {
         cfg->ul_cfg.pusch.uci_cfg.ack[i].nof_acks = 0;
       }
     }
@@ -1054,6 +647,11 @@ int srslte_ue_ul_encode(srslte_ue_ul_t* q, srslte_ul_sf_cfg_t* sf, srslte_ue_ul_
     ret = pucch_encode(q, sf, cfg, &data->uci) ? -1 : 1;
   } else if (srs_tx_enabled(&cfg->ul_cfg.srs, sf->tti)) {
     ret = srs_encode(q, sf->tti, cfg) ? -1 : 1;
+  } else {
+    // Set Zero output buffer if no UL transmission is required so the buffer does not keep previous transmission data
+    if (q->cell.nof_prb) {
+      srslte_vec_cf_zero(q->out_buffer, SRSLTE_SF_LEN_PRB(q->cell.nof_prb));
+    }
   }
 
   return ret;

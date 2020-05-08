@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -58,11 +58,11 @@ private:                                                                        
     received_##NAME = true;                                                                                            \
   }
 
-class phy_test_bench : public thread
+class phy_test_bench : public srslte::thread
 {
 private:
   // Dummy classes
-  class dummy_stack : public srsue::stack_interface_phy_lte
+  class dummy_stack final : public srsue::stack_interface_phy_lte
   {
   private:
     srslte::log_filter      log_h;
@@ -85,10 +85,13 @@ private:
 
     void in_sync() override { notify_in_sync(); }
     void out_of_sync() override { notify_out_of_sync(); }
-    void new_phy_meas(float rsrp, float rsrq, uint32_t tti, int earfcn, int pci) override
+    void new_cell_meas(const std::vector<phy_meas_t>& meas) override
     {
-      notify_new_phy_meas();
-      log_h.info("New measurement earfcn=%d; pci=%d; rsrp=%+.1fdBm; rsrq=%+.1fdB;\n", earfcn, pci, rsrp, rsrq);
+      for (auto& m : meas) {
+        notify_new_phy_meas();
+        log_h.info(
+            "New measurement earfcn=%d; pci=%d; rsrp=%+.1fdBm; rsrq=%+.1fdB;\n", m.earfcn, m.pci, m.rsrp, m.rsrq);
+      }
     }
     uint16_t get_dl_sched_rnti(uint32_t tti) override { return rnti; }
     uint16_t get_ul_sched_rnti(uint32_t tti) override { return rnti; }
@@ -101,11 +104,11 @@ private:
       }
     }
     void tb_decoded(uint32_t cc_idx, mac_grant_dl_t grant, bool* ack) override {}
-    void bch_decoded_ok(uint8_t* payload, uint32_t len) override {}
+    void bch_decoded_ok(uint32_t cc_idx, uint8_t* payload, uint32_t len) override {}
     void mch_decoded(uint32_t len, bool crc) override {}
-    void new_mch_dl(srslte_pdsch_grant_t phy_grant, tb_action_dl_t* action) override {}
+    void new_mch_dl(const srslte_pdsch_grant_t& phy_grant, tb_action_dl_t* action) override {}
     void set_mbsfn_config(uint32_t nof_mbsfn_services) override {}
-    void run_tti(const uint32_t tti) override
+    void run_tti(const uint32_t tti, const uint32_t tti_jump) override
     {
       notify_run_tti();
       log_h.info("Run TTI %d\n", tti);
@@ -188,10 +191,8 @@ private:
 
     uint32_t get_count_late() { return count_late; }
 
-    bool tx(const uint32_t&           radio_idx,
-            cf_t**                    buffer,
-            const uint32_t&           nof_samples,
-            const srslte_timestamp_t& tx_time) override
+    bool
+    tx(srslte::rf_buffer_interface& buffer, const uint32_t& nof_samples, const srslte_timestamp_t& tx_time) override
     {
       bool ret = true;
       notify_tx();
@@ -209,9 +210,9 @@ private:
 
       return ret;
     }
+    void release_freq(const uint32_t& carrier_idx) override{};
     void tx_end() override {}
-    bool
-    rx_now(const uint32_t& radio_idx, cf_t** buffer, const uint32_t& nof_samples, srslte_timestamp_t* rxd_time) override
+    bool rx_now(srslte::rf_buffer_interface& buffer, const uint32_t& nof_samples, srslte_timestamp_t* rxd_time) override
     {
       notify_rx_now();
 
@@ -219,7 +220,7 @@ private:
       auto                        base_nsamples = (uint32_t)floorf(((float)nof_samples * base_srate) / rx_srate);
 
       for (uint32_t i = 0; i < ring_buffers.size(); i++) {
-        cf_t* buf_ptr = ((buffer[i] != nullptr) && (base_srate == rx_srate)) ? buffer[i] : temp_buffer;
+        cf_t* buf_ptr = ((buffer.get(i) != nullptr) && (base_srate == rx_srate)) ? buffer.get(i) : temp_buffer;
 
         // Read base srate samples
         int ret = srslte_ringbuffer_read(&ring_buffers[i], buf_ptr, (uint32_t)sizeof(cf_t) * base_nsamples);
@@ -230,14 +231,14 @@ private:
         }
 
         // Only if baseband buffer is provided
-        if (buffer[i]) {
+        if (buffer.get(i)) {
           if (base_srate > rx_srate) {
             // Decimate
             auto decimation = (uint32_t)roundf(base_srate / rx_srate);
 
             // Perform decimation
             for (uint32_t j = 0, k = 0; j < nof_samples; j++, k += decimation) {
-              buffer[i][j] = buf_ptr[k];
+              buffer.get(i)[j] = buf_ptr[k];
             }
           } else if (base_srate < rx_srate) {
             // Interpolate
@@ -246,7 +247,7 @@ private:
             // Perform zero order hold interpolation
             for (uint32_t j = 0, k = 0; j < nof_samples; k++) {
               for (uint32_t c = 0; c < interpolation; c++, j++) {
-                buffer[i][j] = buf_ptr[k];
+                buffer.get(i)[j] = buf_ptr[k];
               }
             }
           }
@@ -263,13 +264,13 @@ private:
 
       return true;
     }
-    void set_tx_freq(const uint32_t& radio_idx, const uint32_t& channel_idx, const double& freq) override
+    void set_tx_freq(const uint32_t& channel_idx, const double& freq) override
     {
       std::unique_lock<std::mutex> lock(mutex);
       tx_freq = (float)freq;
       log_h.info("Set Tx freq to %+.0f MHz.\n", freq * 1.0e-6);
     }
-    void set_rx_freq(const uint32_t& radio_idx, const uint32_t& channel_idx, const double& freq) override
+    void set_rx_freq(const uint32_t& channel_idx, const double& freq) override
     {
       std::unique_lock<std::mutex> lock(mutex);
       rx_freq = (float)freq;
@@ -281,40 +282,41 @@ private:
       rx_gain = srslte_convert_dB_to_amplitude(gain);
       log_h.info("Set Rx gain-th to %+.1f dB (%.6f).\n", gain, rx_gain);
     }
-    void set_rx_gain(const uint32_t& radio_idx, const float& gain) override
+    void set_tx_gain(const float& gain) override
+    {
+      std::unique_lock<std::mutex> lock(mutex);
+      rx_gain = srslte_convert_dB_to_amplitude(gain);
+      log_h.info("Set Tx gain to %+.1f dB (%.6f).\n", gain, rx_gain);
+    }
+    void set_rx_gain(const float& gain) override
     {
       std::unique_lock<std::mutex> lock(mutex);
       rx_gain = srslte_convert_dB_to_amplitude(gain);
       log_h.info("Set Rx gain to %+.1f dB (%.6f).\n", gain, rx_gain);
     }
-    void set_tx_srate(const uint32_t& radio_idx, const double& srate) override
+    void set_tx_srate(const double& srate) override
     {
       std::unique_lock<std::mutex> lock(mutex);
       tx_srate = (float)srate;
       log_h.info("Set Tx sampling rate to %+.3f MHz.\n", srate * 1.0e-6);
     }
-    void set_rx_srate(const uint32_t& radio_idx, const double& srate) override
+    void set_rx_srate(const double& srate) override
     {
       std::unique_lock<std::mutex> lock(mutex);
       rx_srate = (float)srate;
       log_h.info("Set Rx sampling rate to %+.3f MHz.\n", srate * 1.0e-6);
     }
-    float get_rx_gain(const uint32_t& radio_idx) override
+    float get_rx_gain() override
     {
       std::unique_lock<std::mutex> lock(mutex);
       return srslte_convert_amplitude_to_dB(rx_gain);
     }
-    double get_freq_offset() override { return 0; }
-    double get_tx_freq(const uint32_t& radio_idx) override { return tx_freq; }
-    double get_rx_freq(const uint32_t& radio_idx) override { return rx_freq; }
-    float  get_max_tx_power() override { return 0; }
-    float  get_tx_gain_offset() override { return 0; }
-    float  get_rx_gain_offset() override { return 0; }
-    bool   is_continuous_tx() override { return false; }
-    bool   get_is_start_of_burst(const uint32_t& radio_idx) override { return false; }
-    bool   is_init() override { return false; }
-    void   reset() override {}
-    srslte_rf_info_t* get_info(const uint32_t& radio_idx) override { return &rf_info; }
+    double            get_freq_offset() override { return 0; }
+    bool              is_continuous_tx() override { return false; }
+    bool              get_is_start_of_burst() override { return false; }
+    bool              is_init() override { return false; }
+    void              reset() override {}
+    srslte_rf_info_t* get_info() override { return &rf_info; }
   };
 
   // Common instances
@@ -355,7 +357,7 @@ public:
     phy->init(phy_args, &stack, &radio);
 
     // Initialise DL baseband buffers
-    for (uint32_t i = 0; i < phy_args.nof_rx_ant; i++) {
+    for (uint32_t i = 0; i < cell.nof_ports; i++) {
       enb_dl_buffer[i] = srslte_vec_cf_malloc(sf_len);
       if (!enb_dl_buffer[i]) {
         perror("malloc");
@@ -462,12 +464,12 @@ public:
 
 int main(int argc, char** argv)
 {
-  int               ret      = SRSLTE_SUCCESS;
-  const uint32_t    default_timeout = 60000; // 1 minute
+  int            ret             = SRSLTE_SUCCESS;
+  const uint32_t default_timeout = 60000; // 1 minute
 
   // Define Cell
-  srslte_cell_t     cell     = {.nof_prb         = 6,
-                        .nof_ports       = 1,
+  srslte_cell_t cell = {.nof_prb         = 6,
+                        .nof_ports       = 4,
                         .id              = 1,
                         .cp              = SRSLTE_CP_NORM,
                         .phich_length    = SRSLTE_PHICH_NORM,
@@ -491,7 +493,7 @@ int main(int argc, char** argv)
   auto                                     cell_search_res = phy_test->get_phy_interface_rrc()->cell_search(&phy_cell);
   TESTASSERT(cell_search_res.found == srsue::phy_interface_rrc_lte::cell_search_ret_t::CELL_FOUND);
   TESTASSERT(phy_test->get_stack()->wait_in_sync(default_timeout));
-  TESTASSERT(memcmp(&phy_cell.cell, &cell, sizeof(srslte_cell_t)) == 0);
+  TESTASSERT(phy_cell.pci == cell.id);
 
   // 2. Cell select
   phy_test->get_phy_interface_rrc()->cell_select(&phy_cell);

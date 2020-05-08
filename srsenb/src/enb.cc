@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -20,38 +20,12 @@
  */
 
 #include "srsenb/hdr/enb.h"
-#include "srsenb/hdr/radio/enb_radio_multi.h"
 #include "srsenb/hdr/stack/enb_stack_lte.h"
 #include "srsenb/src/enb_cfg_parser.h"
 #include "srslte/build_info.h"
-#include <boost/algorithm/string.hpp>
 #include <iostream>
-#include <sstream>
 
 namespace srsenb {
-
-enb*            enb::instance      = nullptr;
-pthread_mutex_t enb_instance_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-enb* enb::get_instance()
-{
-  pthread_mutex_lock(&enb_instance_mutex);
-  if (nullptr == instance) {
-    instance = new enb();
-  }
-  pthread_mutex_unlock(&enb_instance_mutex);
-  return (instance);
-}
-void enb::cleanup()
-{
-  pthread_mutex_lock(&enb_instance_mutex);
-  if (nullptr != instance) {
-    delete instance;
-    instance = nullptr;
-  }
-  srslte::byte_buffer_pool::cleanup(); // pool has to be cleaned after enb is deleted
-  pthread_mutex_unlock(&enb_instance_mutex);
-}
 
 enb::enb() : started(false), pool(srslte::byte_buffer_pool::get_instance(ENB_POOL_SIZE))
 {
@@ -59,12 +33,20 @@ enb::enb() : started(false), pool(srslte::byte_buffer_pool::get_instance(ENB_POO
   std::cout << std::endl << get_build_string() << std::endl;
 }
 
-enb::~enb() {}
-
-int enb::init(const all_args_t& args_)
+enb::~enb()
 {
+  // pool has to be cleaned after enb is deleted
+  stack.reset();
+  srslte::byte_buffer_pool::cleanup();
+}
+
+int enb::init(const all_args_t& args_, srslte::logger* logger_)
+{
+  int ret = SRSLTE_SUCCESS;
+  logger = logger_;
+
   // Init UE log
-  log.init("UE  ", logger);
+  log.init("ENB ", logger);
   log.set_level(srslte::LOG_LEVEL_INFO);
   log.info("%s", get_build_string().c_str());
 
@@ -72,16 +54,6 @@ int enb::init(const all_args_t& args_)
   if (parse_args(args_)) {
     log.console("Error processing arguments.\n");
     return SRSLTE_ERROR;
-  }
-
-  // set logger
-  if (args.log.filename == "stdout") {
-    logger = &logger_stdout;
-  } else {
-    logger_file.init(args.log.filename, args.log.file_max_size);
-    logger_file.log_char("\n\n");
-    logger_file.log_char(get_build_string().c_str());
-    logger = &logger_file;
   }
 
   pool_log.init("POOL", logger);
@@ -95,7 +67,7 @@ int enb::init(const all_args_t& args_)
     return SRSLTE_ERROR;
   }
 
-  std::unique_ptr<enb_radio_multi> lte_radio = std::unique_ptr<enb_radio_multi>(new enb_radio_multi(logger));
+  std::unique_ptr<srslte::radio> lte_radio = std::unique_ptr<srslte::radio>(new srslte::radio(logger));
   if (!lte_radio) {
     log.console("Error creating radio multi instance.\n");
     return SRSLTE_ERROR;
@@ -110,17 +82,17 @@ int enb::init(const all_args_t& args_)
   // Init layers
   if (lte_radio->init(args.rf, lte_phy.get())) {
     log.console("Error initializing radio.\n");
-    return SRSLTE_ERROR;
+    ret = SRSLTE_ERROR;
   }
 
   if (lte_phy->init(args.phy, phy_cfg, lte_radio.get(), lte_stack.get())) {
     log.console("Error initializing PHY.\n");
-    return SRSLTE_ERROR;
+    ret = SRSLTE_ERROR;
   }
 
   if (lte_stack->init(args.stack, rrc_cfg, lte_phy.get())) {
     log.console("Error initializing stack.\n");
-    return SRSLTE_ERROR;
+    ret = SRSLTE_ERROR;
   }
 
   stack = std::move(lte_stack);
@@ -130,9 +102,9 @@ int enb::init(const all_args_t& args_)
   log.console("\n==== eNodeB started ===\n");
   log.console("Type <t> to view trace\n");
 
-  started = true;
+  started = (ret == SRSLTE_SUCCESS);
 
-  return SRSLTE_SUCCESS;
+  return ret;
 }
 
 void enb::stop()
@@ -183,7 +155,7 @@ bool enb::get_metrics(enb_metrics_t* m)
 
 srslte::LOG_LEVEL_ENUM enb::level(std::string l)
 {
-  boost::to_upper(l);
+  std::transform(l.begin(), l.end(), l.begin(), ::toupper);
   if ("NONE" == l) {
     return srslte::LOG_LEVEL_NONE;
   } else if ("ERROR" == l) {

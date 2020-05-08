@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -34,7 +34,7 @@
 #include <iostream>
 #include <memory>
 
-class netsource_handler : public thread
+class netsource_handler : public srslte::thread
 {
 public:
   netsource_handler(const std::string name_) : thread(name_) { rx_buf = unique_byte_array_t(new byte_array_t); }

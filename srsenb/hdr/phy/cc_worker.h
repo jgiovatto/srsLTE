@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -25,7 +25,6 @@
 #include <string.h>
 
 #include "phy_common.h"
-#include "srslte/srslte.h"
 
 #define LOG_EXECTIME
 
@@ -43,7 +42,7 @@ public:
   cf_t* get_buffer_tx(uint32_t antenna_idx);
   void  set_tti(uint32_t tti);
 
-  int      add_rnti(uint16_t rnti, bool is_temporal);
+  int      add_rnti(uint16_t rnti, bool is_pcell, bool is_temporal);
   void     rem_rnti(uint16_t rnti);
   uint32_t get_nof_rnti();
 
@@ -54,11 +53,10 @@ public:
   int  read_pucch_d(cf_t* pusch_d);
   void start_plot();
 
-  void set_config_dedicated(uint16_t rnti, asn1::rrc::phys_cfg_ded_s* dedicated);
-  void work_ul(srslte_ul_sf_cfg_t* ul_sf, stack_interface_phy_lte::ul_sched_t* ul_grants);
-  void work_dl(srslte_dl_sf_cfg_t*                  dl_sf_cfg,
-               stack_interface_phy_lte::dl_sched_t* dl_grants,
-               stack_interface_phy_lte::ul_sched_t* ul_grants,
+  void work_ul(const srslte_ul_sf_cfg_t& ul_sf, stack_interface_phy_lte::ul_sched_t& ul_grants);
+  void work_dl(const srslte_dl_sf_cfg_t&            dl_sf_cfg,
+               stack_interface_phy_lte::dl_sched_t& dl_grants,
+               stack_interface_phy_lte::ul_sched_t& ul_grants,
                srslte_mbsfn_cfg_t*                  mbsfn_cfg);
 
   uint32_t get_metrics(phy_metrics_t metrics[ENB_METRICS_MAX_USERS]);
@@ -75,9 +73,6 @@ private:
   int encode_pdcch_ul(stack_interface_phy_lte::ul_sched_grant_t* grants, uint32_t nof_grants);
   int decode_pucch();
 
-  void send_uci_data(uint16_t rnti, srslte_uci_cfg_t* uci_cfg, srslte_uci_value_t* uci_value);
-  bool fill_uci_cfg(uint16_t rnti, bool aperiodic_cqi_request, srslte_uci_cfg_t* uci_cfg);
-
   /* Common objects */
   srslte::log* log_h     = nullptr;
   phy_common*  phy       = nullptr;
@@ -86,7 +81,6 @@ private:
   cf_t*    signal_buffer_rx[SRSLTE_MAX_PORTS] = {};
   cf_t*    signal_buffer_tx[SRSLTE_MAX_PORTS] = {};
   uint32_t tti_rx = 0, tti_tx_dl = 0, tti_tx_ul = 0;
-  uint32_t t_rx = 0, t_tx_dl = 0, t_tx_ul = 0;
 
   srslte_enb_dl_t enb_dl = {};
   srslte_enb_ul_t enb_ul = {};
@@ -100,32 +94,23 @@ private:
   class ue
   {
   public:
-    ue(uint16_t id, phy_common* phy)
+    explicit ue(uint16_t rnti_, bool pcell_) : rnti(rnti_), pcell(pcell_)
     {
-      // Copy common configuartion
-      ul_cfg = phy->ul_cfg_com;
-      dl_cfg = phy->dl_cfg_com;
-
-      // Fill RNTI
-      rnti              = id;
-      dl_cfg.pdsch.rnti = rnti;
-      ul_cfg.pusch.rnti = rnti;
-      ul_cfg.pucch.rnti = rnti;
+      // Do nothing
     }
 
     bool                 is_grant_available = false;
     srslte_phich_grant_t phich_grant        = {};
 
-    srslte_dl_cfg_t dl_cfg = {};
-    srslte_ul_cfg_t ul_cfg = {};
-
     void metrics_read(phy_metrics_t* metrics);
     void metrics_dl(uint32_t mcs);
     void metrics_ul(uint32_t mcs, float rssi, float sinr, float turbo_iters);
+    bool is_pcell() { return pcell; };
 
   private:
     uint32_t      rnti    = 0;
     phy_metrics_t metrics = {};
+    bool          pcell;
   };
 
   // Component carrier index

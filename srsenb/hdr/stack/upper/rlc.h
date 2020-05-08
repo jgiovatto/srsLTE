@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -43,7 +43,7 @@ public:
             rrc_interface_rlc*     rrc_,
             mac_interface_rlc*     mac_,
             srslte::timer_handler* timers_,
-            srslte::log*           log_h);
+            srslte::log_ref        log_h);
   void stop();
 
   // rlc_interface_rrc
@@ -53,6 +53,8 @@ public:
   void add_bearer(uint16_t rnti, uint32_t lcid, srslte::rlc_config_t cnfg);
   void add_bearer_mrb(uint16_t rnti, uint32_t lcid);
   bool has_bearer(uint16_t rnti, uint32_t lcid);
+  bool suspend_bearer(uint16_t rnti, uint32_t lcid);
+  bool resume_bearer(uint16_t rnti, uint32_t lcid);
 
   // rlc_interface_pdcp
   void        write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu);
@@ -62,7 +64,6 @@ public:
 
   // rlc_interface_mac
   int  read_pdu(uint16_t rnti, uint32_t lcid, uint8_t* payload, uint32_t nof_bytes);
-  void read_pdu_bcch_dlsch(uint32_t sib_index, uint8_t* payload);
   void write_pdu(uint16_t rnti, uint32_t lcid, uint8_t* payload, uint32_t nof_bytes);
   void read_pdu_pcch(uint8_t* payload, uint32_t buffer_size);
 
@@ -93,7 +94,7 @@ private:
   mac_interface_rlc*        mac;
   pdcp_interface_rlc*       pdcp;
   rrc_interface_rlc*        rrc;
-  srslte::log*              log_h;
+  srslte::log_ref           log_h;
   srslte::byte_buffer_pool* pool;
   srslte::timer_handler*    timers;
 };

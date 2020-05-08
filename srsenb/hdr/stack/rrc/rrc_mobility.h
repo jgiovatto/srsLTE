@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -23,6 +23,7 @@
 #define SRSENB_RRC_MOBILITY_H
 
 #include "rrc.h"
+#include "srslte/common/logmap.h"
 #include <map>
 
 namespace srsenb {
@@ -34,12 +35,12 @@ namespace srsenb {
 class var_meas_cfg_t
 {
 public:
-  explicit var_meas_cfg_t(srslte::log* log_) : rrc_log(log_) {}
   using meas_cell_t  = asn1::rrc::cells_to_add_mod_s;
   using meas_id_t    = asn1::rrc::meas_id_to_add_mod_s;
   using meas_obj_t   = asn1::rrc::meas_obj_to_add_mod_s;
   using report_cfg_t = asn1::rrc::report_cfg_to_add_mod_s;
 
+  var_meas_cfg_t() : rrc_log(srslte::logmap::get("RRC")) {}
   std::tuple<bool, meas_obj_t*, meas_cell_t*> add_cell_cfg(const meas_cell_cfg_t& cellcfg);
   report_cfg_t*                               add_report_cfg(const asn1::rrc::report_cfg_eutra_s& reportcfg);
   meas_id_t*                                  add_measid_cfg(uint8_t measobjid, uint8_t repid);
@@ -62,21 +63,26 @@ public:
   asn1::rrc::report_cfg_to_add_mod_list_l&       rep_cfgs() { return var_meas.report_cfg_list; }
   asn1::rrc::meas_id_to_add_mod_list_l&          meas_ids() { return var_meas.meas_id_list; }
 
+  static var_meas_cfg_t make(const asn1::rrc::meas_cfg_s& meas_cfg);
+
 private:
   asn1::rrc::var_meas_cfg_s var_meas;
-  srslte::log*              rrc_log = nullptr;
+  srslte::log_ref           rrc_log;
 };
 
-class rrc::mobility_cfg
+class rrc::enb_mobility_handler
 {
 public:
-  explicit mobility_cfg(const rrc_cfg_t* cfg_, srslte::log* log_);
+  explicit enb_mobility_handler(rrc* rrc_);
 
-  std::shared_ptr<const var_meas_cfg_t> current_meas_cfg; ///< const to enable ptr comparison as identity comparison
+  //! Variable used to store the MeasConfig expected for each cell.
+  // Note: Made const to forbid silent updates and enable comparison based on addr
+  std::vector<std::shared_ptr<const var_meas_cfg_t> > cell_meas_cfg_list;
 
 private:
   // args
-  const rrc_cfg_t* cfg = nullptr;
+  rrc*             rrc_ptr = nullptr;
+  const rrc_cfg_t* cfg     = nullptr;
 };
 
 class rrc::ue::rrc_mobility
@@ -93,11 +99,18 @@ private:
   bool start_ho_preparation(uint32_t target_eci, uint8_t measobj_id, bool fwd_direct_path_available);
   bool start_enb_status_transfer();
 
-  rrc::ue*                  rrc_ue  = nullptr;
-  rrc*                      rrc_enb = nullptr;
-  rrc::mobility_cfg*        cfg     = nullptr;
-  srslte::byte_buffer_pool* pool    = nullptr;
-  srslte::log*              rrc_log = nullptr;
+  bool update_ue_var_meas_cfg(const asn1::rrc::meas_cfg_s& source_meas_cfg,
+                              uint32_t                     target_enb_cc_idx,
+                              asn1::rrc::meas_cfg_s*       diff_meas_cfg);
+  bool update_ue_var_meas_cfg(const var_meas_cfg_t&  source_var_meas_cfg,
+                              uint32_t               target_enb_cc_idx,
+                              asn1::rrc::meas_cfg_s* diff_meas_cfg);
+
+  rrc::ue*                   rrc_ue  = nullptr;
+  rrc*                       rrc_enb = nullptr;
+  rrc::enb_mobility_handler* cfg     = nullptr;
+  srslte::byte_buffer_pool*  pool    = nullptr;
+  srslte::log_ref            rrc_log;
 
   // vars
   std::shared_ptr<const var_meas_cfg_t> ue_var_meas;

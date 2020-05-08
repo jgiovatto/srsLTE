@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -34,8 +34,8 @@ int main(int argc, char** argv)
 {
   int   N    = 9000;
   float rate = 24.0 / 25.0;
-  cf_t* in   = malloc(N * sizeof(cf_t));
-  cf_t* out  = malloc(N * sizeof(cf_t));
+  cf_t* in   = srslte_vec_cf_malloc(N);
+  cf_t* out  = srslte_vec_cf_malloc(N);
 
   for (int i = 0; i < N; i++)
     in[i] = sin(i * 2 * M_PI / 100);

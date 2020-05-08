@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -19,15 +19,11 @@
  *
  */
 
-#include "srslte/srslte.h"
 #include "ttcn3_ip_ctrl_interface.h"
 #include "ttcn3_ip_sock_interface.h"
 #include "ttcn3_srb_interface.h"
 #include "ttcn3_sys_interface.h"
 #include "ttcn3_ut_interface.h"
-#include <iostream>
-#include <stdio.h>
-#include <vector>
 
 int if_handler_test()
 {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -22,7 +22,6 @@
 #define SRSEPC_S1AP_PAGING_H
 
 #include "s1ap_common.h"
-#include "srslte/asn1/liblte_s1ap.h"
 #include "srslte/common/buffer_pool.h"
 #include "srslte/common/common.h"
 #include "srslte/common/log_filter.h"

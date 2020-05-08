@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -30,7 +30,7 @@ int test_rx(std::vector<pdcp_test_event_t>      events,
             uint32_t                            n_sdus_exp,
             const srslte::unique_byte_buffer_t& sdu_exp,
             srslte::byte_buffer_pool*           pool,
-            srslte::log*                        log)
+            srslte::log_ref                     log)
 
 {
 
@@ -45,7 +45,7 @@ int test_rx(std::vector<pdcp_test_event_t>      events,
   pdcp_nr_test_helper     pdcp_hlp_rx(cfg_rx, sec_cfg, log);
   srslte::pdcp_entity_nr* pdcp_rx   = &pdcp_hlp_rx.pdcp;
   gw_dummy*               gw_rx     = &pdcp_hlp_rx.gw;
-  srslte::timer_handler*  timers_rx = &pdcp_hlp_rx.timers;
+  srslte::timer_handler*  timers_rx = &pdcp_hlp_rx.stack.timers;
   pdcp_hlp_rx.set_pdcp_initial_state(init_state);
 
   // Generate test message and encript/decript SDU.
@@ -70,7 +70,7 @@ int test_rx(std::vector<pdcp_test_event_t>      events,
  * RX Test: PDCP Entity with SN LEN = 12 and 18.
  * PDCP entity configured with EIA2 and EEA2
  */
-int test_rx_all(srslte::byte_buffer_pool* pool, srslte::log* log)
+int test_rx_all(srslte::byte_buffer_pool* pool, srslte::log_ref log)
 {
   // Test SDUs
   srslte::unique_byte_buffer_t tst_sdu1 = allocate_unique_buffer(*pool); // SDU 1
@@ -232,11 +232,11 @@ int test_rx_all(srslte::byte_buffer_pool* pool, srslte::log* log)
 int run_all_tests(srslte::byte_buffer_pool* pool)
 {
   // Setup log
-  srslte::log_filter log("PDCP NR Test RX");
-  log.set_level(srslte::LOG_LEVEL_DEBUG);
-  log.set_hex_limit(128);
+  srslte::log_ref log("PDCP NR Test RX");
+  log->set_level(srslte::LOG_LEVEL_DEBUG);
+  log->set_hex_limit(128);
 
-  TESTASSERT(test_rx_all(pool, &log) == 0);
+  TESTASSERT(test_rx_all(pool, log) == 0);
   return 0;
 }
 

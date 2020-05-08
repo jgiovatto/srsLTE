@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -23,6 +23,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <uhd.h>
+#include <uhd/types/sensors.h>
 #include <unistd.h>
 
 #include "rf_helper.h"
@@ -56,6 +57,7 @@ typedef struct {
   int              nof_tx_channels;
 
   srslte_rf_error_handler_t uhd_error_handler;
+  void*                     uhd_error_handler_arg;
 
   float current_master_clock;
 
@@ -70,7 +72,7 @@ void suppress_handler(const char* x)
   // do nothing
 }
 
-cf_t zero_mem[64 * 1024];
+static cf_t zero_mem[64 * 1024];
 
 static void log_overflow(rf_uhd_handler_t* h)
 {
@@ -78,7 +80,7 @@ static void log_overflow(rf_uhd_handler_t* h)
     srslte_rf_error_t error;
     bzero(&error, sizeof(srslte_rf_error_t));
     error.type = SRSLTE_RF_ERROR_OVERFLOW;
-    h->uhd_error_handler(error);
+    h->uhd_error_handler(h->uhd_error_handler_arg, error);
   }
 }
 
@@ -89,7 +91,7 @@ static void log_late(rf_uhd_handler_t* h, bool is_rx)
     bzero(&error, sizeof(srslte_rf_error_t));
     error.opt  = is_rx ? 1 : 0;
     error.type = SRSLTE_RF_ERROR_LATE;
-    h->uhd_error_handler(error);
+    h->uhd_error_handler(h->uhd_error_handler_arg, error);
   }
 }
 
@@ -100,7 +102,7 @@ static void log_underflow(rf_uhd_handler_t* h)
     srslte_rf_error_t error;
     bzero(&error, sizeof(srslte_rf_error_t));
     error.type = SRSLTE_RF_ERROR_UNDERFLOW;
-    h->uhd_error_handler(error);
+    h->uhd_error_handler(h->uhd_error_handler_arg, error);
   }
 }
 #endif
@@ -115,7 +117,7 @@ static void log_rx_error(rf_uhd_handler_t* h)
     srslte_rf_error_t error;
     bzero(&error, sizeof(srslte_rf_error_t));
     error.type = SRSLTE_RF_ERROR_RX;
-    h->uhd_error_handler(error);
+    h->uhd_error_handler(h->uhd_error_handler_arg, error);
   }
 }
 
@@ -149,18 +151,90 @@ static void* async_thread(void* h)
 }
 #endif
 
+static inline void uhd_free(rf_uhd_handler_t* h)
+{
+  rf_uhd_handler_t* handler = (rf_uhd_handler_t*)h;
+
+  // NULL handler, return
+  if (!handler) {
+    return;
+  }
+
+  uhd_tx_metadata_free(&handler->tx_md);
+  uhd_rx_metadata_free(&handler->rx_md_first);
+  uhd_rx_metadata_free(&handler->rx_md);
+
+#if HAVE_ASYNC_THREAD
+  if (handler->async_thread_running) {
+    handler->async_thread_running = false;
+    pthread_join(handler->async_thread, NULL);
+  }
+#endif
+
+  uhd_tx_streamer_free(&handler->tx_stream);
+  uhd_rx_streamer_free(&handler->rx_stream);
+  uhd_usrp_free(&handler->usrp);
+
+  free(handler);
+}
+
+static inline int uhd_alloc(rf_uhd_handler_t* handler, char* args)
+{
+  uhd_error error;
+
+  error = uhd_usrp_make(&handler->usrp, args);
+  if (error) {
+    ERROR("Error opening UHD: code %d\n", error);
+    return SRSLTE_ERROR;
+  }
+
+  error = uhd_rx_streamer_make(&handler->rx_stream);
+  if (error) {
+    ERROR("Error making RX stream: %d\n", error);
+    return SRSLTE_ERROR;
+  }
+
+  error = uhd_tx_streamer_make(&handler->tx_stream);
+  if (error) {
+    ERROR("Error making TX stream: %d\n", error);
+    return SRSLTE_ERROR;
+  }
+
+  // Make metadata objects for RX/TX
+  error = uhd_rx_metadata_make(&handler->rx_md);
+  if (error) {
+    ERROR("Error making RX Metadata: %d\n", error);
+    return SRSLTE_ERROR;
+  }
+
+  error = uhd_rx_metadata_make(&handler->rx_md_first);
+  if (error) {
+    ERROR("Error making RX Metadata first: %d\n", error);
+    return SRSLTE_ERROR;
+  }
+
+  error = uhd_tx_metadata_make(&handler->tx_md, false, 0, 0, false, false);
+  if (error) {
+    ERROR("Error making TX Metadata: %d\n", error);
+    return SRSLTE_ERROR;
+  }
+
+  return SRSLTE_SUCCESS;
+}
+
 void rf_uhd_suppress_stdout(void* h)
 {
   rf_uhd_register_msg_handler_c(suppress_handler);
 }
 
-void rf_uhd_register_error_handler(void* h, srslte_rf_error_handler_t new_handler)
+void rf_uhd_register_error_handler(void* h, srslte_rf_error_handler_t new_handler, void* arg)
 {
-  rf_uhd_handler_t* handler  = (rf_uhd_handler_t*)h;
-  handler->uhd_error_handler = new_handler;
+  rf_uhd_handler_t* handler      = (rf_uhd_handler_t*)h;
+  handler->uhd_error_handler     = new_handler;
+  handler->uhd_error_handler_arg = arg;
 }
 
-static bool find_string(uhd_string_vector_handle h, char* str)
+static bool find_string(uhd_string_vector_handle h, const char* str)
 {
   char   buff[128];
   size_t n;
@@ -172,6 +246,74 @@ static bool find_string(uhd_string_vector_handle h, char* str)
     }
   }
   return false;
+}
+
+/**
+ * Set the USRP time to the current GPS time (if sensor is found)
+ *
+ * The GPS time is read and the USRP time is set to the next full second during the next PPS.
+ * It appears, however, that "uhd_usrp_set_time_next_pps()" which seems to be the correct function
+ * to use, doesn't work. The C API call "uhd_usrp_set_time_unknown_pps()" works well.
+ * @param handler Pointer to RF handler
+ * @return Any error returned by UHD
+ */
+static uhd_error set_time_to_gps_time(rf_uhd_handler_t* handler)
+{
+  const char sensor_name[] = "gps_time";
+
+  uhd_string_vector_handle sensors;
+  uhd_string_vector_make(&sensors);
+
+  uhd_error error = uhd_usrp_get_mboard_sensor_names(handler->usrp, 0, &sensors);
+
+#if PRINT_SENSOR_NAMES
+  size_t sensors_len;
+  uhd_string_vector_size(sensors, &sensors_len);
+  for (int i = 0; i < sensors_len; i++) {
+    char buff[256];
+    uhd_string_vector_at(sensors, i, buff, 128);
+    printf("sensor %s present\n", buff);
+  }
+#endif
+
+  if (error == UHD_ERROR_NONE && find_string(sensors, sensor_name)) {
+    uhd_sensor_value_handle value_h;
+    uhd_sensor_value_make_from_string(&value_h, "w", "t", "f");
+    error = uhd_usrp_get_mboard_sensor(handler->usrp, sensor_name, 0, &value_h);
+
+    int full_secs = 0;
+    if (error == UHD_ERROR_NONE) {
+      uhd_sensor_value_data_type_t sensor_dtype;
+      uhd_sensor_value_data_type(value_h, &sensor_dtype);
+      full_secs = uhd_sensor_value_to_int(value_h, &full_secs);
+      // printf("GPS full_secs=%d\n", full_secs);
+
+      double frac_secs;
+      uhd_sensor_value_data_type(value_h, &sensor_dtype);
+      full_secs = uhd_sensor_value_to_realnum(value_h, &frac_secs);
+      // printf("GPS frac_secs=%f\n", frac_secs);
+
+      full_secs = frac_secs;
+      printf("Setting USRP time to %ds\n", full_secs);
+      error = uhd_usrp_set_time_unknown_pps(handler->usrp, full_secs + 1, 0.0);
+      if (error != UHD_ERROR_NONE) {
+        char err_msg[256];
+        uhd_usrp_last_error(handler->usrp, err_msg, 256);
+        fprintf(stderr, "Error code %d: %s\n", error, err_msg);
+      }
+
+      // sleep a second to make sure values are set correctly
+      sleep(1);
+    }
+    uhd_sensor_value_free(&value_h);
+  }
+  if (error != UHD_ERROR_NONE) {
+    fprintf(stderr, "USRP has no sensor \"%s\", or reading failed. UHD error: %i\n", sensor_name, error);
+  }
+
+  uhd_string_vector_free(&sensors);
+
+  return error;
 }
 
 // timeout in ms
@@ -261,7 +403,7 @@ int rf_uhd_start_rx_stream(void* h, bool now)
   uhd_stream_cmd_t stream_cmd = {.stream_mode = UHD_STREAM_MODE_START_CONTINUOUS, .stream_now = now};
   if (!now) {
     uhd_usrp_get_time_now(handler->usrp, 0, &stream_cmd.time_spec_full_secs, &stream_cmd.time_spec_frac_secs);
-    stream_cmd.time_spec_frac_secs += 0.2;
+    stream_cmd.time_spec_frac_secs += 0.5;
     if (stream_cmd.time_spec_frac_secs > 1) {
       stream_cmd.time_spec_frac_secs -= 1;
       stream_cmd.time_spec_full_secs += 1;
@@ -282,9 +424,10 @@ int rf_uhd_stop_rx_stream(void* h)
 void rf_uhd_flush_buffer(void* h)
 {
   int   n;
-  cf_t  tmp1[1024];
-  cf_t  tmp2[1024];
-  void* data[2] = {tmp1, tmp2};
+  void* data[SRSLTE_MAX_CHANNELS] = {};
+  for (int i = 0; i < SRSLTE_MAX_CHANNELS; i++) {
+    data[i] = zero_mem;
+  }
   do {
     n = rf_uhd_recv_with_time_multi(h, data, 1024, 0, NULL, NULL);
   } while (n > 0);
@@ -332,14 +475,25 @@ int rf_uhd_open(char* args, void** h)
 
 int rf_uhd_open_multi(char* args, void** h, uint32_t nof_channels)
 {
+  uhd_error error;
+
   if (h) {
     *h = NULL;
+
+    if (nof_channels > SRSLTE_MAX_CHANNELS) {
+      fprintf(stderr,
+              "Error opening UHD: maximum number of channels exceeded (%d>%d)\n",
+              nof_channels,
+              SRSLTE_MAX_CHANNELS);
+      return SRSLTE_ERROR;
+    }
 
     rf_uhd_handler_t* handler = (rf_uhd_handler_t*)malloc(sizeof(rf_uhd_handler_t));
     if (!handler) {
       perror("malloc");
-      return -1;
+      return SRSLTE_ERROR;
     }
+
     bzero(handler, sizeof(rf_uhd_handler_t));
     *h = handler;
 
@@ -369,7 +523,7 @@ int rf_uhd_open_multi(char* args, void** h, uint32_t nof_channels)
     // Initialize handler
     handler->uhd_error_handler = NULL;
 
-    bzero(zero_mem, sizeof(cf_t) * 64 * 1024);
+    srslte_vec_cf_zero(zero_mem, 64 * 1024);
 
     // Check external clock argument
     enum { DEFAULT, EXTERNAL, GPSDO } clock_src;
@@ -402,7 +556,7 @@ int rf_uhd_open_multi(char* args, void** h, uint32_t nof_channels)
       /* Do nothing */
     } else if (strstr(args, "otw_format=")) {
       ERROR("Wrong over the wire format. Valid formats: sc12, sc16\n");
-      return -1;
+      return SRSLTE_ERROR;
     }
 
     // Set transmitter subdevice spec string
@@ -458,7 +612,7 @@ int rf_uhd_open_multi(char* args, void** h, uint32_t nof_channels)
       }
     } else {
       // If args is set and x300 type is specified, make sure master_clock_rate is defined
-      if (strstr(args, "type=x300") && !strstr(args, "master_clock_rate")) {
+      if (strstr(args, "type=x300")) {
         sprintf(args2, "%s,master_clock_rate=184.32e6", args);
         args                          = args2;
         handler->current_master_clock = 184320000;
@@ -486,12 +640,10 @@ int rf_uhd_open_multi(char* args, void** h, uint32_t nof_channels)
     uhd_string_vector_free(&devices_str);
 
     /* Create UHD handler */
-    printf("Opening USRP with args: %s\n", args);
-    uhd_error error = uhd_usrp_make(&handler->usrp, args);
-    if (error) {
-      fprintf(stderr, "Error opening UHD: code %d\n", error);
-      free(handler);
-      return -1;
+    printf("Opening USRP channels=%d, args: %s\n", nof_channels, args);
+    if (uhd_alloc(handler, args)) {
+      uhd_free(handler);
+      return SRSLTE_ERROR;
     }
 
     /* Set transmitter subdev spec if specified */
@@ -542,6 +694,7 @@ int rf_uhd_open_multi(char* args, void** h, uint32_t nof_channels)
     } else if (clock_src == GPSDO) {
       uhd_usrp_set_clock_source(handler->usrp, "gpsdo", 0);
       uhd_usrp_set_time_source(handler->usrp, "gpsdo", 0);
+      set_time_to_gps_time(handler);
       sensor_name = "gps_locked";
     }
     // wait until external reference / GPS is locked
@@ -560,7 +713,10 @@ int rf_uhd_open_multi(char* args, void** h, uint32_t nof_channels)
 
     handler->has_rssi = get_has_rssi(handler);
 
-    size_t            channel[4]  = {0, 1, 2, 3};
+    size_t channel[SRSLTE_MAX_CHANNELS] = {};
+    for (int i = 0; i < SRSLTE_MAX_CHANNELS; i++) {
+      channel[i] = i;
+    }
     uhd_stream_args_t stream_args = {
         .cpu_format   = "fc32",
         .otw_format   = otw_format,
@@ -579,21 +735,23 @@ int rf_uhd_open_multi(char* args, void** h, uint32_t nof_channels)
       uhd_usrp_set_tx_rate(handler->usrp, default_srate, i);
     }
 
-    if (nof_channels > 1)
+    if (nof_channels > 1 && clock_src != GPSDO) {
       uhd_usrp_set_time_unknown_pps(handler->usrp, 0, 0.0);
+    }
 
     /* Initialize rx and tx stremers */
-    uhd_rx_streamer_make(&handler->rx_stream);
     error = uhd_usrp_get_rx_stream(handler->usrp, &stream_args, handler->rx_stream);
     if (error) {
+      uhd_free(handler);
       ERROR("Error opening RX stream: %d\n", error);
-      return -1;
+      return SRSLTE_ERROR;
     }
-    uhd_tx_streamer_make(&handler->tx_stream);
+
     error = uhd_usrp_get_tx_stream(handler->usrp, &stream_args, handler->tx_stream);
     if (error) {
+      uhd_free(handler);
       ERROR("Error opening TX stream: %d\n", error);
-      return -1;
+      return SRSLTE_ERROR;
     }
 
     uhd_rx_streamer_max_num_samps(handler->rx_stream, &handler->rx_nof_samples);
@@ -613,11 +771,6 @@ int rf_uhd_open_multi(char* args, void** h, uint32_t nof_channels)
     uhd_meta_range_stop(tx_gain_range, &handler->info.max_tx_gain);
     uhd_meta_range_free(&tx_gain_range);
 
-    // Make metadata objects for RX/TX
-    uhd_rx_metadata_make(&handler->rx_md);
-    uhd_rx_metadata_make(&handler->rx_md_first);
-    uhd_tx_metadata_make(&handler->tx_md, false, 0, 0, false, false);
-
     // Set starting gain to half maximum in case of using AGC
     rf_uhd_set_rx_gain(handler, handler->info.max_rx_gain * 0.7);
 
@@ -626,8 +779,9 @@ int rf_uhd_open_multi(char* args, void** h, uint32_t nof_channels)
       // Start low priority thread to receive async commands
       handler->async_thread_running = true;
       if (pthread_create(&handler->async_thread, NULL, async_thread, handler)) {
-        perror("pthread_create");
-        return -1;
+        uhd_free(handler);
+        ERROR("pthread_create\n");
+        return SRSLTE_ERROR;
       }
     }
 #endif
@@ -635,7 +789,7 @@ int rf_uhd_open_multi(char* args, void** h, uint32_t nof_channels)
     /* Restore priorities  */
     uhd_set_thread_priority(0, false);
 
-    return 0;
+    return SRSLTE_SUCCESS;
   } else {
     return SRSLTE_ERROR_INVALID_INPUTS;
   }
@@ -647,22 +801,8 @@ int rf_uhd_close(void* h)
 
   rf_uhd_handler_t* handler = (rf_uhd_handler_t*)h;
 
-  uhd_tx_metadata_free(&handler->tx_md);
-  uhd_rx_metadata_free(&handler->rx_md_first);
-  uhd_rx_metadata_free(&handler->rx_md);
-
-#if HAVE_ASYNC_THREAD
-  if (handler->async_thread_running) {
-    handler->async_thread_running = false;
-    pthread_join(handler->async_thread, NULL);
-  }
-#endif
-
-  uhd_tx_streamer_free(&handler->tx_stream);
-  uhd_rx_streamer_free(&handler->rx_stream);
-  uhd_usrp_free(&handler->usrp);
-
-  free(handler);
+  /// Free all made UHD objects
+  uhd_free(handler);
 
   /** Something else to close the USRP?? */
   return SRSLTE_SUCCESS;
@@ -860,7 +1000,7 @@ int rf_uhd_recv_with_time_multi(void*    h,
   int                     trials            = 0;
   if (blocking) {
     while (rxd_samples_total < nsamples && trials < 100) {
-      void* buffs_ptr[4];
+      void* buffs_ptr[SRSLTE_MAX_CHANNELS] = {};
       for (int i = 0; i < handler->nof_rx_channels; i++) {
         cf_t* data_c = (cf_t*)data[i];
         buffs_ptr[i] = &data_c[rxd_samples_total];
@@ -922,14 +1062,18 @@ int rf_uhd_send_timed(void*  h,
                       bool   is_start_of_burst,
                       bool   is_end_of_burst)
 {
-  void* _data[SRSLTE_MAX_PORTS] = {data, zero_mem, zero_mem, zero_mem};
+  // Maximum number of channels to NULL
+  void* _data[SRSLTE_MAX_CHANNELS] = {NULL};
+
+  // Set only first channel
+  _data[0] = data;
 
   return rf_uhd_send_timed_multi(
       h, _data, nsamples, secs, frac_secs, has_time_spec, blocking, is_start_of_burst, is_end_of_burst);
 }
 
 int rf_uhd_send_timed_multi(void*  h,
-                            void*  data[4],
+                            void** data,
                             int    nsamples,
                             time_t secs,
                             double frac_secs,
@@ -956,8 +1100,8 @@ int rf_uhd_send_timed_multi(void*  h,
       uhd_tx_metadata_set_time_spec(&handler->tx_md, secs, frac_secs);
     }
     int   n = 0;
-    cf_t* data_c[4];
-    for (int i = 0; i < 4; i++) {
+    cf_t* data_c[SRSLTE_MAX_CHANNELS] = {};
+    for (int i = 0; i < SRSLTE_MAX_CHANNELS; i++) {
       data_c[i] = data[i] ? data[i] : zero_mem;
     }
     do {
@@ -978,8 +1122,8 @@ int rf_uhd_send_timed_multi(void*  h,
         uhd_tx_metadata_set_end(&handler->tx_md, is_end_of_burst);
       }
 
-      const void* buffs_ptr[4];
-      for (int i = 0; i < 4; i++) {
+      const void* buffs_ptr[SRSLTE_MAX_CHANNELS] = {};
+      for (int i = 0; i < SRSLTE_MAX_CHANNELS; i++) {
         void* buff   = (void*)&data_c[i][n];
         buffs_ptr[i] = buff;
       }
@@ -999,8 +1143,8 @@ int rf_uhd_send_timed_multi(void*  h,
 
   } else {
 
-    const void* buffs_ptr[4];
-    for (int i = 0; i < 4; i++) {
+    const void* buffs_ptr[SRSLTE_MAX_CHANNELS] = {};
+    for (int i = 0; i < SRSLTE_MAX_CHANNELS; i++) {
       buffs_ptr[i] = data[i];
     }
     uhd_tx_metadata_set_has_time_spec(&handler->tx_md, is_start_of_burst);

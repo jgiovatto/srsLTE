@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -22,8 +22,6 @@
 #ifndef SRSLTE_MAC_NR_PCAP_H
 #define SRSLTE_MAC_NR_PCAP_H
 
-#include "srslte/common/pcap.h"
-#include <stdint.h>
 #include <string>
 
 namespace srslte {

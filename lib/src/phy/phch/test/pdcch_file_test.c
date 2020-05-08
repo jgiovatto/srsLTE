@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -128,13 +128,13 @@ int base_init()
 
   flen = 2 * (SRSLTE_SLOT_LEN(srslte_symbol_sz(cell.nof_prb)));
 
-  input_buffer = malloc(flen * sizeof(cf_t));
+  input_buffer = srslte_vec_cf_malloc(flen);
   if (!input_buffer) {
     perror("malloc");
     exit(-1);
   }
 
-  fft_buffer[0] = malloc(SRSLTE_NOF_RE(cell) * sizeof(cf_t));
+  fft_buffer[0] = srslte_vec_cf_malloc(SRSLTE_NOF_RE(cell));
   if (!fft_buffer[0]) {
     perror("malloc");
     return -1;
@@ -153,13 +153,7 @@ int base_init()
     return -1;
   }
 
-  if (srslte_ofdm_init_(&fft,
-                        cell.cp,
-                        input_buffer,
-                        fft_buffer[0],
-                        srslte_symbol_sz(cell.nof_prb),
-                        cell.nof_prb,
-                        SRSLTE_DFT_FORWARD)) {
+  if (srslte_ofdm_rx_init(&fft, cell.cp, input_buffer, fft_buffer[0], cell.nof_prb)) {
     ERROR("Error initializing FFT\n");
     return -1;
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -22,43 +22,9 @@
 #ifndef SRSLTE_PDCP_NR_TEST_H
 #define SRSLTE_PDCP_NR_TEST_H
 
-#include "srslte/common/buffer_pool.h"
-#include "srslte/common/log_filter.h"
-#include "srslte/common/security.h"
+#include "pdcp_base_test.h"
+#include "srslte/test/ue_test_interfaces.h"
 #include "srslte/upper/pdcp_entity_nr.h"
-#include <iostream>
-
-/*
- * Functions and macros for comparisions
- */
-#define TESTASSERT(cond)                                                                                               \
-  {                                                                                                                    \
-    if (!(cond)) {                                                                                                     \
-      std::cout << "[" << __FUNCTION__ << "][Line " << __LINE__ << "]: FAIL at " << (#cond) << std::endl;              \
-      return -1;                                                                                                       \
-    }                                                                                                                  \
-  }
-
-int compare_two_packets(const srslte::unique_byte_buffer_t& msg1, const srslte::unique_byte_buffer_t& msg2)
-{
-  TESTASSERT(msg1->N_bytes == msg2->N_bytes);
-  for (uint32_t i = 0; i < msg1->N_bytes; ++i) {
-    TESTASSERT(msg1->msg[i] == msg2->msg[i]);
-  }
-  return 0;
-}
-
-/*
- * Definition of helpful structs for testing
- */
-struct pdcp_security_cfg {
-  uint8_t*                            k_int_rrc;
-  uint8_t*                            k_enc_rrc;
-  uint8_t*                            k_int_up;
-  uint8_t*                            k_enc_up;
-  srslte::INTEGRITY_ALGORITHM_ID_ENUM int_algo;
-  srslte::CIPHERING_ALGORITHM_ID_ENUM enc_algo;
-};
 
 struct pdcp_initial_state {
   uint32_t tx_next;
@@ -78,13 +44,15 @@ struct pdcp_test_event_t {
  * Constant definitions that are common to multiple tests
  */
 // Encryption and Integrity Keys
-uint8_t k_int[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
-                   0x16, 0x17, 0x18, 0x19, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30, 0x31};
-uint8_t k_enc[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
-                   0x16, 0x17, 0x18, 0x19, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30, 0x31};
+std::array<uint8_t, 32> k_int = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10,
+                                 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x20, 0x21,
+                                 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30, 0x31};
+std::array<uint8_t, 32> k_enc = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10,
+                                 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x20, 0x21,
+                                 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30, 0x31};
 
 // Security Configuration, common to all tests.
-pdcp_security_cfg sec_cfg = {
+srslte::as_security_config_t sec_cfg = {
     k_int,
     k_enc,
     k_int,
@@ -122,101 +90,22 @@ pdcp_initial_state near_wraparound_init_state = {.tx_next  = 4294967295,
                                                  .rx_reord = 0};
 
 /*
- * Dummy classes
- */
-class rlc_dummy : public srsue::rlc_interface_pdcp
-{
-public:
-  rlc_dummy(srslte::log* log_) : log(log_) {}
-
-  void get_last_sdu(const srslte::unique_byte_buffer_t& pdu)
-  {
-    memcpy(pdu->msg, last_pdcp_pdu->msg, last_pdcp_pdu->N_bytes);
-    pdu->N_bytes = last_pdcp_pdu->N_bytes;
-    return;
-  }
-  void write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu, bool blocking = true)
-  {
-    log->info_hex(sdu->msg, sdu->N_bytes, "RLC SDU");
-    last_pdcp_pdu.swap(sdu);
-    rx_count++;
-  }
-  void discard_sdu(uint32_t lcid, uint32_t discard_sn)
-  {
-    log->info("Notifing RLC to discard SDU (SN=%u)\n", discard_sn);
-    discard_count++;
-    log->info("Discard_count=%" PRIu64 "\n", discard_count);
-  }
-
-  uint64_t rx_count      = 0;
-  uint64_t discard_count = 0;
-
-private:
-  srslte::log*                 log;
-  srslte::unique_byte_buffer_t last_pdcp_pdu;
-
-  bool rb_is_um(uint32_t lcid) { return false; }
-};
-
-class rrc_dummy : public srsue::rrc_interface_pdcp
-{
-public:
-  rrc_dummy(srslte::log* log_) {}
-
-  void write_pdu(uint32_t lcid, srslte::unique_byte_buffer_t pdu) {}
-  void write_pdu_bcch_bch(srslte::unique_byte_buffer_t pdu) {}
-  void write_pdu_bcch_dlsch(srslte::unique_byte_buffer_t pdu) {}
-  void write_pdu_pcch(srslte::unique_byte_buffer_t pdu) {}
-  void write_pdu_mch(uint32_t lcid, srslte::unique_byte_buffer_t pdu) {}
-
-  std::string get_rb_name(uint32_t lcid) { return "None"; }
-};
-
-class gw_dummy : public srsue::gw_interface_pdcp
-{
-public:
-  gw_dummy(srslte::log* log_) : log(log_) {}
-
-  void     write_pdu_mch(uint32_t lcid, srslte::unique_byte_buffer_t pdu) {}
-  uint32_t rx_count = 0;
-
-  void get_last_pdu(const srslte::unique_byte_buffer_t& pdu)
-  {
-    memcpy(pdu->msg, last_pdu->msg, last_pdu->N_bytes);
-    pdu->N_bytes = last_pdu->N_bytes;
-    return;
-  }
-  void write_pdu(uint32_t lcid, srslte::unique_byte_buffer_t pdu)
-  {
-    log->info_hex(pdu->msg, pdu->N_bytes, "GW PDU");
-    rx_count++;
-    last_pdu.swap(pdu);
-  }
-
-private:
-  srslte::log*                 log;
-  srslte::unique_byte_buffer_t last_pdu;
-};
-
-/*
  * Helper classes to reduce copy / pasting in setting up tests
  */
 // PDCP helper to setup PDCP + Dummy
 class pdcp_nr_test_helper
 {
 public:
-  pdcp_nr_test_helper(srslte::pdcp_config_t cfg, pdcp_security_cfg sec_cfg, srslte::log* log) :
+  pdcp_nr_test_helper(srslte::pdcp_config_t cfg, srslte::as_security_config_t sec_cfg, srslte::log_ref log) :
     rlc(log),
     rrc(log),
     gw(log),
-    timers(64),
-    pdcp(&rlc, &rrc, &gw, &timers, log)
+    pdcp(&rlc, &rrc, &gw, &stack, log)
   {
     pdcp.init(0, cfg);
-    pdcp.config_security(
-        sec_cfg.k_enc_rrc, sec_cfg.k_int_rrc, sec_cfg.k_enc_up, sec_cfg.k_int_up, sec_cfg.enc_algo, sec_cfg.int_algo);
-    pdcp.enable_integrity();
-    pdcp.enable_encryption();
+    pdcp.config_security(sec_cfg);
+    pdcp.enable_integrity(srslte::DIRECTION_TXRX);
+    pdcp.enable_encryption(srslte::DIRECTION_TXRX);
   }
 
   void set_pdcp_initial_state(pdcp_initial_state init_state)
@@ -227,20 +116,20 @@ public:
     pdcp.set_rx_reord(init_state.rx_reord);
   }
 
-  rlc_dummy              rlc;
-  rrc_dummy              rrc;
-  gw_dummy               gw;
-  srslte::timer_handler  timers;
-  srslte::pdcp_entity_nr pdcp;
+  rlc_dummy               rlc;
+  rrc_dummy               rrc;
+  gw_dummy                gw;
+  srsue::stack_test_dummy stack;
+  srslte::pdcp_entity_nr  pdcp;
 };
 
 // Helper function to generate PDUs
 srslte::unique_byte_buffer_t gen_expected_pdu(const srslte::unique_byte_buffer_t& in_sdu,
                                               uint32_t                            count,
                                               uint8_t                             pdcp_sn_len,
-                                              pdcp_security_cfg                   sec_cfg,
+                                              srslte::as_security_config_t        sec_cfg,
                                               srslte::byte_buffer_pool*           pool,
-                                              srslte::log*                        log)
+                                              srslte::log_ref                     log)
 {
   srslte::pdcp_config_t cfg = {1,
                                srslte::PDCP_RB_IS_DRB,
@@ -271,9 +160,9 @@ srslte::unique_byte_buffer_t gen_expected_pdu(const srslte::unique_byte_buffer_t
 std::vector<pdcp_test_event_t> gen_expected_pdus_vector(const srslte::unique_byte_buffer_t& in_sdu,
                                                         const std::vector<uint32_t>&        tx_nexts,
                                                         uint8_t                             pdcp_sn_len,
-                                                        pdcp_security_cfg                   sec_cfg,
+                                                        srslte::as_security_config_t        sec_cfg,
                                                         srslte::byte_buffer_pool*           pool,
-                                                        srslte::log*                        log)
+                                                        srslte::log_ref                     log)
 {
   std::vector<pdcp_test_event_t> pdu_vec;
   for (uint32_t tx_next : tx_nexts) {
@@ -285,13 +174,4 @@ std::vector<pdcp_test_event_t> gen_expected_pdus_vector(const srslte::unique_byt
   return pdu_vec;
 }
 
-// Helper to print packets
-void print_packet_array(const srslte::unique_byte_buffer_t& msg)
-{
-  printf("uint8_t msg[] = {\n");
-  for (uint64_t i = 0; i < msg->N_bytes; ++i) {
-    printf("0x%02x, ", msg->msg[i]);
-  }
-  printf("\n};\n");
-}
 #endif // SRSLTE_PDCP_NR_TEST_H

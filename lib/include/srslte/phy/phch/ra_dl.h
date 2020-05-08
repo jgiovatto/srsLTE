@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -44,25 +44,28 @@
  **************************************************/
 
 /** Functions to generate a grant from a received DCI */
-SRSLTE_API int srslte_ra_dl_dci_to_grant(srslte_cell_t*        cell,
-                                         srslte_dl_sf_cfg_t*   sf,
-                                         srslte_tm_t           tm,
-                                         bool                  pdsch_use_tbs_index_alt,
-                                         srslte_dci_dl_t*      dci,
-                                         srslte_pdsch_grant_t* grant);
+SRSLTE_API int srslte_ra_dl_dci_to_grant(const srslte_cell_t*   cell,
+                                         srslte_dl_sf_cfg_t*    sf,
+                                         srslte_tm_t            tm,
+                                         bool                   pdsch_use_tbs_index_alt,
+                                         const srslte_dci_dl_t* dci,
+                                         srslte_pdsch_grant_t*  grant);
 
 SRSLTE_API int
-srslte_ra_dl_grant_to_grant_prb_allocation(srslte_dci_dl_t* dci, srslte_pdsch_grant_t* grant, uint32_t nof_prb);
+srslte_ra_dl_grant_to_grant_prb_allocation(const srslte_dci_dl_t* dci, srslte_pdsch_grant_t* grant, uint32_t nof_prb);
 
 /** Functions used by the eNodeB scheduler */
-SRSLTE_API uint32_t srslte_ra_dl_approx_nof_re(srslte_cell_t* cell, uint32_t nof_prb, uint32_t nof_ctrl_symbols);
+SRSLTE_API uint32_t srslte_ra_dl_approx_nof_re(const srslte_cell_t* cell, uint32_t nof_prb, uint32_t nof_ctrl_symbols);
 
-SRSLTE_API uint32_t srslte_ra_dl_grant_nof_re(srslte_cell_t* cell, srslte_dl_sf_cfg_t* sf, srslte_pdsch_grant_t* grant);
+SRSLTE_API uint32_t srslte_ra_dl_grant_nof_re(const srslte_cell_t*  cell,
+                                              srslte_dl_sf_cfg_t*   sf,
+                                              srslte_pdsch_grant_t* grant);
 
 /** Others */
 SRSLTE_API int srslte_dl_fill_ra_mcs(srslte_ra_tb_t* tb, int last_tbs, uint32_t nprb, bool pdsch_use_tbs_index_alt);
 
-SRSLTE_API void srslte_ra_dl_compute_nof_re(srslte_cell_t* cell, srslte_dl_sf_cfg_t* sf, srslte_pdsch_grant_t* grant);
+SRSLTE_API void
+srslte_ra_dl_compute_nof_re(const srslte_cell_t* cell, srslte_dl_sf_cfg_t* sf, srslte_pdsch_grant_t* grant);
 
 SRSLTE_API uint32_t srslte_ra_dl_info(srslte_pdsch_grant_t* grant, char* info_str, uint32_t len);
 

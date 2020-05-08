@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -190,7 +190,6 @@ typedef struct SRSLTE_API {
 
 /// Functions
 SRSLTE_API int srslte_ra_nbiot_dl_dci_to_grant(srslte_ra_nbiot_dl_dci_t*   dci,
-                                               uint16_t                    msg_rnti,
                                                srslte_ra_nbiot_dl_grant_t* grant,
                                                uint32_t                    sfn,
                                                uint32_t                    sf_idx,

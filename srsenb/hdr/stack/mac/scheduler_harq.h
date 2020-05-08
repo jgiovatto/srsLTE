@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -24,75 +24,50 @@
 
 #include "srslte/common/bounded_bitset.h"
 #include "srslte/common/log.h"
+#include "srslte/common/tti_point.h"
 #include "srslte/interfaces/sched_interface.h"
 #include <map>
 
 namespace srsenb {
 
-// MASK used for CCE allocations
-typedef srslte::bounded_bitset<sched_interface::max_cce, true> pdcch_mask_t;
-
-// Range of RBGs
-class prb_range_t;
-struct rbg_range_t {
-  uint32_t rbg_start = 0, rbg_end = 0;
-  rbg_range_t() = default;
-  rbg_range_t(uint32_t s, uint32_t e) : rbg_start(s), rbg_end(e) {}
-  rbg_range_t(const prb_range_t& rbgs, uint32_t P);
-  uint32_t length() const { return rbg_end - rbg_start; }
-};
-
-// Range of PRBs
-class prb_range_t
-{
-public:
-  uint32_t prb_start = 0, prb_end = 0;
-  prb_range_t() = default;
-  prb_range_t(uint32_t s, uint32_t e) : prb_start(s), prb_end(e) {}
-  prb_range_t(const rbg_range_t& rbgs, uint32_t P);
-  uint32_t           length() { return prb_end - prb_start; }
-  static prb_range_t riv_to_prbs(uint32_t riv, uint32_t nof_prbs, int nof_vrbs = -1);
-};
-
 class harq_proc
 {
 public:
-  void     config(uint32_t id, uint32_t max_retx, srslte::log* log_h);
+  void     init(uint32_t id);
+  void     set_cfg(uint32_t max_retx);
   void     reset(uint32_t tb_idx);
   uint32_t get_id() const;
   bool     is_empty() const;
   bool     is_empty(uint32_t tb_idx) const;
 
-  uint32_t nof_tx(uint32_t tb_idx) const;
-  uint32_t nof_retx(uint32_t tb_idx) const;
-  uint32_t get_tti() const;
-  bool     get_ndi(uint32_t tb_idx) const;
-  uint32_t max_nof_retx() const;
+  uint32_t          nof_tx(uint32_t tb_idx) const;
+  uint32_t          nof_retx(uint32_t tb_idx) const;
+  srslte::tti_point get_tti() const;
+  bool              get_ndi(uint32_t tb_idx) const;
+  uint32_t          max_nof_retx() const;
 
 protected:
-  void new_tx_common(uint32_t tb_idx, uint32_t tti, int mcs, int tbs);
-  void new_retx_common(uint32_t tb_idx, uint32_t tti, int* mcs, int* tbs);
+  void new_tx_common(uint32_t tb_idx, srslte::tti_point tti, int mcs, int tbs);
+  void new_retx_common(uint32_t tb_idx, srslte::tti_point tti, int* mcs, int* tbs);
   bool has_pending_retx_common(uint32_t tb_idx) const;
   void set_ack_common(uint32_t tb_idx, bool ack);
   void reset_pending_data_common();
 
   enum ack_t { NULL_ACK, NACK, ACK };
 
-  ack_t    ack_state[SRSLTE_MAX_TB];
-  bool     active[SRSLTE_MAX_TB];
-  bool     ndi[SRSLTE_MAX_TB];
-  uint32_t id;
-  uint32_t max_retx;
-  uint32_t n_rtx[SRSLTE_MAX_TB];
-  uint32_t tx_cnt[SRSLTE_MAX_TB];
-  int      tti;
-  int      last_mcs[SRSLTE_MAX_TB];
-  int      last_tbs[SRSLTE_MAX_TB];
+  ack_t                           ack_state[SRSLTE_MAX_TB];
+  bool                            active[SRSLTE_MAX_TB];
+  std::array<bool, SRSLTE_MAX_TB> ndi = {};
+  uint32_t                        id;
+  uint32_t                        max_retx = 5;
+  uint32_t                        n_rtx[SRSLTE_MAX_TB];
+  uint32_t                        tx_cnt[SRSLTE_MAX_TB];
+  srslte::tti_point               tti;
+  int                             last_mcs[SRSLTE_MAX_TB];
+  int                             last_tbs[SRSLTE_MAX_TB];
 
-  srslte::log* log_h;
+  srslte::log_ref log_h;
 };
-
-typedef srslte::bounded_bitset<25, true> rbgmask_t;
 
 class dl_harq_proc : public harq_proc
 {
@@ -128,7 +103,7 @@ public:
 
   void new_tx(uint32_t tti, int mcs, int tbs, ul_alloc_t alloc, uint32_t max_retx_);
   void new_retx(uint32_t tb_idx, uint32_t tti_, int* mcs, int* tbs, ul_alloc_t alloc);
-  void set_ack(uint32_t tb_idx, bool ack);
+  bool set_ack(uint32_t tb_idx, bool ack);
 
   ul_alloc_t get_alloc() const;
   bool       has_pending_retx() const;
@@ -146,7 +121,62 @@ private:
   ack_t      pending_ack;
 };
 
-typedef srslte::bounded_bitset<100, true> prbmask_t;
+class harq_entity
+{
+public:
+  static const bool is_async = ASYNC_DL_SCHED;
+
+  harq_entity(size_t nof_dl_harqs, size_t nof_ul_harqs);
+  void reset();
+  void set_cfg(uint32_t max_retx);
+
+  size_t                           nof_dl_harqs() const { return dl_harqs.size(); }
+  size_t                           nof_ul_harqs() const { return ul_harqs.size(); }
+  std::vector<dl_harq_proc>&       dl_harq_procs() { return dl_harqs; }
+  const std::vector<dl_harq_proc>& dl_harq_procs() const { return dl_harqs; }
+  std::vector<ul_harq_proc>&       ul_harq_procs() { return ul_harqs; }
+
+  /**
+   * Get the DL harq proc based on tti_tx_dl
+   * @param tti_tx_dl assumed to always be equal or ahead in time in comparison to current harqs
+   * @return pointer to found dl_harq
+   */
+  dl_harq_proc* get_pending_dl_harq(uint32_t tti_tx_dl);
+  /**
+   * Get empty DL Harq
+   * @param tti_tx_dl only used in case of sync dl sched
+   * @return pointer to found dl_harq
+   */
+  dl_harq_proc* get_empty_dl_harq(uint32_t tti_tx_dl);
+
+  /**
+   * Set ACK state for DL Harq Proc
+   * @param tti_rx tti the DL ACK was received
+   * @param tb_idx TB index for the given ACK
+   * @param ack true for ACK and false for NACK
+   * @return pair with pid and size of TB of the DL harq that was ACKed
+   */
+  std::pair<uint32_t, int> set_ack_info(uint32_t tti_rx, uint32_t tb_idx, bool ack);
+
+  //! Get UL Harq for a given tti_tx_ul
+  ul_harq_proc* get_ul_harq(uint32_t tti_tx_ul);
+
+  /**
+   * Set ACK state for UL Harq Proc
+   */
+  std::pair<bool, uint32_t> set_ul_crc(srslte::tti_point tti_tx_ul, uint32_t tb_idx, bool ack_);
+
+  //! Resets pending harq ACKs and cleans UL Harqs with maxretx == 0
+  void reset_pending_data(uint32_t tti_rx);
+
+private:
+  dl_harq_proc* get_oldest_dl_harq(uint32_t tti_tx_dl);
+
+  srslte::log_ref log_h;
+
+  std::vector<dl_harq_proc> dl_harqs;
+  std::vector<ul_harq_proc> ul_harqs;
+};
 
 } // namespace srsenb
 

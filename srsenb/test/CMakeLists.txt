@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -19,4 +19,9 @@
 #
 
 add_subdirectory(mac)
+add_subdirectory(phy)
 add_subdirectory(upper)
+
+add_executable(enb_metrics_test enb_metrics_test.cc ../src/metrics_stdout.cc ../src/metrics_csv.cc)
+target_link_libraries(enb_metrics_test srslte_phy srslte_common)
+add_test(enb_metrics_test enb_metrics_test -o ${CMAKE_CURRENT_BINARY_DIR}/enb_metrics.csv)

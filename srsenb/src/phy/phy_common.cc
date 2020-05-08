@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -46,74 +46,75 @@ using namespace asn1::rrc;
 
 namespace srsenb {
 
-phy_common::phy_common(uint32_t max_workers_) : tx_sem(max_workers_)
-{
-  nof_workers                = 0;
-  params.max_prach_offset_us = 20;
-  have_mtch_stop             = false;
-  max_workers                = max_workers_;
-
-  for (uint32_t i = 0; i < max_workers; i++) {
-    sem_init(&tx_sem[i], 0, 0); // All semaphores start blocked
-  }
-}
-
-phy_common::~phy_common()
-{
-  for (uint32_t i = 0; i < max_workers; i++) {
-    sem_destroy(&tx_sem[i]);
-  }
-}
-
-void phy_common::set_nof_workers(uint32_t nof_workers_)
-{
-  nof_workers = nof_workers_;
-}
-
 void phy_common::reset()
 {
-  bzero(ul_grants, sizeof(stack_interface_phy_lte::ul_sched_t) * TTIMOD_SZ);
-  bzero(dl_grants, sizeof(stack_interface_phy_lte::dl_sched_t) * TTIMOD_SZ);
+  for (auto& q : ul_grants) {
+    for (auto& g : q) {
+      g = {};
+    }
+  }
 }
 
-bool phy_common::init(const srslte_cell_t&         cell_,
+bool phy_common::init(const phy_cell_cfg_list_t&   cell_list_,
                       srslte::radio_interface_phy* radio_h_,
                       stack_interface_phy_lte*     stack_)
 {
-  radio = radio_h_;
-  stack = stack_;
-  cell  = cell_;
+  radio     = radio_h_;
+  stack     = stack_;
+  cell_list = cell_list_;
 
-  pthread_mutex_init(&user_mutex, nullptr);
   pthread_mutex_init(&mtch_mutex, nullptr);
   pthread_cond_init(&mtch_cvar, nullptr);
 
-  // Instantiate UL channel emulator
-  if (params.ul_channel_args.enable) {
+  // Instantiate DL channel emulator
+  if (params.dl_channel_args.enable) {
     dl_channel = srslte::channel_ptr(new srslte::channel(params.dl_channel_args, 1));
-
-    dl_channel->set_srate((uint32_t)srslte_sampling_freq_hz(cell.nof_prb));
+    dl_channel->set_srate((uint32_t)srslte_sampling_freq_hz(cell_list[0].cell.nof_prb));
   }
 
-  is_first_tx = true;
-
-  // Instantiate UL channel emulator
-  if (params.ul_channel_args.enable) {
-    dl_channel = srslte::channel_ptr(new srslte::channel(params.dl_channel_args, 1));
-
-    dl_channel->set_srate((uint32_t)srslte_sampling_freq_hz(cell.nof_prb));
+  // Create grants
+  for (auto& q : ul_grants) {
+    q.resize(cell_list.size());
   }
 
-  is_first_tx = true;
+  // Set UE PHY data-base stack and configuration
+  ue_db.init(stack, params, cell_list);
+
   reset();
   return true;
 }
 
 void phy_common::stop()
 {
-  for (uint32_t i = 0; i < max_workers; i++) {
-    sem_post(&tx_sem[i]);
+  semaphore.wait_all();
+}
+
+void phy_common::clear_grants(uint16_t rnti)
+{
+  std::lock_guard<std::mutex> lock(grant_mutex);
+
+  // remove any pending dci for each subframe
+  for (auto& list : ul_grants) {
+    for (auto& q : list) {
+      for (uint32_t j = 0; j < q.nof_grants; j++) {
+        if (q.pusch[j].dci.rnti == rnti) {
+          q.pusch[j].dci.rnti = 0;
+        }
+      }
+    }
   }
+}
+
+const stack_interface_phy_lte::ul_sched_list_t& phy_common::get_ul_grants(uint32_t tti)
+{
+  std::lock_guard<std::mutex> lock(grant_mutex);
+  return ul_grants[tti % TTIMOD_SZ];
+}
+
+void phy_common::set_ul_grants(uint32_t tti, const stack_interface_phy_lte::ul_sched_list_t& ul_grant_list)
+{
+  std::lock_guard<std::mutex> lock(grant_mutex);
+  ul_grants[tti % TTIMOD_SZ] = ul_grant_list;
 }
 
 /* The transmission of UL subframes must be in sequence. The correct sequence is guaranteed by a chain of N semaphores,
@@ -123,140 +124,27 @@ void phy_common::stop()
  * Each worker uses this function to indicate that all processing is done and data is ready for transmission or
  * there is no transmission at all (tx_enable). In that case, the end of burst message will be sent to the radio
  */
-void phy_common::worker_end(uint32_t           tti,
-                            cf_t*              buffer[SRSLTE_MAX_PORTS],
-                            uint32_t           nof_samples,
-                            srslte_timestamp_t tx_time)
+void phy_common::worker_end(void*                tx_sem_id,
+                            srslte::rf_buffer_t& buffer,
+                            uint32_t             nof_samples,
+                            srslte_timestamp_t   tx_time)
 {
-
-  // This variable is not protected but it is very unlikely that 2 threads arrive here simultaneously since at the
-  // beginning there is no workload and threads are separated by 1 ms
-  if (is_first_tx) {
-    is_first_tx = false;
-    // Allow my own transmission if I'm the first to transmit
-    sem_post(&tx_sem[tti % nof_workers]);
-  }
-
   // Wait for the green light to transmit in the current TTI
-  sem_wait(&tx_sem[tti % nof_workers]);
+  semaphore.wait(tx_sem_id);
 
+  // Run DL channel emulator if created
   if (dl_channel) {
-    dl_channel->run(buffer, buffer, nof_samples, tx_time);
+    dl_channel->run(buffer.to_cf_t(), buffer.to_cf_t(), nof_samples, tx_time);
   }
 
-  // always transmit on single radio
-  radio->tx(0, buffer, nof_samples, tx_time);
-
-  // Allow next TTI to transmit
-  sem_post(&tx_sem[(tti + 1) % nof_workers]);
+  // Always transmit on single radio
+  radio->tx(buffer, nof_samples, tx_time);
 
   // Trigger MAC clock
   stack->tti_clock();
-}
 
-void phy_common::ue_db_clear(uint32_t tti)
-{
-  for (auto iter = common_ue_db.begin(); iter != common_ue_db.end(); ++iter) {
-    pending_ack_t* p = &((common_ue*)&iter->second)->pending_ack;
-    for (uint32_t tb_idx = 0; tb_idx < SRSLTE_MAX_TB; tb_idx++) {
-      p->is_pending[TTIMOD(tti)][tb_idx] = false;
-    }
-  }
-}
-
-void phy_common::ue_db_add_rnti(uint16_t rnti)
-{
-  pthread_mutex_lock(&user_mutex);
-  if (!common_ue_db.count(rnti)) {
-    add_rnti(rnti);
-  }
-  pthread_mutex_unlock(&user_mutex);
-}
-
-// Private function not mutexed
-void phy_common::add_rnti(uint16_t rnti)
-{
-  for (int i = 0; i < TTIMOD_SZ; i++) {
-    for (uint32_t tb_idx = 0; tb_idx < SRSLTE_MAX_TB; tb_idx++) {
-      common_ue_db[rnti].pending_ack.is_pending[i][tb_idx] = false;
-    }
-  }
-}
-
-void phy_common::ue_db_rem_rnti(uint16_t rnti)
-{
-  pthread_mutex_lock(&user_mutex);
-  if (!common_ue_db.count(rnti)) {
-    common_ue_db.erase(rnti);
-  }
-  pthread_mutex_unlock(&user_mutex);
-}
-
-void phy_common::ue_db_set_ack_pending(uint32_t tti, uint16_t rnti, uint32_t tb_idx, uint32_t last_n_pdcch)
-{
-  pthread_mutex_lock(&user_mutex);
-  if (common_ue_db.count(rnti)) {
-    common_ue_db[rnti].pending_ack.is_pending[TTIMOD(tti)][tb_idx] = true;
-    common_ue_db[rnti].pending_ack.n_pdcch[TTIMOD(tti)]            = (uint16_t)last_n_pdcch;
-  }
-  pthread_mutex_unlock(&user_mutex);
-}
-
-bool phy_common::ue_db_is_ack_pending(uint32_t tti, uint16_t rnti, uint32_t tb_idx, uint32_t* last_n_pdcch)
-{
-  bool ret = false;
-  pthread_mutex_lock(&user_mutex);
-  if (common_ue_db.count(rnti)) {
-    ret = common_ue_db[rnti].pending_ack.is_pending[TTIMOD(tti)][tb_idx];
-    common_ue_db[rnti].pending_ack.is_pending[TTIMOD(tti)][tb_idx] = false;
-
-    if (ret && last_n_pdcch) {
-      *last_n_pdcch = common_ue_db[rnti].pending_ack.n_pdcch[TTIMOD(tti)];
-    }
-  }
-  pthread_mutex_unlock(&user_mutex);
-  return ret;
-}
-
-void phy_common::ue_db_set_ri(uint16_t rnti, uint8_t ri)
-{
-  pthread_mutex_lock(&user_mutex);
-  if (common_ue_db.count(rnti)) {
-    common_ue_db[rnti].ri = ri;
-  }
-  pthread_mutex_unlock(&user_mutex);
-}
-
-uint8_t phy_common::ue_db_get_ri(uint16_t rnti)
-{
-  pthread_mutex_lock(&user_mutex);
-  uint8_t ret = 0;
-  if (common_ue_db.count(rnti)) {
-    ret = common_ue_db[rnti].ri;
-  }
-  pthread_mutex_unlock(&user_mutex);
-  return ret;
-}
-
-void phy_common::ue_db_set_last_ul_tb(uint16_t rnti, uint32_t pid, srslte_ra_tb_t tb)
-{
-  pthread_mutex_lock(&user_mutex);
-  if (!common_ue_db.count(rnti)) {
-    add_rnti(rnti);
-  }
-  common_ue_db[rnti].last_tb[pid % SRSLTE_MAX_HARQ_PROC] = tb;
-  pthread_mutex_unlock(&user_mutex);
-}
-
-srslte_ra_tb_t phy_common::ue_db_get_last_ul_tb(uint16_t rnti, uint32_t pid)
-{
-  pthread_mutex_lock(&user_mutex);
-  srslte_ra_tb_t ret = {};
-  if (common_ue_db.count(rnti)) {
-    ret = common_ue_db[rnti].last_tb[pid % SRSLTE_FDD_NOF_HARQ];
-  }
-  pthread_mutex_unlock(&user_mutex);
-  return ret;
+  // Allow next TTI to transmit
+  semaphore.release();
 }
 
 void phy_common::set_mch_period_stop(uint32_t stop)
@@ -308,7 +196,8 @@ void phy_common::build_mcch_table()
 {
   ZERO_OBJECT(mcch_table);
 
-  generate_mcch_table(mcch_table, static_cast<uint32>(mbsfn.mbsfn_area_info.mcch_cfg_r9.sf_alloc_info_r9.to_number()));
+  generate_mcch_table(mcch_table,
+                      static_cast<uint32_t>(mbsfn.mbsfn_area_info.mcch_cfg_r9.sf_alloc_info_r9.to_number()));
 
   std::stringstream ss;
   ss << "|";

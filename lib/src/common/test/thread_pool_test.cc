@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -118,7 +118,7 @@ int main(int argc, char** argv)
   int ret = SRSLTE_SUCCESS;
 
   // Simulation Constants
-  const uint32_t  nof_workers        = FDD_HARQ_DELAY_MS;
+  const uint32_t  nof_workers        = FDD_HARQ_DELAY_UL_MS;
   const uint32_t  nof_tti            = 10240;
   const float     enable_probability = 0.9f;
   srslte_random_t random_gen         = srslte_random_init(1234);
@@ -133,7 +133,7 @@ int main(int argc, char** argv)
   srslte::log_filter                                radio_log("radio", &logger);
   std::vector<std::unique_ptr<srslte::log_filter> > worker_logs;
 
-  radio_log.set_level("info");
+  radio_log.set_level("none");
 
   // Radio
   dummy_radio radio(radio_log);
@@ -146,7 +146,7 @@ int main(int argc, char** argv)
 
     // Create log filter
     srslte::log_filter* log_filter = new srslte::log_filter(log_name, &logger);
-    log_filter->set_level("info");
+    log_filter->set_level("none");
 
     // Create worker
     auto* worker = new dummy_worker(i, &tti_semaphore, log_filter, &radio);

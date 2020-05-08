@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -33,7 +33,7 @@ add_test(rm_conv_test_1 rm_conv_test -t 480 -r 1920)
 add_test(rm_conv_test_2 rm_conv_test -t 1920 -r 480) 
 
 add_test(rm_turbo_test_1 rm_turbo_test -e 1920) 
-add_test(rm_turbo_test_2 rm_turbo_test -e 8192) 
+add_test(rm_turbo_test_2 rm_turbo_test -e 8192)
 
 ########################################################################
 # Turbo Coder TEST  
@@ -66,6 +66,8 @@ add_test(viterbi_1000_0 viterbi_test -n 100 -s 1 -l 1000 -t -e 0.0)
 add_test(viterbi_1000_2 viterbi_test -n 100 -s 1 -l 1000 -t -e 2.0) 
 add_test(viterbi_1000_3 viterbi_test -n 100 -s 1 -l 1000 -t -e 3.0)
 add_test(viterbi_1000_4 viterbi_test -n 100 -s 1 -l 1000 -t -e 4.5)
+
+add_test(viterbi_56_4 viterbi_test -n 1000 -s 1 -l 56 -t -e 4.5)
 
 ########################################################################
 # CRC TEST  

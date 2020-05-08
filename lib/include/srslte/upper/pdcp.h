@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -32,7 +32,7 @@ namespace srslte {
 class pdcp : public srsue::pdcp_interface_rlc, public srsue::pdcp_interface_rrc
 {
 public:
-  pdcp(srslte::timer_handler* timers_, log* log_);
+  pdcp(srslte::task_handler_interface* task_executor_, const char* logname);
   virtual ~pdcp();
   void init(srsue::rlc_interface_pdcp* rlc_, srsue::rrc_interface_pdcp* rrc_, srsue::gw_interface_pdcp* gw_);
   void stop();
@@ -50,19 +50,11 @@ public:
   void add_bearer_mrb(uint32_t lcid, pdcp_config_t cnfg);
   void del_bearer(uint32_t lcid);
   void change_lcid(uint32_t old_lcid, uint32_t new_lcid);
-  void config_security(uint32_t                    lcid,
-                       uint8_t*                    k_rrc_enc,
-                       uint8_t*                    k_rrc_int,
-                       uint8_t*                    k_up_enc,
-                       CIPHERING_ALGORITHM_ID_ENUM cipher_algo,
-                       INTEGRITY_ALGORITHM_ID_ENUM integ_algo);
-  void config_security_all(uint8_t*                    k_rrc_enc,
-                           uint8_t*                    k_rrc_int,
-                           uint8_t*                    k_up_enc,
-                           CIPHERING_ALGORITHM_ID_ENUM cipher_algo,
-                           INTEGRITY_ALGORITHM_ID_ENUM integ_algo);
-  void enable_integrity(uint32_t lcid);
-  void enable_encryption(uint32_t lcid);
+  void config_security(uint32_t lcid, as_security_config_t sec_cfg);
+  void config_security_all(as_security_config_t sec_cfg);
+  void enable_integrity(uint32_t lcid, srslte_direction_t direction);
+  void enable_encryption(uint32_t lcid, srslte_direction_t direction);
+  void enable_security_timed(uint32_t lcid, srslte_direction_t direction, uint32_t sn);
   bool get_bearer_status(uint32_t lcid, uint16_t* dlsn, uint16_t* dlhfn, uint16_t* ulsn, uint16_t* ulhfn);
 
   // RLC interface
@@ -73,17 +65,17 @@ public:
   void write_pdu_pcch(unique_byte_buffer_t sdu);
 
 private:
-  srsue::rlc_interface_pdcp* rlc = nullptr;
-  srsue::rrc_interface_pdcp* rrc = nullptr;
-  srsue::gw_interface_pdcp*  gw  = nullptr;
+  srsue::rlc_interface_pdcp*      rlc           = nullptr;
+  srsue::rrc_interface_pdcp*      rrc           = nullptr;
+  srsue::gw_interface_pdcp*       gw            = nullptr;
+  srslte::task_handler_interface* task_executor = nullptr;
+  srslte::log_ref                 pdcp_log;
 
-  typedef std::map<uint16_t, pdcp_entity_lte*>  pdcp_map_t;
-  typedef std::pair<uint16_t, pdcp_entity_lte*> pdcp_map_pair_t;
+  std::map<uint16_t, std::unique_ptr<pdcp_entity_lte> > pdcp_array, pdcp_array_mrb;
 
-  srslte::timer_handler* timers   = nullptr;
-  log*                   pdcp_log = nullptr;
-  pdcp_map_t             pdcp_array, pdcp_array_mrb;
-  pthread_rwlock_t       rwlock;
+  // cache valid lcids to be checked from separate thread
+  std::mutex         cache_mutex;
+  std::set<uint32_t> valid_lcids_cached;
 
   bool valid_lcid(uint32_t lcid);
   bool valid_mch_lcid(uint32_t lcid);

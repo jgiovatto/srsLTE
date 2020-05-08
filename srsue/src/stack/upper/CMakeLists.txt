@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -29,5 +29,3 @@ add_library(srsue_upper STATIC ${SOURCES})
 if(HAVE_PCSC)
   target_link_libraries(srsue_upper ${PCSCLITE_LIBRARY})
 endif(HAVE_PCSC)
-
-install(TARGETS srsue_upper DESTINATION ${LIBRARY_DIR})

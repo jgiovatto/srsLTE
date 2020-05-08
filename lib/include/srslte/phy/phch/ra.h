@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -75,6 +75,8 @@ typedef struct SRSLTE_API {
   enum { SRSLTE_RA_TYPE2_LOC = 0, SRSLTE_RA_TYPE2_DIST = 1 } mode;
 } srslte_ra_type2_t;
 
+#define SRSLTE_RA_NOF_TBS_IDX 34
+
 SRSLTE_API uint32_t srslte_ra_type0_P(uint32_t nof_prb);
 
 SRSLTE_API uint32_t srslte_ra_type2_n_vrb_dl(uint32_t nof_prb, bool ngap_is_1);
@@ -90,15 +92,13 @@ SRSLTE_API uint32_t srslte_ra_type2_to_riv(uint32_t L_crb, uint32_t RB_start, ui
 SRSLTE_API void
 srslte_ra_type2_from_riv(uint32_t riv, uint32_t* L_crb, uint32_t* RB_start, uint32_t nof_prb, uint32_t nof_vrb);
 
-SRSLTE_API int srslte_ra_tbs_idx_from_mcs(uint32_t mcs, bool is_ul);
+SRSLTE_API int srslte_ra_tbs_idx_from_mcs(uint32_t mcs, bool use_tbs_index_alt, bool is_ul);
 
-SRSLTE_API srslte_mod_t srslte_ra_dl_mod_from_mcs(uint32_t mcs);
-
-SRSLTE_API srslte_mod_t srslte_ra_dl_mod_from_mcs2(uint32_t mcs);
+SRSLTE_API srslte_mod_t srslte_ra_dl_mod_from_mcs(uint32_t mcs, bool use_tbs_index_alt);
 
 SRSLTE_API srslte_mod_t srslte_ra_ul_mod_from_mcs(uint32_t mcs);
 
-SRSLTE_API int srslte_ra_mcs_from_tbs_idx(uint32_t tbs_idx, bool is_ul);
+SRSLTE_API int srslte_ra_mcs_from_tbs_idx(uint32_t tbs_idx, bool use_tbs_index_alt, bool is_ul);
 
 SRSLTE_API int srslte_ra_tbs_from_idx(uint32_t tbs_idx, uint32_t n_prb);
 

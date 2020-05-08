@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -28,24 +28,15 @@
 #include "srslte/common/log.h"
 #include "srslte/common/log_filter.h"
 #include "srslte/common/trace.h"
-#include "srslte/interfaces/common_interfaces.h"
 #include "srslte/interfaces/enb_interfaces.h"
 #include "srslte/interfaces/enb_metrics_interface.h"
+#include "srslte/interfaces/radio_interfaces.h"
 #include "srslte/radio/radio.h"
 #include "txrx.h"
 
 namespace srsenb {
 
-struct phy_cfg_t {
-  srslte_cell_t                  cell;
-  asn1::rrc::prach_cfg_sib_s     prach_cnfg;
-  asn1::rrc::pdsch_cfg_common_s  pdsch_cnfg;
-  asn1::rrc::pusch_cfg_common_s  pusch_cnfg;
-  asn1::rrc::pucch_cfg_common_s  pucch_cnfg;
-  asn1::rrc::srs_ul_cfg_common_c srs_ul_cnfg;
-};
-
-class phy : public enb_phy_base, public phy_interface_stack_lte, public srslte::phy_interface_radio
+class phy final : public enb_phy_base, public phy_interface_stack_lte, public srslte::phy_interface_radio
 {
 public:
   phy(srslte::logger* logger_);
@@ -55,35 +46,36 @@ public:
             const phy_cfg_t&             cfg,
             srslte::radio_interface_phy* radio_,
             stack_interface_phy_lte*     stack_);
-  void stop();
+  void stop() override;
 
-  std::string get_type() { return "lte"; };
+  std::string get_type() override { return "lte"; };
 
   /* MAC->PHY interface */
-  int  add_rnti(uint16_t rnti, bool is_temporal = false) final;
+  int  add_rnti(uint16_t rnti, uint32_t pcell_index, bool is_temporal) override;
   void rem_rnti(uint16_t rnti) final;
   void set_mch_period_stop(uint32_t stop) final;
+  void set_activation_deactivation_scell(uint16_t                                     rnti,
+                                         const std::array<bool, SRSLTE_MAX_CARRIERS>& activation) override;
 
   /*RRC-PHY interface*/
-  void configure_mbsfn(asn1::rrc::sib_type2_s* sib2, asn1::rrc::sib_type13_r9_s* sib13, asn1::rrc::mcch_msg_s mcch);
+  void configure_mbsfn(asn1::rrc::sib_type2_s*      sib2,
+                       asn1::rrc::sib_type13_r9_s*  sib13,
+                       const asn1::rrc::mcch_msg_s& mcch) override;
 
-  static uint32_t tti_to_SFN(uint32_t tti);
-  static uint32_t tti_to_subf(uint32_t tti);
+  void start_plot() override;
+  void set_config_dedicated(uint16_t rnti, const phy_rrc_dedicated_list_t& dedicated_list) override;
+  void complete_config_dedicated(uint16_t rnti) override;
 
-  void start_plot();
-  void set_config_dedicated(uint16_t rnti, asn1::rrc::phys_cfg_ded_s* dedicated);
+  void get_metrics(phy_metrics_t metrics[ENB_METRICS_MAX_USERS]) override;
 
-  void get_metrics(phy_metrics_t metrics[ENB_METRICS_MAX_USERS]);
-
-  void radio_overflow(){};
-  void radio_failure(){};
+  void radio_overflow() override{};
+  void radio_failure() override{};
 
 private:
   phy_rrc_cfg_t phy_rrc_config = {};
   uint32_t      nof_workers    = 0;
 
-  const static int MAX_WORKERS     = 4;
-  const static int DEFAULT_WORKERS = 2;
+  const static int MAX_WORKERS = 4;
 
   const static int PRACH_WORKER_THREAD_PRIO = 3;
   const static int SF_RECV_THREAD_PRIO      = 1;
@@ -105,7 +97,7 @@ private:
 
   srslte_prach_cfg_t prach_cfg = {};
 
-  void parse_config(const phy_cfg_t& cfg);
+  void parse_common_config(const phy_cfg_t& cfg);
 };
 
 } // namespace srsenb

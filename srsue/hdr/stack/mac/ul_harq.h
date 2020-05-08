@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -22,11 +22,6 @@
 #ifndef SRSUE_UL_HARQ_H
 #define SRSUE_UL_HARQ_H
 
-#define Error(fmt, ...) log_h->error(fmt, ##__VA_ARGS__)
-#define Warning(fmt, ...) log_h->warning(fmt, ##__VA_ARGS__)
-#define Info(fmt, ...) log_h->info(fmt, ##__VA_ARGS__)
-#define Debug(fmt, ...) log_h->debug(fmt, ##__VA_ARGS__)
-
 #include "mux.h"
 #include "proc_ra.h"
 #include "srslte/common/interfaces_common.h"
@@ -43,9 +38,9 @@ namespace srsue {
 class ul_harq_entity
 {
 public:
-  ul_harq_entity();
+  ul_harq_entity(const uint8_t cc_idx_);
 
-  bool init(srslte::log* log_h_, mac_interface_rrc_common::ue_rnti_t* rntis_, ra_proc* ra_proc_h_, mux* mux_unit_);
+  bool init(srslte::log_ref log_h_, mac_interface_rrc_common::ue_rnti_t* rntis_, ra_proc* ra_proc_h_, mux* mux_unit_);
 
   void reset();
   void reset_ndi();
@@ -91,7 +86,7 @@ private:
     bool     is_grant_configured;
     bool     is_initiated;
 
-    srslte::log*           log_h;
+    srslte::log_ref        log_h;
     ul_harq_entity*        harq_entity;
     srslte_softbuffer_tx_t softbuffer;
 
@@ -108,16 +103,18 @@ private:
 
   std::vector<ul_harq_process> proc;
 
-  mux*              mux_unit;
-  srslte::mac_pcap* pcap;
-  srslte::log*      log_h;
+  mux*              mux_unit = nullptr;
+  srslte::mac_pcap* pcap     = nullptr;
+  srslte::log_ref   log_h;
 
-  mac_interface_rrc_common::ue_rnti_t* rntis;
-  srslte::ul_harq_cfg_t                harq_cfg;
+  mac_interface_rrc_common::ue_rnti_t* rntis    = nullptr;
+  srslte::ul_harq_cfg_t                harq_cfg = {};
 
-  float    average_retx;
-  uint64_t nof_pkts;
-  ra_proc* ra_procedure;
+  float    average_retx = 0.0;
+  uint64_t nof_pkts     = 0;
+  ra_proc* ra_procedure = nullptr;
+
+  uint8_t cc_idx = 0;
 };
 
 typedef std::unique_ptr<ul_harq_entity> ul_harq_entity_ptr;

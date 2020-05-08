@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -50,7 +50,7 @@ typedef struct {
   enum nas_timer_type type;
 } mme_timer_t;
 
-class mme : public thread, public mme_interface_nas
+class mme : public srslte::thread, public mme_interface_nas
 {
 public:
   static mme* get_instance(void);

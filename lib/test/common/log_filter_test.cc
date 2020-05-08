@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -24,6 +24,7 @@
 
 #include "srslte/common/log_filter.h"
 #include "srslte/common/logger_file.h"
+#include "srslte/common/logmap.h"
 #include "srslte/common/test_common.h"
 #include <stdio.h>
 
@@ -139,6 +140,47 @@ int basic_hex_test()
   return SRSLTE_SUCCESS;
 }
 
+int test_log_singleton()
+{
+  srslte::logmap::set_default_log_level(LOG_LEVEL_DEBUG);
+
+  // TEST: Check if default setters are working
+  srslte::log_ref log1 = srslte::logmap::get("LAYER1");
+  TESTASSERT(log1->get_service_name() == "LAYER1");
+  TESTASSERT(log1->get_level() == LOG_LEVEL_DEBUG);
+
+  // TEST: register logger manually. Verify log_ref stays valid after overwrite
+  std::unique_ptr<srslte::log_filter> log_ptr2(new srslte::log_filter("LAYER2"));
+  log_ptr2->set_level(LOG_LEVEL_WARNING);
+  srslte::log_ref old_ref = srslte::logmap::get("LAYER2");
+  TESTASSERT(old_ref->get_level() == LOG_LEVEL_DEBUG);
+  srslte::logmap::register_log(std::move(log_ptr2));
+  srslte::log_ref new_ref = srslte::logmap::get("LAYER2");
+  TESTASSERT(new_ref->get_level() == LOG_LEVEL_WARNING);
+  TESTASSERT(old_ref == new_ref);
+
+  // TEST: padding working correctly
+  TESTASSERT(srslte::logmap::get("MAC").get() == srslte::logmap::get("MAC ").get());
+
+  log1->info("logmap test finished successfully\n");
+  return SRSLTE_SUCCESS;
+}
+
+int test_log_ref()
+{
+  // Check if trailing whitespaces are correctly removed
+  srslte::log_ref t1_log{"T1"};
+  TESTASSERT(t1_log->get_service_name() == "T1");
+  TESTASSERT(t1_log.get() == srslte::logmap::get("T1").get());
+  TESTASSERT(t1_log.get() == srslte::logmap::get("T1  ").get());
+  {
+    scoped_log<srslte::nullsink_log> null_log{"T2"};
+    TESTASSERT(null_log->get_service_name() == "T2");
+  }
+
+  return SRSLTE_SUCCESS;
+}
+
 int full_test()
 {
   bool        result;
@@ -163,6 +205,8 @@ int main(int argc, char** argv)
 {
   TESTASSERT(basic_hex_test() == SRSLTE_SUCCESS);
   TESTASSERT(full_test() == SRSLTE_SUCCESS);
+  TESTASSERT(test_log_singleton() == SRSLTE_SUCCESS);
+  TESTASSERT(test_log_ref() == SRSLTE_SUCCESS);
 
   return SRSLTE_SUCCESS;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -61,7 +61,9 @@ SRSLTE_API int srslte_ra_ul_dci_to_grant(srslte_cell_t*              cell,
                                          srslte_dci_ul_t*            dci,
                                          srslte_pusch_grant_t*       grant);
 
+SRSLTE_API void srslte_ra_ul_compute_nof_re(srslte_pusch_grant_t* grant, srslte_cp_t cp, uint32_t N_srs);
+
 /** Others */
-SRSLTE_API uint32_t srslte_ra_ul_info(srslte_pusch_grant_t* grant, char* info_str, uint32_t len);
+SRSLTE_API uint32_t srslte_ra_ul_info(const srslte_pusch_grant_t* grant, char* info_str, uint32_t len);
 
 #endif // SRSLTE_RA_UL_H

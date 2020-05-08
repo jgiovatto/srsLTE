@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -81,6 +81,10 @@ if (ENABLE_5GNR)
   target_link_libraries(pdcp_nr_test_discard_sdu srslte_upper srslte_common)
   add_test(pdcp_nr_test_discard_sdu pdcp_nr_test_discard_sdu)
 endif(ENABLE_5GNR)
+
+add_executable(pdcp_lte_test_rx pdcp_lte_test_rx.cc)
+target_link_libraries(pdcp_lte_test_rx srslte_upper srslte_common)
+add_test(pdcp_lte_test_rx pdcp_lte_test_rx)
 
 ########################################################################
 # Option to run command after build (useful for remote builds)

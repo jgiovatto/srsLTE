@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -96,12 +96,12 @@ int fdd_tests(uint32_t max_cc)
                          simul_cqi_ack ? "yes" : "no",
                          pusch_enabled ? "yes" : "no");
 
-                  srslte_ue_dl_gen_ack(&ue_dl, &sf_cfg_dl, &ack_info, &uci_data);
+                  srslte_ue_dl_gen_ack(&ue_dl.cell, &sf_cfg_dl, &ack_info, &uci_data);
 
                   // Check output
                   if (nof_cc == 1) {
                     TESTASSERT(uci_data.cfg.ack[0].nof_acks == nof_active_tb);
-                  } else if (uci_data.value.scheduling_request) {
+                  } else if (uci_data.value.scheduling_request && !ack_info.is_pusch_available) {
                     TESTASSERT(uci_data.cfg.ack[0].nof_acks == 1);
                   } else if (cqi_enabled && !pusch_enabled) {
                     // No PUSCH, CSI and HARQ ACK collision

@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -37,6 +37,7 @@ target_link_libraries(srsue   srsue_phy
                               srsue_mac
                               srsue_rrc
                               srslte_common
+                              srslte_mac
                               srslte_phy
                               srslte_radio
                               srslte_upper
@@ -61,6 +62,8 @@ endif(NOT SRSGUI_FOUND)
 # Checks that ue.conf.example is valid and it does not leak memory if RF fails
 if (ZEROMQ_FOUND)
   add_test(ue_rf_failure srsue ${CMAKE_SOURCE_DIR}/srsue/ue.conf.example --rf.device_name=zmq)
+  add_test(ue_rf_failure_max_channels srsue ${CMAKE_SOURCE_DIR}/srsue/ue.conf.example --rf.device_name=zmq --rf.nof_antennas=4 --rf.nof_carriers=5)
+  add_test(ue_rf_failure_exceeds_channels srsue ${CMAKE_SOURCE_DIR}/srsue/ue.conf.example --rf.device_name=zmq --rf.nof_antennas=5 --rf.nof_carriers=5)
 endif(ZEROMQ_FOUND)
 
 ########################################################################

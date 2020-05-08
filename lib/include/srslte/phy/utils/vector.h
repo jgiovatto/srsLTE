@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -82,17 +82,35 @@ SRSLTE_API cf_t srslte_vec_acc_cc(const cf_t* x, const uint32_t len);
 SRSLTE_API void* srslte_vec_malloc(uint32_t size);
 SRSLTE_API cf_t*  srslte_vec_cf_malloc(uint32_t size);
 SRSLTE_API float* srslte_vec_f_malloc(uint32_t size);
+SRSLTE_API int32_t* srslte_vec_i32_malloc(uint32_t nsamples);
+SRSLTE_API uint32_t* srslte_vec_u32_malloc(uint32_t nsamples);
+SRSLTE_API int16_t* srslte_vec_i16_malloc(uint32_t nsamples);
+SRSLTE_API uint16_t* srslte_vec_u16_malloc(uint32_t nsamples);
+SRSLTE_API int8_t* srslte_vec_i8_malloc(uint32_t nsamples);
+SRSLTE_API uint8_t* srslte_vec_u8_malloc(uint32_t nsamples);
 
 SRSLTE_API void* srslte_vec_realloc(void* ptr, uint32_t old_size, uint32_t new_size);
 
+/* Zero memory */
+SRSLTE_API void srslte_vec_cf_zero(cf_t* ptr, uint32_t nsamples);
+SRSLTE_API void srslte_vec_f_zero(float* ptr, uint32_t nsamples);
+SRSLTE_API void srslte_vec_u8_zero(uint8_t* ptr, uint32_t nsamples);
+SRSLTE_API void srslte_vec_i16_zero(int16_t* ptr, uint32_t nsamples);
+SRSLTE_API void srslte_vec_u32_zero(uint32_t* ptr, uint32_t nsamples);
+
+/* Copy memory */
+SRSLTE_API void srslte_vec_cf_copy(cf_t* dst, const cf_t* src, uint32_t len);
+SRSLTE_API void srslte_vec_f_copy(float* dst, const float* src, uint32_t len);
+SRSLTE_API void srslte_vec_u8_copy(uint8_t* dst, const uint8_t* src, uint32_t len);
+
 /* print vectors */
-SRSLTE_API void srslte_vec_fprint_c(FILE* stream, cf_t* x, const uint32_t len);
-SRSLTE_API void srslte_vec_fprint_f(FILE* stream, float* x, const uint32_t len);
-SRSLTE_API void srslte_vec_fprint_b(FILE* stream, uint8_t* x, const uint32_t len);
-SRSLTE_API void srslte_vec_fprint_bs(FILE* stream, int8_t* x, const uint32_t len);
-SRSLTE_API void srslte_vec_fprint_byte(FILE* stream, uint8_t* x, const uint32_t len);
-SRSLTE_API void srslte_vec_fprint_i(FILE* stream, int* x, const uint32_t len);
-SRSLTE_API void srslte_vec_fprint_s(FILE* stream, short* x, const uint32_t len);
+SRSLTE_API void srslte_vec_fprint_c(FILE* stream, const cf_t* x, const uint32_t len);
+SRSLTE_API void srslte_vec_fprint_f(FILE* stream, const float* x, const uint32_t len);
+SRSLTE_API void srslte_vec_fprint_b(FILE* stream, const uint8_t* x, const uint32_t len);
+SRSLTE_API void srslte_vec_fprint_bs(FILE* stream, const int8_t* x, const uint32_t len);
+SRSLTE_API void srslte_vec_fprint_byte(FILE* stream, const uint8_t* x, const uint32_t len);
+SRSLTE_API void srslte_vec_fprint_i(FILE* stream, const int* x, const uint32_t len);
+SRSLTE_API void srslte_vec_fprint_s(FILE* stream, const int16_t* x, const uint32_t len);
 SRSLTE_API void srslte_vec_fprint_hex(FILE* stream, uint8_t* x, const uint32_t len);
 SRSLTE_API void srslte_vec_sprint_hex(char* str, const uint32_t max_str_len, uint8_t* x, const uint32_t len);
 
@@ -165,6 +183,7 @@ SRSLTE_API void srslte_vec_conj_cc(const cf_t* x, cf_t* y, const uint32_t len);
 
 /* average vector power */
 SRSLTE_API float srslte_vec_avg_power_cf(const cf_t* x, const uint32_t len);
+SRSLTE_API float srslte_vec_avg_power_sf(const int16_t* x, const uint32_t len);
 
 /* Correlation between complex vectors x and y */
 SRSLTE_API float srslte_vec_corr_ccc(const cf_t* x, cf_t* y, const uint32_t len);
@@ -179,17 +198,27 @@ SRSLTE_API void srslte_vec_quant_fuc(const float*   in,
                                      uint8_t*       out,
                                      const float    gain,
                                      const float    offset,
-                                     const float    clip,
+                                     const uint8_t  clip,
                                      const uint32_t len);
-SRSLTE_API void srslte_vec_quant_fus(float* in, uint16_t* out, float gain, float offset, float clip, uint32_t len);
+SRSLTE_API void srslte_vec_quant_fus(const float*   in,
+                                     uint16_t*      out,
+                                     const float    gain,
+                                     const float    offset,
+                                     const uint16_t clip,
+                                     const uint32_t len);
 SRSLTE_API void srslte_vec_quant_suc(const int16_t* in,
                                      uint8_t*       out,
                                      const float    gain,
-                                     const int16_t  offset,
-                                     const int16_t  clip,
+                                     const float    offset,
+                                     const uint8_t  clip,
                                      const uint32_t len);
-SRSLTE_API void
-srslte_vec_quant_sus(const int16_t* in, uint16_t* out, const float gain, const int16_t offset, const uint32_t len);
+
+SRSLTE_API void srslte_vec_quant_sus(const int16_t* in,
+                                     uint16_t*      out,
+                                     const float    gain,
+                                     const float    offset,
+                                     const uint16_t clip,
+                                     const uint32_t len);
 /* magnitude of each vector element */
 SRSLTE_API void srslte_vec_abs_cf(const cf_t* x, float* abs, const uint32_t len);
 SRSLTE_API void srslte_vec_abs_square_cf(const cf_t* x, float* abs_square, const uint32_t len);
@@ -244,9 +273,6 @@ SRSLTE_API void srslte_vec_abs_dB_cf(const cf_t* x, float default_value, float* 
  *
  */
 SRSLTE_API void srslte_vec_arg_deg_cf(const cf_t* x, float default_value, float* arg, const uint32_t len);
-
-/* Copy 256 bit aligned vector */
-SRSLTE_API void srs_vec_cf_cpy(const cf_t* src, cf_t* dst, const int len);
 
 SRSLTE_API void srslte_vec_interleave(const cf_t* x, const cf_t* y, cf_t* z, const int len);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -33,6 +33,7 @@
 
 #include "srslte/phy/rf/rf.h"
 #include "srslte/phy/rf/rf_utils.h"
+#include "srslte/phy/ue/ue_cell_search_nbiot.h"
 
 int rf_rssi_scan(srslte_rf_t* rf, float* freqs, float* rssi, int nof_bands, double fs, int nsamp)
 {
@@ -81,31 +82,32 @@ free_and_exit:
 int srslte_rf_recv_wrapper_cs(void* h, cf_t* data[SRSLTE_MAX_PORTS], uint32_t nsamples, srslte_timestamp_t* t)
 {
   DEBUG(" ----  Receive %d samples  ---- \n", nsamples);
-  void* ptr[SRSLTE_MAX_PORTS];
+  void* ptr[SRSLTE_MAX_CHANNELS] = {};
   for (int i = 0; i < SRSLTE_MAX_PORTS; i++) {
     ptr[i] = data[i];
   }
   return srslte_rf_recv_with_time_multi(h, ptr, nsamples, 1, NULL, NULL);
 }
 
-double srslte_rf_set_rx_gain_th_wrapper(void* h, double f)
+static SRSLTE_AGC_CALLBACK(srslte_rf_set_rx_gain_wrapper)
 {
-  return srslte_rf_set_rx_gain_th((srslte_rf_t*)h, f);
+  srslte_rf_set_rx_gain((srslte_rf_t*)h, gain_db);
 }
 
 /** This function is simply a wrapper to the ue_cell_search module for rf devices
  * Return 1 if the MIB is decoded, 0 if not or -1 on error.
  */
 int rf_mib_decoder(srslte_rf_t*       rf,
-                   uint32_t           nof_rx_antennas,
+                   uint32_t           nof_rx_channels,
                    cell_search_cfg_t* config,
                    srslte_cell_t*     cell,
                    float*             cfo)
 {
   int                  ret = SRSLTE_ERROR;
   srslte_ue_mib_sync_t ue_mib;
-  uint8_t              bch_payload[SRSLTE_BCH_PAYLOAD_LEN];
-  if (srslte_ue_mib_sync_init_multi(&ue_mib, srslte_rf_recv_wrapper_cs, nof_rx_antennas, (void*)rf)) {
+  uint8_t              bch_payload[SRSLTE_BCH_PAYLOAD_LEN] = {};
+
+  if (srslte_ue_mib_sync_init_multi(&ue_mib, srslte_rf_recv_wrapper_cs, nof_rx_channels, (void*)rf)) {
     fprintf(stderr, "Error initiating srslte_ue_mib_sync\n");
     goto clean_exit;
   }
@@ -156,7 +158,7 @@ clean_exit:
 /** This function is simply a wrapper to the ue_cell_search module for rf devices
  */
 int rf_cell_search(srslte_rf_t*       rf,
-                   uint32_t           nof_rx_antennas,
+                   uint32_t           nof_rx_channels,
                    cell_search_cfg_t* config,
                    int                force_N_id_2,
                    srslte_cell_t*     cell,
@@ -169,7 +171,7 @@ int rf_cell_search(srslte_rf_t*       rf,
   bzero(found_cells, 3 * sizeof(srslte_ue_cellsearch_result_t));
 
   if (srslte_ue_cellsearch_init_multi(
-          &cs, config->max_frames_pss, srslte_rf_recv_wrapper_cs, nof_rx_antennas, (void*)rf)) {
+          &cs, config->max_frames_pss, srslte_rf_recv_wrapper_cs, nof_rx_channels, (void*)rf)) {
     fprintf(stderr, "Error initiating UE cell detect\n");
     return SRSLTE_ERROR;
   }
@@ -244,7 +246,7 @@ int rf_cell_search(srslte_rf_t*       rf,
  * -1 on error
  */
 int rf_search_and_decode_mib(srslte_rf_t*       rf,
-                             uint32_t           nof_rx_antennas,
+                             uint32_t           nof_rx_channels,
                              cell_search_cfg_t* config,
                              int                force_N_id_2,
                              srslte_cell_t*     cell,
@@ -253,14 +255,93 @@ int rf_search_and_decode_mib(srslte_rf_t*       rf,
   int ret = SRSLTE_ERROR;
 
   printf("Searching for cell...\n");
-  ret = rf_cell_search(rf, nof_rx_antennas, config, force_N_id_2, cell, cfo);
+  ret = rf_cell_search(rf, nof_rx_channels, config, force_N_id_2, cell, cfo);
   if (ret > 0) {
     printf("Decoding PBCH for cell %d (N_id_2=%d)\n", cell->id, cell->id % 3);
-    ret = rf_mib_decoder(rf, nof_rx_antennas, config, cell, cfo);
+    ret = rf_mib_decoder(rf, nof_rx_channels, config, cell, cfo);
     if (ret < 0) {
       ERROR("Could not decode PBCH from CELL ID %d\n", cell->id);
       return SRSLTE_ERROR;
     }
   }
+  return ret;
+}
+
+int rf_cell_search_nbiot(srslte_rf_t* rf, cell_search_cfg_t* config, srslte_nbiot_cell_t* cell, float* cfo)
+{
+  int                                 ret            = SRSLTE_ERROR;
+  srslte_ue_cellsearch_nbiot_t        cs             = {};
+  srslte_nbiot_ue_cellsearch_result_t found_cells[3] = {};
+
+  if (srslte_ue_cellsearch_nbiot_init(&cs, config->max_frames_pss, srslte_rf_recv_wrapper_cs, (void*)rf)) {
+    fprintf(stderr, "Error initiating UE cell detect\n");
+    return SRSLTE_ERROR;
+  }
+
+  if (config->nof_valid_pss_frames) {
+    srslte_ue_cellsearch_nbiot_set_nof_valid_frames(&cs, config->nof_valid_pss_frames);
+  }
+  if (config->init_agc > 0) {
+    srslte_ue_sync_nbiot_start_agc(&cs.ue_sync, srslte_rf_set_rx_gain_wrapper, config->init_agc);
+  }
+
+  DEBUG("Setting sampling frequency %.2f MHz for NPSS search\n", SRSLTE_CS_SAMP_FREQ / 1000000);
+  srslte_rf_set_rx_srate(rf, SRSLTE_CS_SAMP_FREQ);
+
+  INFO("Starting receiver...\n");
+  srslte_rf_start_rx_stream(rf, false);
+
+  ret = srslte_ue_cellsearch_nbiot_scan(&cs);
+  if (ret == SRSLTE_ERROR) {
+    fprintf(stderr, "Could not find any cell in this frequency\n");
+    goto clean_exit;
+  }
+
+  INFO("Stopping receiver...\n");
+  srslte_rf_stop_rx_stream(rf);
+
+  // Find a cell
+  INFO("Running N_id_ncell detection\n");
+
+  uint32_t max_peak_cell = 0;
+  ret                    = srslte_ue_cellsearch_nbiot_detect(&cs, found_cells);
+  if (ret != SRSLTE_SUCCESS) {
+    fprintf(stderr, "Could not detect cell ID\n");
+    goto clean_exit;
+  }
+
+  // Only show first cell
+  for (int i = 0; i < 1; i++) {
+    if (i == max_peak_cell) {
+      printf("*");
+    } else {
+      printf(" ");
+    }
+    printf("Found n_id_ncell: %3d DetectRatio=%2.0f%% PSR=%.2f, Power=%.1f dBm\n",
+           found_cells[i].n_id_ncell,
+           found_cells[i].mode * 100,
+           found_cells[i].psr,
+           20 * log10(found_cells[i].peak * 1000));
+  }
+
+  // Save result
+  if (cell) {
+    cell->n_id_ncell = found_cells[max_peak_cell].n_id_ncell;
+  }
+
+  // Save CFO
+  if (cfo) {
+    *cfo = found_cells[max_peak_cell].cfo;
+  }
+
+  // Save AGC value for MIB decoding
+  if (config->init_agc > 0) {
+    config->init_agc = srslte_agc_get_gain(&cs.ue_sync.agc);
+  }
+
+clean_exit:
+  srslte_rf_stop_rx_stream(rf);
+  srslte_ue_cellsearch_nbiot_free(&cs);
+
   return ret;
 }

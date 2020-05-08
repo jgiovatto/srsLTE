@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -163,34 +163,34 @@ int srslte_pbch_init(srslte_pbch_t* q)
 
     q->nof_symbols = PBCH_RE_CP_NORM;
 
-    q->d = srslte_vec_malloc(sizeof(cf_t) * q->nof_symbols);
+    q->d = srslte_vec_cf_malloc(q->nof_symbols);
     if (!q->d) {
       goto clean;
     }
     int i;
     for (i = 0; i < SRSLTE_MAX_PORTS; i++) {
-      q->ce[i] = srslte_vec_malloc(sizeof(cf_t) * q->nof_symbols);
+      q->ce[i] = srslte_vec_cf_malloc(q->nof_symbols);
       if (!q->ce[i]) {
         goto clean;
       }
-      q->x[i] = srslte_vec_malloc(sizeof(cf_t) * q->nof_symbols);
+      q->x[i] = srslte_vec_cf_malloc(q->nof_symbols);
       if (!q->x[i]) {
         goto clean;
       }
-      q->symbols[i] = srslte_vec_malloc(sizeof(cf_t) * q->nof_symbols);
+      q->symbols[i] = srslte_vec_cf_malloc(q->nof_symbols);
       if (!q->symbols[i]) {
         goto clean;
       }
     }
-    q->llr = srslte_vec_malloc(sizeof(float) * q->nof_symbols * 4 * 2);
+    q->llr = srslte_vec_f_malloc(q->nof_symbols * 4 * 2);
     if (!q->llr) {
       goto clean;
     }
-    q->temp = srslte_vec_malloc(sizeof(float) * q->nof_symbols * 4 * 2);
+    q->temp = srslte_vec_f_malloc(q->nof_symbols * 4 * 2);
     if (!q->temp) {
       goto clean;
     }
-    q->rm_b = srslte_vec_malloc(sizeof(float) * q->nof_symbols * 4 * 2);
+    q->rm_b = srslte_vec_u8_malloc(q->nof_symbols * 4 * 2);
     if (!q->rm_b) {
       goto clean;
     }
@@ -401,7 +401,7 @@ int decode_frame(srslte_pbch_t* q, uint32_t src, uint32_t dst, uint32_t n, uint3
   int j;
 
   if (dst + n <= 4 && src + n <= 4) {
-    memcpy(&q->temp[dst * nof_bits], &q->llr[src * nof_bits], n * nof_bits * sizeof(float));
+    srslte_vec_f_copy(&q->temp[dst * nof_bits], &q->llr[src * nof_bits], n * nof_bits);
 
     /* descramble */
     srslte_scrambling_f_offset(&q->seq, &q->temp[dst * nof_bits], dst * nof_bits, n * nof_bits);

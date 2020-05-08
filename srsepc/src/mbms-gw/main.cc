@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -20,10 +20,7 @@
  */
 #include "srsepc/hdr/mbms-gw/mbms-gw.h"
 #include "srslte/common/config_file.h"
-#include <boost/algorithm/string.hpp>
 #include <boost/program_options.hpp>
-#include <errno.h>
-#include <fstream>
 #include <iostream>
 #include <signal.h>
 
@@ -53,7 +50,7 @@ typedef struct {
 
 srslte::LOG_LEVEL_ENUM level(std::string l)
 {
-  boost::to_upper(l);
+  std::transform(l.begin(), l.end(), l.begin(), ::toupper);
   if ("NONE" == l) {
     return srslte::LOG_LEVEL_NONE;
   } else if ("ERROR" == l) {
@@ -190,7 +187,7 @@ int main(int argc, char* argv[])
   cout << endl << "---  Software Radio Systems MBMS  ---" << endl << endl;
   signal(SIGINT, sig_int_handler);
   signal(SIGTERM, sig_int_handler);
-  signal(SIGKILL, sig_int_handler);
+  signal(SIGHUP, sig_int_handler);
 
   all_args_t args;
   parse_args(&args, argc, argv);
@@ -207,14 +204,14 @@ int main(int argc, char* argv[])
     logger_file.log_char("\n---  Software Radio Systems MBMS log ---\n\n");
     logger = &logger_file;
   }
+  srslte::logmap::set_default_logger(logger);
 
-  srslte::log_filter mbms_gw_log;
-  mbms_gw_log.init("MBMS", logger);
-  mbms_gw_log.set_level(level(args.log_args.mbms_gw_level));
-  mbms_gw_log.set_hex_limit(args.log_args.mbms_gw_hex_limit);
+  srslte::log_ref mbms_gw_log{"MBMS"};
+  mbms_gw_log->set_level(level(args.log_args.mbms_gw_level));
+  mbms_gw_log->set_hex_limit(args.log_args.mbms_gw_hex_limit);
 
   mbms_gw* mbms_gw = mbms_gw::get_instance();
-  if (mbms_gw->init(&args.mbms_gw_args, &mbms_gw_log)) {
+  if (mbms_gw->init(&args.mbms_gw_args, mbms_gw_log)) {
     cout << "Error initializing MBMS-GW" << endl;
     exit(1);
   }

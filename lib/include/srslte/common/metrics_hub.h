@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -46,8 +46,8 @@ template <typename metrics_t>
 class metrics_listener
 {
 public:
-  virtual void set_metrics(metrics_t& m, const uint32_t period_usec) = 0;
-  virtual void stop()                                                = 0;
+  virtual void set_metrics(const metrics_t& m, const uint32_t period_usec) = 0;
+  virtual void stop()                                                      = 0;
 };
 
 template <typename metrics_t>

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -23,6 +23,7 @@
 #define SRSLTE_RLC_COMMON_H
 
 #include "srslte/common/block_queue.h"
+#include "srslte/common/logmap.h"
 #include "srslte/upper/rlc_metrics.h"
 #include <stdlib.h>
 
@@ -213,25 +214,25 @@ public:
   // Size of the Uplink buffer in number of PDUs
   const static int RLC_BUFFER_NOF_PDU = 128;
 
-  virtual ~rlc_common() {}
-  virtual bool configure(rlc_config_t cnfg) = 0;
-  virtual void stop()                       = 0;
-  virtual void reestablish()                = 0;
-  virtual void empty_queue()                = 0;
+  virtual ~rlc_common()                            = default;
+  virtual bool configure(const rlc_config_t& cnfg) = 0;
+  virtual void stop()                              = 0;
+  virtual void reestablish()                       = 0;
+  virtual void empty_queue()                       = 0;
 
   bool suspend()
   {
-    if (is_suspended) {
+    if (suspended) {
       return false;
     }
-    is_suspended = true;
+    suspended = true;
     return true;
   }
 
   // Pops all PDUs from queue and calls write_pdu() method for the bearer type
   bool resume()
   {
-    if (!is_suspended) {
+    if (!suspended) {
       return false;
     }
     pdu_t p;
@@ -240,16 +241,30 @@ public:
       write_pdu(p.payload, p.nof_bytes);
       free(p.payload);
     }
-    is_suspended = false;
+
+    unique_byte_buffer_t s;
+    while (tx_sdu_resume_queue.try_pop(&s)) {
+      write_sdu(std::move(s), false);
+    }
+    suspended = false;
     return true;
   }
 
   void write_pdu_s(uint8_t* payload, uint32_t nof_bytes)
   {
-    if (is_suspended) {
-      queue_pdu(payload, nof_bytes);
+    if (suspended) {
+      queue_rx_pdu(payload, nof_bytes);
     } else {
       write_pdu(payload, nof_bytes);
+    }
+  }
+
+  void write_sdu_s(unique_byte_buffer_t sdu, bool blocking)
+  {
+    if (suspended) {
+      queue_tx_sdu(std::move(sdu));
+    } else {
+      write_sdu(std::move(sdu), blocking);
     }
   }
 
@@ -264,16 +279,17 @@ public:
   virtual void discard_sdu(uint32_t discard_sn)                   = 0;
 
   // MAC interface
-  virtual bool     has_data()                                      = 0;
+  virtual bool     has_data() = 0;
+  bool             is_suspended() { return suspended; };
   virtual uint32_t get_buffer_state()                              = 0;
   virtual int      read_pdu(uint8_t* payload, uint32_t nof_bytes)  = 0;
   virtual void     write_pdu(uint8_t* payload, uint32_t nof_bytes) = 0;
 
 private:
-  bool is_suspended = false;
+  bool suspended = false;
 
-  // Enqueues the PDU in the resume queue
-  void queue_pdu(uint8_t* payload, uint32_t nof_bytes)
+  // Enqueues the Rx PDU in the resume queue
+  void queue_rx_pdu(uint8_t* payload, uint32_t nof_bytes)
   {
     pdu_t p     = {};
     p.nof_bytes = nof_bytes;
@@ -282,7 +298,17 @@ private:
 
     // Do not block ever
     if (!rx_pdu_resume_queue.try_push(p)) {
-      fprintf(stderr, "Error dropping PDUs while bearer suspended. Queue should be unbounded\n");
+      srslte::logmap::get("RLC ")->warning("Dropping SDUs while bearer suspended.\n");
+      return;
+    }
+  }
+
+  // Enqueues the Tx SDU in the resume queue
+  void queue_tx_sdu(unique_byte_buffer_t sdu)
+  {
+    // Do not block ever
+    if (!tx_sdu_resume_queue.try_push(std::move(sdu)).first) {
+      srslte::logmap::get("RLC ")->warning("Dropping SDUs while bearer suspended.\n");
       return;
     }
   }
@@ -292,7 +318,8 @@ private:
     uint32_t nof_bytes;
   } pdu_t;
 
-  block_queue<pdu_t> rx_pdu_resume_queue;
+  block_queue<pdu_t>                rx_pdu_resume_queue;
+  block_queue<unique_byte_buffer_t> tx_sdu_resume_queue{256};
 };
 
 } // namespace srslte

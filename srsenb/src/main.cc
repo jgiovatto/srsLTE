@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -27,10 +27,12 @@
 
 #include "srslte/common/config_file.h"
 #include "srslte/common/crash_handler.h"
+#include "srslte/common/signal_handler.h"
 
 #include <boost/program_options.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <iostream>
+#include <memory>
 #include <string>
 
 #include "srsenb/hdr/enb.h"
@@ -48,12 +50,9 @@ string config_file;
 
 void parse_args(all_args_t* args, int argc, char* argv[])
 {
-
-  string enb_id;
-  string cell_id;
-  string tac;
   string mcc;
   string mnc;
+  string enb_id;
 
   // Command line only options
   bpo::options_description general("General options");
@@ -69,14 +68,11 @@ void parse_args(all_args_t* args, int argc, char* argv[])
 
     ("enb.enb_id",        bpo::value<string>(&enb_id)->default_value("0x0"),                       "eNodeB ID")
     ("enb.name",          bpo::value<string>(&args->stack.s1ap.enb_name)->default_value("srsenb01"), "eNodeB Name")
-    ("enb.cell_id",       bpo::value<string>(&cell_id)->default_value("0x0"),                      "Cell ID")
-    ("enb.tac",           bpo::value<string>(&tac)->default_value("0x0"),                          "Tracking Area Code")
     ("enb.mcc",           bpo::value<string>(&mcc)->default_value("001"),                          "Mobile Country Code")
     ("enb.mnc",           bpo::value<string>(&mnc)->default_value("01"),                           "Mobile Network Code")
     ("enb.mme_addr",      bpo::value<string>(&args->stack.s1ap.mme_addr)->default_value("127.0.0.1"),"IP address of MME for S1 connection")
     ("enb.gtp_bind_addr", bpo::value<string>(&args->stack.s1ap.gtp_bind_addr)->default_value("192.168.3.1"), "Local IP address to bind for GTP connection")
     ("enb.s1c_bind_addr", bpo::value<string>(&args->stack.s1ap.s1c_bind_addr)->default_value("192.168.3.1"), "Local IP address to bind for S1AP connection")
-    ("enb.phy_cell_id",   bpo::value<uint32_t>(&args->enb.pci)->default_value(0),                  "Physical Cell Identity (PCI)")
     ("enb.n_prb",         bpo::value<uint32_t>(&args->enb.n_prb)->default_value(25),               "Number of PRB")
     ("enb.nof_ports",     bpo::value<uint32_t>(&args->enb.nof_ports)->default_value(1),            "Number of ports")
     ("enb.tm",            bpo::value<uint32_t>(&args->enb.transmission_mode)->default_value(1),    "Transmission mode (1-8)")
@@ -86,23 +82,19 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     ("enb_files.rr_config",  bpo::value<string>(&args->enb_files.rr_config)->default_value("rr.conf"),   "RR configuration files")
     ("enb_files.drb_config", bpo::value<string>(&args->enb_files.drb_config)->default_value("drb.conf"), "DRB configuration files")
 
-    ("rf.dl_earfcn",      bpo::value<uint32_t>(&args->enb.dl_earfcn)->default_value(3400), "Downlink EARFCN")
-    ("rf.ul_earfcn",      bpo::value<uint32_t>(&args->enb.ul_earfcn)->default_value(0),    "Uplink EARFCN (Default based on Downlink EARFCN)")
+    ("rf.dl_earfcn",      bpo::value<uint32_t>(&args->enb.dl_earfcn)->default_value(0), "Force Downlink EARFCN for single cell")
     ("rf.rx_gain",        bpo::value<float>(&args->rf.rx_gain)->default_value(50),        "Front-end receiver gain")
     ("rf.tx_gain",        bpo::value<float>(&args->rf.tx_gain)->default_value(70),        "Front-end transmitter gain")
     ("rf.dl_freq",        bpo::value<float>(&args->rf.dl_freq)->default_value(-1),        "Downlink Frequency (if positive overrides EARFCN)")
     ("rf.ul_freq",        bpo::value<float>(&args->rf.ul_freq)->default_value(-1),        "Uplink Frequency (if positive overrides EARFCN)")
 
     ("rf.device_name",       bpo::value<string>(&args->rf.device_name)->default_value("auto"),       "Front-end device name")
-    ("rf.device_args",       bpo::value<string>(&args->rf.device_args[0])->default_value("auto"),       "Front-end device arguments")
+    ("rf.device_args",       bpo::value<string>(&args->rf.device_args)->default_value("auto"),       "Front-end device arguments")
     ("rf.time_adv_nsamples", bpo::value<string>(&args->rf.time_adv_nsamples)->default_value("auto"), "Transmission time advance")
-    ("rf.burst_preamble_us", bpo::value<string>(&args->rf.burst_preamble)->default_value("auto"),    "Transmission time advance")
-
-    ("pcap.enable",       bpo::value<bool>(&args->stack.pcap.enable)->default_value(false),         "Enable MAC packet captures for wireshark")
-    ("pcap.filename",     bpo::value<string>(&args->stack.pcap.filename)->default_value("ue.pcap"), "MAC layer capture filename")
 
     ("gui.enable",        bpo::value<bool>(&args->gui.enable)->default_value(false),          "Enable GUI plots")
 
+    /* Log section */
     ("log.rf_level",     bpo::value<string>(&args->rf.log_level),         "RF log level")
     ("log.phy_level",     bpo::value<string>(&args->phy.log.phy_level),   "PHY log level")
     ("log.phy_hex_limit", bpo::value<int>(&args->phy.log.phy_hex_limit),  "PHY log hex dump limit")
@@ -126,17 +118,25 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     ("log.filename",      bpo::value<string>(&args->log.filename)->default_value("/tmp/ue.log"),"Log filename")
     ("log.file_max_size", bpo::value<int>(&args->log.file_max_size)->default_value(-1), "Maximum file size (in kilobytes). When passed, multiple files are created. Default -1 (single file)")
 
+    /* PCAP */
+    ("pcap.enable",    bpo::value<bool>(&args->stack.mac_pcap.enable)->default_value(false),         "Enable MAC packet captures for wireshark")
+    ("pcap.filename",  bpo::value<string>(&args->stack.mac_pcap.filename)->default_value("enb_mac.pcap"), "MAC layer capture filename")
+    ("pcap.s1ap_enable",   bpo::value<bool>(&args->stack.s1ap_pcap.enable)->default_value(false),         "Enable S1AP packet captures for wireshark")
+    ("pcap.s1ap_filename", bpo::value<string>(&args->stack.s1ap_pcap.filename)->default_value("enb_s1ap.pcap"), "S1AP layer capture filename")
+   
     /* MCS section */
     ("scheduler.pdsch_mcs", bpo::value<int>(&args->stack.mac.sched.pdsch_mcs)->default_value(-1), "Optional fixed PDSCH MCS (ignores reported CQIs if specified)")
     ("scheduler.pdsch_max_mcs", bpo::value<int>(&args->stack.mac.sched.pdsch_max_mcs)->default_value(-1), "Optional PDSCH MCS limit")
     ("scheduler.pusch_mcs", bpo::value<int>(&args->stack.mac.sched.pusch_mcs)->default_value(-1), "Optional fixed PUSCH MCS (ignores reported CQIs if specified)")
     ("scheduler.pusch_max_mcs", bpo::value<int>(&args->stack.mac.sched.pusch_max_mcs)->default_value(-1), "Optional PUSCH MCS limit")
     ("scheduler.max_aggr_level", bpo::value<int>(&args->stack.mac.sched.max_aggr_level)->default_value(-1), "Optional maximum aggregation level index (l=log2(L)) ")
-    ("scheduler.nof_ctrl_symbols", bpo::value<int>(&args->stack.mac.sched.nof_ctrl_symbols)->default_value(3), "Number of control symbols")
-
+    ("scheduler.max_nof_ctrl_symbols", bpo::value<uint32_t>(&args->stack.mac.sched.max_nof_ctrl_symbols)->default_value(3), "Number of control symbols")
+    ("scheduler.min_nof_ctrl_symbols", bpo::value<uint32_t>(&args->stack.mac.sched.min_nof_ctrl_symbols)->default_value(1), "Minimum number of control symbols")
 
     /* Downlink Channel emulator section */
     ("channel.dl.enable", bpo::value<bool>(&args->phy.dl_channel_args.enable)->default_value(false), "Enable/Disable internal Downlink channel emulator")
+    ("channel.dl.awgn.enable", bpo::value<bool>(&args->phy.dl_channel_args.awgn_enable)->default_value(false), "Enable/Disable AWGN simulator")
+    ("channel.dl.awgn.n0", bpo::value<float>(&args->phy.dl_channel_args.awgn_n0_dBfs)->default_value(-30.0f), "Noise level in decibels full scale (dBfs)")
     ("channel.dl.fading.enable", bpo::value<bool>(&args->phy.dl_channel_args.fading_enable)->default_value(false), "Enable/Disable Fading model")
     ("channel.dl.fading.model", bpo::value<std::string>(&args->phy.dl_channel_args.fading_model)->default_value("none"), "Fading model + maximum doppler (E.g. none, epa5, eva70, etu300, etc)")
     ("channel.dl.delay.enable", bpo::value<bool>(&args->phy.dl_channel_args.delay_enable)->default_value(false), "Enable/Disable Delay simulator")
@@ -154,6 +154,8 @@ void parse_args(all_args_t* args, int argc, char* argv[])
 
     /* Uplink Channel emulator section */
     ("channel.ul.enable", bpo::value<bool>(&args->phy.ul_channel_args.enable)->default_value(false), "Enable/Disable internal Uplink channel emulator")
+    ("channel.ul.awgn.enable", bpo::value<bool>(&args->phy.ul_channel_args.awgn_enable)->default_value(false), "Enable/Disable AWGN simulator")
+    ("channel.ul.awgn.n0", bpo::value<float>(&args->phy.ul_channel_args.awgn_n0_dBfs)->default_value(-30.0f), "Noise level in decibels full scale (dBfs)")
     ("channel.ul.fading.enable", bpo::value<bool>(&args->phy.ul_channel_args.fading_enable)->default_value(false), "Enable/Disable Fading model")
     ("channel.ul.fading.model", bpo::value<std::string>(&args->phy.ul_channel_args.fading_model)->default_value("none"), "Fading model + maximum doppler (E.g. none, epa5, eva70, etu300, etc)")
     ("channel.ul.delay.enable", bpo::value<bool>(&args->phy.ul_channel_args.delay_enable)->default_value(false), "Enable/Disable Delay simulator")
@@ -173,9 +175,9 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     ("expert.metrics_period_secs", bpo::value<float>(&args->general.metrics_period_secs)->default_value(1.0), "Periodicity for metrics in seconds")
     ("expert.metrics_csv_enable",  bpo::value<bool>(&args->general.metrics_csv_enable)->default_value(false), "Write metrics to CSV file")
     ("expert.metrics_csv_filename", bpo::value<string>(&args->general.metrics_csv_filename)->default_value("/tmp/enb_metrics.csv"), "Metrics CSV filename")
-    ("expert.pregenerate_signals", bpo::value<bool>(&args->phy.pregenerate_signals)->default_value(false), "Pregenerate uplink signals after attach. Improves CPU performance.")
     ("expert.pusch_max_its", bpo::value<int>(&args->phy.pusch_max_its)->default_value(8), "Maximum number of turbo decoder iterations")
     ("expert.pusch_8bit_decoder", bpo::value<bool>(&args->phy.pusch_8bit_decoder)->default_value(false), "Use 8-bit for LLR representation and turbo decoder trellis computation (Experimental)")
+    ("expert.pusch_meas_evm", bpo::value<bool>(&args->phy.pusch_meas_evm)->default_value(false), "Enable/Disable PUSCH EVM measure")
     ("expert.tx_amplitude", bpo::value<float>(&args->phy.tx_amplitude)->default_value(0.6), "Transmit amplitude factor")
     ("expert.nof_phy_threads", bpo::value<int>(&args->phy.nof_phy_threads)->default_value(3), "Number of PHY threads")
     ("expert.link_failure_nof_err", bpo::value<int>(&args->stack.mac.link_failure_nof_err)->default_value(100), "Number of PUSCH failures after which a radio-link failure is triggered")
@@ -186,7 +188,6 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     ("expert.print_buffer_state", bpo::value<bool>(&args->general.print_buffer_state)->default_value(false), "Prints on the console the buffer state every 10 seconds")
     ("expert.eea_pref_list", bpo::value<string>(&args->general.eea_pref_list)->default_value("EEA0, EEA2, EEA1"), "Ordered preference list for the selection of encryption algorithm (EEA) (default: EEA0, EEA2, EEA1).")
     ("expert.eia_pref_list", bpo::value<string>(&args->general.eia_pref_list)->default_value("EIA2, EIA1, EIA0"), "Ordered preference list for the selection of integrity algorithm (EIA) (default: EIA2, EIA1, EIA0).")
-    ("expert.nof_carriers",  bpo::value<uint32_t>(&args->phy.nof_carriers)->default_value(1),  "Number of carriers")
 
     // eMBMS section
     ("embms.enable", bpo::value<bool>(&args->stack.embms.enable)->default_value(false), "Enables MBMS in the eNB")
@@ -255,25 +256,6 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     exit(1);
   }
 
-  // Convert hex strings
-  {
-    std::stringstream sstr;
-    sstr << std::hex << vm["enb.enb_id"].as<std::string>();
-    sstr >> args->stack.s1ap.enb_id;
-  }
-  {
-    std::stringstream sstr;
-    sstr << std::hex << vm["enb.cell_id"].as<std::string>();
-    uint16_t tmp; // Need intermediate uint16_t as uint8_t is treated as char
-    sstr >> tmp;
-    args->stack.s1ap.cell_id = tmp;
-  }
-  {
-    std::stringstream sstr;
-    sstr << std::hex << vm["enb.tac"].as<std::string>();
-    sstr >> args->stack.s1ap.tac;
-  }
-
   // Convert MCC/MNC strings
   if (!srslte::string_to_mcc(mcc, &args->stack.s1ap.mcc)) {
     cout << "Error parsing enb.mcc:" << mcc << " - must be a 3-digit string." << endl;
@@ -282,32 +264,27 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     cout << "Error parsing enb.mnc:" << mnc << " - must be a 2 or 3-digit string." << endl;
   }
 
-  // Convert UL/DL EARFCN to frequency if needed
-  if (args->rf.dl_freq < 0) {
-    args->rf.dl_freq = 1e6 * srslte_band_fd(args->enb.dl_earfcn);
-    if (args->rf.dl_freq < 0) {
-      fprintf(stderr, "Error getting DL frequency for EARFCN=%d\n", args->enb.dl_earfcn);
-      exit(1);
-    }
-  }
-  if (args->rf.ul_freq < 0) {
-    if (args->enb.ul_earfcn == 0) {
-      args->enb.ul_earfcn = srslte_band_ul_earfcn(args->enb.dl_earfcn);
-    }
-    args->rf.ul_freq = 1e6 * srslte_band_fu(args->enb.ul_earfcn);
-    if (args->rf.ul_freq < 0) {
-      fprintf(stderr, "Error getting UL frequency for EARFCN=%d\n", args->enb.dl_earfcn);
-      exit(1);
-    }
-  }
   if (args->stack.embms.enable) {
-    if (args->stack.mac.sched.nof_ctrl_symbols == 3) {
+    if (args->stack.mac.sched.max_nof_ctrl_symbols == 3) {
       fprintf(stderr,
               "nof_ctrl_symbols = %d, While using MBMS, please set number of control symbols to either 1 or 2, "
               "depending on the length of the non-mbsfn region\n",
-              args->stack.mac.sched.nof_ctrl_symbols);
+              args->stack.mac.sched.max_nof_ctrl_symbols);
       exit(1);
     }
+  }
+
+  // Covert eNB Id
+  std::size_t pos = {};
+  try {
+    args->enb.enb_id = std::stoi(enb_id, &pos, 0);
+  } catch (...) {
+    cout << "Error parsing enb.enb_id: " << enb_id << "." << endl;
+    exit(1);
+  }
+  if (pos != enb_id.size()) {
+    cout << "Error parsing enb.enb_id: " << enb_id << "." << endl;
+    exit(1);
   }
 
   // Apply all_level to any unset layers
@@ -383,19 +360,7 @@ void parse_args(all_args_t* args, int argc, char* argv[])
   }
 }
 
-static int  sigcnt     = 0;
-static bool running    = true;
 static bool do_metrics = false;
-
-void sig_int_handler(int signo)
-{
-  sigcnt++;
-  running = false;
-  cout << "Stopping srsENB... Press Ctrl+C " << (10 - sigcnt) << " more times to force stop" << endl;
-  if (sigcnt >= 10) {
-    exit(-1);
-  }
-}
 
 void* input_loop(void* m)
 {
@@ -416,7 +381,7 @@ void* input_loop(void* m)
         }
         metrics->toggle_print(do_metrics);
       } else if ('q' == key) {
-        sig_int_handler(0);
+        raise(SIGTERM);
       }
     }
   }
@@ -425,37 +390,50 @@ void* input_loop(void* m)
 
 int main(int argc, char* argv[])
 {
-  signal(SIGINT, sig_int_handler);
-  signal(SIGTERM, sig_int_handler);
+  srslte_register_signal_handler();
   all_args_t                         args = {};
   srslte::metrics_hub<enb_metrics_t> metricshub;
   metrics_stdout                     metrics_screen;
 
-  enb* enb = enb::get_instance();
-
-  srslte_debug_handle_crash(argc, argv);
-
   cout << "---  Software Radio Systems LTE eNodeB  ---" << endl << endl;
 
+  srslte_debug_handle_crash(argc, argv);
   parse_args(&args, argc, argv);
-  if (enb->init(args)) {
+
+  srslte::logger_stdout logger_stdout;
+
+  // Set logger
+  srslte::logger* logger = nullptr;
+  if (args.log.filename == "stdout") {
+    logger = &logger_stdout;
+  } else {
+    logger_file.init(args.log.filename, args.log.file_max_size);
+    logger = &logger_file;
+  }
+  srslte::logmap::set_default_logger(logger);
+  srslte::logmap::get("COMMON")->set_level(srslte::LOG_LEVEL_INFO);
+
+  // Create eNB
+  unique_ptr<srsenb::enb> enb{new srsenb::enb};
+  if (enb->init(args, logger) != SRSLTE_SUCCESS) {
     enb->stop();
     return SRSLTE_ERROR;
   }
 
-  metricshub.init(enb, args.general.metrics_period_secs);
+  // Set metrics
+  metricshub.init(enb.get(), args.general.metrics_period_secs);
   metricshub.add_listener(&metrics_screen);
-  metrics_screen.set_handle(enb);
+  metrics_screen.set_handle(enb.get());
 
   srsenb::metrics_csv metrics_file(args.general.metrics_csv_filename);
   if (args.general.metrics_csv_enable) {
     metricshub.add_listener(&metrics_file);
-    metrics_file.set_handle(enb);
+    metrics_file.set_handle(enb.get());
   }
 
   // create input thread
   pthread_t input;
-  pthread_create(&input, NULL, &input_loop, &metrics_screen);
+  pthread_create(&input, nullptr, &input_loop, &metrics_screen);
 
   bool signals_pregenerated = false;
   if (running) {
@@ -475,9 +453,9 @@ int main(int argc, char* argv[])
     usleep(10000);
   }
   pthread_cancel(input);
+  pthread_join(input, NULL);
   metricshub.stop();
   enb->stop();
-  enb->cleanup();
   cout << "---  exiting  ---" << endl;
 
   return SRSLTE_SUCCESS;

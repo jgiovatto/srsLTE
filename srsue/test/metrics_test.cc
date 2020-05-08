@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -53,6 +53,8 @@ public:
 
     m->stack.mac[1].rx_pkts   = 100;
     m->stack.mac[1].rx_errors = 100;
+
+    m->stack.mac->nof_tti = 1;
 
     return true;
   }

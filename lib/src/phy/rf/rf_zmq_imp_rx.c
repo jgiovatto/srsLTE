@@ -1,12 +1,7 @@
-/**
+/*
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
- * \section COPYRIGHT
- *
- * Copyright 2013-2019 Software Radio Systems Limited
- *
- * \section LICENSE
- *
- * This file is part of the srsLTE library.
+ * This file is part of srsLTE.
  *
  * srsLTE is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -118,13 +113,31 @@ int rf_zmq_rx_open(rf_zmq_rx_t* q, rf_zmq_opts_t opts, void* zmq_ctx, char* sock
       fprintf(stderr, "[zmq] Error: creating transmitter socket\n");
       goto clean_exit;
     }
-    q->socket_type   = opts.socket_type;
+    q->socket_type        = opts.socket_type;
     q->sample_format = opts.sample_format;
     q->frequency_mhz = opts.frequency_mhz;
+    q->fail_on_disconnect = opts.fail_on_disconnect;
 
     if (opts.socket_type == ZMQ_SUB) {
       zmq_setsockopt(q->sock, ZMQ_SUBSCRIBE, "", 0);
     }
+
+#if ZMQ_MONITOR
+    // Monitor all events (monitoring only works over inproc://)
+    ret = zmq_socket_monitor(q->sock, "inproc://monitor-client", ZMQ_EVENT_ALL);
+    if (ret == -1) {
+      fprintf(stderr, "Error: creating socket monitor: %s\n", zmq_strerror(zmq_errno()));
+      goto clean_exit;
+    }
+
+    // create socket socket for monitoring and connect monitor
+    q->socket_monitor = zmq_socket(zmq_ctx, ZMQ_PAIR);
+    ret               = zmq_connect(q->socket_monitor, "inproc://monitor-client");
+    if (ret) {
+      fprintf(stderr, "Error: connecting monitor socket: %s\n", zmq_strerror(zmq_errno()));
+      goto clean_exit;
+    }
+#endif // ZMQ_MONITOR
 
     rf_zmq_info(q->id, "Connecting receiver: %s\n", sock_args);
 
@@ -242,4 +255,11 @@ void rf_zmq_rx_close(rf_zmq_rx_t* q)
     zmq_close(q->sock);
     q->sock = NULL;
   }
+
+#if ZMQ_MONITOR
+  if (q->socket_monitor) {
+    zmq_close(q->socket_monitor);
+    q->socket_monitor = NULL;
+  }
+#endif // ZMQ_MONITOR
 }

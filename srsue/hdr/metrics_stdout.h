@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -42,7 +42,7 @@ public:
   metrics_stdout();
 
   void toggle_print(bool b);
-  void set_metrics(ue_metrics_t& m, const uint32_t period_usec);
+  void set_metrics(const ue_metrics_t& m, const uint32_t period_usec);
   void set_ue_handle(ue_metrics_interface* ue_);
   void stop(){};
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -41,9 +41,9 @@ void srslte_bit_interleaver_init(srslte_bit_interleaver_t* q, uint16_t* interlea
 
   bzero(q, sizeof(srslte_bit_interleaver_t));
 
-  q->interleaver = srslte_vec_malloc(sizeof(uint16_t) * nof_bits);
-  q->byte_idx    = srslte_vec_malloc(sizeof(uint16_t) * nof_bits);
-  q->bit_mask    = srslte_vec_malloc(sizeof(uint8_t) * nof_bits);
+  q->interleaver = srslte_vec_u16_malloc(nof_bits);
+  q->byte_idx    = srslte_vec_u16_malloc(nof_bits);
+  q->bit_mask    = srslte_vec_u8_malloc(nof_bits);
   q->nof_bits    = nof_bits;
 
   for (int i = 0; i < nof_bits; i++) {
@@ -740,9 +740,25 @@ void srslte_bit_pack_vector(uint8_t* unpacked, uint8_t* packed, int nof_bits)
 {
   uint32_t i, nbytes;
   nbytes = nof_bits / 8;
+
+#ifdef LV_HAVE_SSE
+  for (i = 0; i < nbytes; i++) {
+    // Get 8 Bit
+    __m64 mask = _mm_cmpgt_pi8(*((__m64*)unpacked), _mm_set1_pi8(0));
+    unpacked += 8;
+
+    // Reverse
+    mask = _mm_shuffle_pi8(mask, _mm_set_pi8(0, 1, 2, 3, 4, 5, 6, 7));
+
+    // Get mask and write
+    packed[i] = (uint8_t)_mm_movemask_pi8(mask);
+  }
+#else  /* LV_HAVE_SSE */
   for (i = 0; i < nbytes; i++) {
     packed[i] = srslte_bit_pack(&unpacked, 8);
   }
+#endif /* LV_HAVE_SSE */
+
   if (nof_bits % 8) {
     packed[i] = srslte_bit_pack(&unpacked, nof_bits % 8);
     packed[i] <<= 8 - (nof_bits % 8);
@@ -784,7 +800,7 @@ void srslte_bit_fprint(FILE* stream, uint8_t* bits, int nof_bits)
   fprintf(stream, "%d]\n", bits[i]);
 }
 
-uint32_t srslte_bit_diff(uint8_t* x, uint8_t* y, int nbits)
+uint32_t srslte_bit_diff(const uint8_t* x, const uint8_t* y, int nbits)
 {
   uint32_t errors = 0;
   for (int i = 0; i < nbits; i++) {

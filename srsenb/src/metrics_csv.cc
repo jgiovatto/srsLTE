@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -59,7 +59,7 @@ void metrics_csv::stop()
   }
 }
 
-void metrics_csv::set_metrics(enb_metrics_t& metrics, const uint32_t period_usec)
+void metrics_csv::set_metrics(const enb_metrics_t& metrics, const uint32_t period_usec)
 {
   if (file.is_open() && enb != NULL) {
     if (n_reports == 0) {
@@ -75,20 +75,20 @@ void metrics_csv::set_metrics(enb_metrics_t& metrics, const uint32_t period_usec
     // Sum up rates for all UEs
     float dl_rate_sum = 0.0, ul_rate_sum = 0.0;
     for (int i = 0; i < metrics.stack.rrc.n_ues; i++) {
-      dl_rate_sum += metrics.stack.mac[i].tx_brate;
-      ul_rate_sum += metrics.stack.mac[i].rx_brate;
+      dl_rate_sum += metrics.stack.mac[i].tx_brate / (metrics.stack.mac[i].nof_tti * 1e-3);
+      ul_rate_sum += metrics.stack.mac[i].rx_brate / (metrics.stack.mac[i].nof_tti * 1e-3);
     }
 
     // DL rate
     if (dl_rate_sum > 0) {
-      file << float_to_string(SRSLTE_MAX(0.1, (float)dl_rate_sum / period_usec * 1e6), 2);
+      file << float_to_string(SRSLTE_MAX(0.1, (float)dl_rate_sum), 2);
     } else {
       file << float_to_string(0, 2);
     }
 
     // UL rate
     if (ul_rate_sum > 0) {
-      file << float_to_string(SRSLTE_MAX(0.1, (float)ul_rate_sum / period_usec * 1e6), 2, false);
+      file << float_to_string(SRSLTE_MAX(0.1, (float)ul_rate_sum), 2, false);
     } else {
       file << float_to_string(0, 2, false);
     }

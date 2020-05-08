@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -46,11 +46,15 @@ void threads_print_self();
 
 #include <string>
 
+namespace srslte {
+
 class thread
 {
 public:
   thread(const std::string& name_) : _thread(0), name(name_) {}
+
   thread(const thread&) = delete;
+
   thread(thread&& other) noexcept
   {
     _thread       = other._thread;
@@ -58,21 +62,32 @@ public:
     other._thread = 0;
     other.name    = "";
   }
+
+  virtual ~thread() = default;
+
   thread& operator=(const thread&) = delete;
+
   thread& operator=(thread&&) noexcept = delete;
-  bool    start(int prio = -1) { return threads_new_rt_prio(&_thread, thread_function_entry, this, prio); }
-  bool    start_cpu(int prio, int cpu) { return threads_new_rt_cpu(&_thread, thread_function_entry, this, cpu, prio); }
-  bool    start_cpu_mask(int prio, int mask)
+
+  bool start(int prio = -1) { return threads_new_rt_prio(&_thread, thread_function_entry, this, prio); }
+
+  bool start_cpu(int prio, int cpu) { return threads_new_rt_cpu(&_thread, thread_function_entry, this, cpu, prio); }
+
+  bool start_cpu_mask(int prio, int mask)
   {
     return threads_new_rt_mask(&_thread, thread_function_entry, this, mask, prio);
   }
+
   void print_priority() { threads_print_self(); }
+
   void set_name(const std::string& name_)
   {
     name = name_;
     pthread_setname_np(pthread_self(), name.c_str());
   }
+
   void wait_thread_finish() { pthread_join(_thread, NULL); }
+
   void thread_cancel() { pthread_cancel(_thread); }
 
   static std::string get_name()
@@ -96,6 +111,7 @@ private:
     ((thread*)_this)->run_thread();
     return NULL;
   }
+
   pthread_t   _thread;
   std::string name;
 };
@@ -104,12 +120,14 @@ class periodic_thread : public thread
 {
 public:
   periodic_thread(const std::string name_) : thread(name_) {}
+
   void start_periodic(int period_us_, int priority = -1)
   {
     run_enable = true;
     period_us  = period_us_;
     start(priority);
   }
+
   void stop_thread()
   {
     run_enable = false;
@@ -124,6 +142,7 @@ private:
   int  timer_fd;
   int  period_us;
   bool run_enable;
+
   void run_thread()
   {
     if (make_periodic()) {
@@ -136,6 +155,7 @@ private:
       }
     }
   }
+
   int make_periodic()
   {
     int               ret = -1;
@@ -164,6 +184,7 @@ private:
     }
     return ret;
   }
+
   void wait_period()
   {
     unsigned long long missed;
@@ -183,6 +204,8 @@ private:
     }
   }
 };
+
+} // namespace srslte
 
 #endif // __cplusplus
 

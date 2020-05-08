@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -82,6 +82,7 @@ typedef struct SRSLTE_API {
   uint16_t              rnti;
   srslte_dci_format_t   format;
   srslte_dci_location_t location;
+  uint32_t              ue_cc_idx;
 
   // Resource Allocation
   srslte_ra_type_t alloc_type;
@@ -132,6 +133,7 @@ typedef struct SRSLTE_API {
   uint16_t              rnti;
   srslte_dci_format_t   format;
   srslte_dci_location_t location;
+  uint32_t              ue_cc_idx;
 
   srslte_ra_type2_t type2_alloc;
   /* 36.213 Table 8.4-2: SRSLTE_RA_PUSCH_HOP_HALF is 0 for < 10 Mhz and 10 for > 10 Mhz.
@@ -169,10 +171,10 @@ typedef struct SRSLTE_API {
   bool             ra_type_present;
 
   // For debugging purposes
-#ifdef SRSLTE_DCI_HEXDEBUG
+#if SRSLTE_DCI_HEXDEBUG
   uint32_t nof_bits;
   char     hex_str[SRSLTE_DCI_MAX_BITS];
-#endif
+#endif /* SRSLTE_DCI_HEXDEBUG */
 
 } srslte_dci_ul_t;
 
@@ -215,14 +217,14 @@ SRSLTE_API int srslte_dci_msg_unpack_pdsch(srslte_cell_t*      cell,
                                            srslte_dci_msg_t*   msg,
                                            srslte_dci_dl_t*    dci);
 
-SRSLTE_API uint32_t srslte_dci_format_sizeof(srslte_cell_t*      cell,
-                                             srslte_dl_sf_cfg_t* sf,
-                                             srslte_dci_cfg_t*   cfg,
-                                             srslte_dci_format_t format);
+SRSLTE_API uint32_t srslte_dci_format_sizeof(const srslte_cell_t* cell,
+                                             srslte_dl_sf_cfg_t*  sf,
+                                             srslte_dci_cfg_t*    cfg,
+                                             srslte_dci_format_t  format);
 
 SRSLTE_API void srslte_dci_dl_fprint(FILE* f, srslte_dci_dl_t* dci, uint32_t nof_prb);
 
-SRSLTE_API uint32_t srslte_dci_dl_info(srslte_dci_dl_t* dci_dl, char* str, uint32_t str_len);
+SRSLTE_API uint32_t srslte_dci_dl_info(const srslte_dci_dl_t* dci_dl, char* str, uint32_t str_len);
 
 SRSLTE_API uint32_t srslte_dci_ul_info(srslte_dci_ul_t* dci_ul, char* info_str, uint32_t len);
 
@@ -235,5 +237,7 @@ SRSLTE_API char* srslte_dci_format_string_short(srslte_dci_format_t format);
 SRSLTE_API int srslte_dci_location_set(srslte_dci_location_t* c, uint32_t L, uint32_t nCCE);
 
 SRSLTE_API bool srslte_dci_location_isvalid(srslte_dci_location_t* c);
+
+SRSLTE_API uint32_t srslte_dci_format_max_tb(srslte_dci_format_t format);
 
 #endif // DCI_

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -32,7 +32,7 @@ typedef struct {
   uint32_t srate_max_hz;
   uint32_t srate_hz;
   float    delay_us;
-  float    delay_nsamples;
+  uint32_t delay_nsamples;
 
   srslte_ringbuffer_t rb;
   cf_t*               zero_buffer;

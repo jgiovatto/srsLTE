@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -21,12 +21,9 @@
 
 #include "srsenb/hdr/stack/mac/scheduler_metric.h"
 #include "srsenb/hdr/stack/mac/scheduler_harq.h"
+#include "srslte/common/log_helper.h"
+#include "srslte/common/logmap.h"
 #include <string.h>
-
-#define Error(fmt, ...) log_h->error(fmt, ##__VA_ARGS__)
-#define Warning(fmt, ...) log_h->warning(fmt, ##__VA_ARGS__)
-#define Info(fmt, ...) log_h->info(fmt, ##__VA_ARGS__)
-#define Debug(fmt, ...) log_h->debug(fmt, ##__VA_ARGS__)
 
 namespace srsenb {
 
@@ -36,12 +33,13 @@ namespace srsenb {
  *
  *****************************************************************/
 
-void dl_metric_rr::set_params(const sched_params_t& sched_params_)
+void dl_metric_rr::set_params(const sched_cell_params_t& cell_params_)
 {
-  log_h = sched_params_.log_h;
+  cc_cfg = &cell_params_;
+  log_h  = srslte::logmap::get("MAC ");
 }
 
-void dl_metric_rr::sched_users(std::map<uint16_t, sched_ue>& ue_db, dl_tti_sched_t* tti_sched, uint32_t enb_cc_idx)
+void dl_metric_rr::sched_users(std::map<uint16_t, sched_ue>& ue_db, dl_sf_sched_itf* tti_sched)
 {
   tti_alloc = tti_sched;
 
@@ -49,7 +47,7 @@ void dl_metric_rr::sched_users(std::map<uint16_t, sched_ue>& ue_db, dl_tti_sched
     return;
   }
 
-  // give priority in a time-domain RR basis
+  // give priority in a time-domain RR basis.
   uint32_t priority_idx = tti_alloc->get_tti_tx_dl() % (uint32_t)ue_db.size();
   auto     iter         = ue_db.begin();
   std::advance(iter, priority_idx);
@@ -58,48 +56,51 @@ void dl_metric_rr::sched_users(std::map<uint16_t, sched_ue>& ue_db, dl_tti_sched
       iter = ue_db.begin(); // wrap around
     }
     sched_ue* user = &iter->second;
-    allocate_user(user, enb_cc_idx);
+    allocate_user(user);
   }
 }
 
-bool dl_metric_rr::find_allocation(uint32_t nof_rbg, rbgmask_t* rbgmask)
+bool dl_metric_rr::find_allocation(uint32_t min_nof_rbg, uint32_t max_nof_rbg, rbgmask_t* rbgmask)
 {
-  *rbgmask = ~(tti_alloc->get_dl_mask());
+  if (tti_alloc->get_dl_mask().all()) {
+    return false;
+  }
+  // 1's for free rbgs
+  rbgmask_t localmask = ~(tti_alloc->get_dl_mask());
 
-  uint32_t i = 0;
-  for (; i < rbgmask->size() and nof_rbg > 0; ++i) {
-    if (rbgmask->test(i)) {
-      nof_rbg--;
+  uint32_t i = 0, nof_alloc = 0;
+  for (; i < localmask.size() and nof_alloc < max_nof_rbg; ++i) {
+    if (localmask.test(i)) {
+      nof_alloc++;
     }
   }
-  rbgmask->fill(i, rbgmask->size(), false);
-
-  return nof_rbg == 0;
+  if (nof_alloc < min_nof_rbg) {
+    return false;
+  }
+  localmask.fill(i, localmask.size(), false);
+  *rbgmask = localmask;
+  return true;
 }
 
-dl_harq_proc* dl_metric_rr::allocate_user(sched_ue* user, uint32_t enb_cc_idx)
+dl_harq_proc* dl_metric_rr::allocate_user(sched_ue* user)
 {
+  // Do not allocate a user multiple times in the same tti
   if (tti_alloc->is_dl_alloc(user)) {
     return nullptr;
   }
-  auto p = user->get_cell_index(enb_cc_idx);
+  // Do not allocate a user to an inactive carrier
+  auto p = user->get_cell_index(cc_cfg->enb_cc_idx);
   if (not p.first) {
     return nullptr;
   }
   uint32_t cell_idx = p.second;
 
-  // TODO: First do reTxs for all users. Only then do the rest.
   alloc_outcome_t code;
-  uint32_t        tti_dl    = tti_alloc->get_tti_tx_dl();
-  dl_harq_proc*   h         = user->get_pending_dl_harq(tti_dl, cell_idx);
-  uint32_t        req_bytes = user->get_pending_dl_new_data_total();
+  uint32_t        tti_dl = tti_alloc->get_tti_tx_dl();
+  dl_harq_proc*   h      = user->get_pending_dl_harq(tti_dl, cell_idx);
 
   // Schedule retx if we have space
-#if ASYNC_DL_SCHED
   if (h != nullptr) {
-#else
-  if (h && !h->is_empty()) {
-#endif
     // Try to reuse the same mask
     rbgmask_t retx_mask = h->get_rbgmask();
     code                = tti_alloc->alloc_dl_user(user, retx_mask, h->get_id());
@@ -108,39 +109,38 @@ dl_harq_proc* dl_metric_rr::allocate_user(sched_ue* user, uint32_t enb_cc_idx)
     }
     if (code == alloc_outcome_t::DCI_COLLISION) {
       // No DCIs available for this user. Move to next
+      log_h->warning("SCHED: Couldn't find space in PDCCH for DL retx for rnti=0x%x\n", user->get_rnti());
       return nullptr;
     }
 
     // If previous mask does not fit, find another with exact same number of rbgs
     size_t nof_rbg = retx_mask.count();
-    if (find_allocation(nof_rbg, &retx_mask)) {
+    if (find_allocation(nof_rbg, nof_rbg, &retx_mask)) {
       code = tti_alloc->alloc_dl_user(user, retx_mask, h->get_id());
       if (code == alloc_outcome_t::SUCCESS) {
         return h;
       }
       if (code == alloc_outcome_t::DCI_COLLISION) {
+        log_h->warning("SCHED: Couldn't find space in PDCCH for DL retx for rnti=0x%x\n", user->get_rnti());
         return nullptr;
       }
     }
   }
 
   // If could not schedule the reTx, or there wasn't any pending retx, find an empty PID
-#if ASYNC_DL_SCHED
-  h = user->get_empty_dl_harq(cell_idx);
+  h = user->get_empty_dl_harq(tti_dl, cell_idx);
   if (h != nullptr) {
-#else
-  if (h && h->is_empty()) {
-#endif
     // Allocate resources based on pending data
-    if (req_bytes > 0) {
-      uint32_t pending_rbg =
-          user->prb_to_rbg(user->get_required_prb_dl(cell_idx, req_bytes, tti_alloc->get_nof_ctrl_symbols()));
+    rbg_range_t req_rbgs = user->get_required_dl_rbgs(cell_idx);
+    if (req_rbgs.rbg_min > 0) {
       rbgmask_t newtx_mask(tti_alloc->get_dl_mask().size());
-      find_allocation(pending_rbg, &newtx_mask);
-      if (newtx_mask.any()) { // some empty spaces were found
+      if (find_allocation(req_rbgs.rbg_min, req_rbgs.rbg_max, &newtx_mask)) {
+        // some empty spaces were found
         code = tti_alloc->alloc_dl_user(user, newtx_mask, h->get_id());
         if (code == alloc_outcome_t::SUCCESS) {
           return h;
+        } else if (code == alloc_outcome_t::DCI_COLLISION) {
+          log_h->warning("SCHED: Couldn't find space in PDCCH for DL tx for rnti=0x%x\n", user->get_rnti());
         }
       }
     }
@@ -155,12 +155,13 @@ dl_harq_proc* dl_metric_rr::allocate_user(sched_ue* user, uint32_t enb_cc_idx)
  *
  *****************************************************************/
 
-void ul_metric_rr::set_params(const sched_params_t& sched_params_)
+void ul_metric_rr::set_params(const sched_cell_params_t& cell_params_)
 {
-  log_h = sched_params_.log_h;
+  cc_cfg = &cell_params_;
+  log_h  = srslte::logmap::get("MAC ");
 }
 
-void ul_metric_rr::sched_users(std::map<uint16_t, sched_ue>& ue_db, ul_tti_sched_t* tti_sched, uint32_t enb_cc_idx)
+void ul_metric_rr::sched_users(std::map<uint16_t, sched_ue>& ue_db, ul_sf_sched_itf* tti_sched)
 {
   tti_alloc   = tti_sched;
   current_tti = tti_alloc->get_tti_tx_ul();
@@ -181,7 +182,7 @@ void ul_metric_rr::sched_users(std::map<uint16_t, sched_ue>& ue_db, ul_tti_sched
       iter = ue_db.begin(); // wrap around
     }
     sched_ue* user = &iter->second;
-    allocate_user_retx_prbs(user, enb_cc_idx);
+    allocate_user_retx_prbs(user);
   }
 
   // give priority in a time-domain RR basis
@@ -192,7 +193,7 @@ void ul_metric_rr::sched_users(std::map<uint16_t, sched_ue>& ue_db, ul_tti_sched
       iter = ue_db.begin(); // wrap around
     }
     sched_ue* user = &iter->second;
-    allocate_user_newtx_prbs(user, enb_cc_idx);
+    allocate_user_newtx_prbs(user);
   }
 }
 
@@ -233,12 +234,12 @@ bool ul_metric_rr::find_allocation(uint32_t L, ul_harq_proc::ul_alloc_t* alloc)
   return alloc->L == L;
 }
 
-ul_harq_proc* ul_metric_rr::allocate_user_retx_prbs(sched_ue* user, uint32_t enb_cc_idx)
+ul_harq_proc* ul_metric_rr::allocate_user_retx_prbs(sched_ue* user)
 {
   if (tti_alloc->is_ul_alloc(user)) {
     return nullptr;
   }
-  auto p = user->get_cell_index(enb_cc_idx);
+  auto p = user->get_cell_index(cc_cfg->enb_cc_idx);
   if (not p.first) {
     // this cc is not activated for this user
     return nullptr;
@@ -275,12 +276,12 @@ ul_harq_proc* ul_metric_rr::allocate_user_retx_prbs(sched_ue* user, uint32_t enb
   return nullptr;
 }
 
-ul_harq_proc* ul_metric_rr::allocate_user_newtx_prbs(sched_ue* user, uint32_t enb_cc_idx)
+ul_harq_proc* ul_metric_rr::allocate_user_newtx_prbs(sched_ue* user)
 {
   if (tti_alloc->is_ul_alloc(user)) {
     return nullptr;
   }
-  auto p = user->get_cell_index(enb_cc_idx);
+  auto p = user->get_cell_index(cc_cfg->enb_cc_idx);
   if (not p.first) {
     // this cc is not activated for this user
     return nullptr;

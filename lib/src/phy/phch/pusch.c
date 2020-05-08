@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -42,8 +42,6 @@
 #define MAX_PUSCH_RE(cp) (2 * SRSLTE_CP_NSYMB(cp) * 12)
 
 #define ACK_SNR_TH -1.0
-
-const static srslte_mod_t modulations[4] = {SRSLTE_MOD_BPSK, SRSLTE_MOD_QPSK, SRSLTE_MOD_16QAM, SRSLTE_MOD_64QAM};
 
 /* Allocate/deallocate PUSCH RBs to the resource grid
  */
@@ -110,7 +108,6 @@ static int pusch_get(srslte_pusch_t* q, srslte_pusch_grant_t* grant, cf_t* input
 static int pusch_init(srslte_pusch_t* q, uint32_t max_prb, bool is_ue)
 {
   int ret = SRSLTE_ERROR_INVALID_INPUTS;
-  int i;
 
   if (q != NULL) {
 
@@ -120,8 +117,8 @@ static int pusch_init(srslte_pusch_t* q, uint32_t max_prb, bool is_ue)
 
     INFO("Init PUSCH: %d PRBs\n", max_prb);
 
-    for (i = 0; i < 4; i++) {
-      if (srslte_modem_table_lte(&q->mod[i], modulations[i])) {
+    for (srslte_mod_t i = 0; i < SRSLTE_MOD_NITEMS; i++) {
+      if (srslte_modem_table_lte(&q->mod[i], i)) {
         goto clean;
       }
       srslte_modem_table_bytes(&q->mod[i]);
@@ -147,28 +144,35 @@ static int pusch_init(srslte_pusch_t* q, uint32_t max_prb, bool is_ue)
     }
 
     // Allocate int16 for reception (LLRs). Buffer casted to uint8_t for transmission
-    q->q = srslte_vec_malloc(sizeof(int16_t) * q->max_re * srslte_mod_bits_x_symbol(SRSLTE_MOD_64QAM));
+    q->q = srslte_vec_i16_malloc(q->max_re * srslte_mod_bits_x_symbol(SRSLTE_MOD_64QAM));
     if (!q->q) {
       goto clean;
     }
 
     // Allocate int16 for reception (LLRs). Buffer casted to uint8_t for transmission
-    q->g = srslte_vec_malloc(sizeof(int16_t) * q->max_re * srslte_mod_bits_x_symbol(SRSLTE_MOD_64QAM));
+    q->g = srslte_vec_i16_malloc(q->max_re * srslte_mod_bits_x_symbol(SRSLTE_MOD_64QAM));
     if (!q->g) {
       goto clean;
     }
-    q->d = srslte_vec_malloc(sizeof(cf_t) * q->max_re);
+    q->d = srslte_vec_cf_malloc(q->max_re);
     if (!q->d) {
       goto clean;
     }
 
+    // Allocate eNb specific buffers
     if (!q->is_ue) {
-      q->ce = srslte_vec_malloc(sizeof(cf_t) * q->max_re);
+      q->ce = srslte_vec_cf_malloc(q->max_re);
       if (!q->ce) {
         goto clean;
       }
+
+      q->evm_buffer = srslte_evm_buffer_alloc(6);
+      if (!q->evm_buffer) {
+        ERROR("Allocating EVM buffer\n");
+        goto clean;
+      }
     }
-    q->z = srslte_vec_malloc(sizeof(cf_t) * q->max_re);
+    q->z = srslte_vec_cf_malloc(q->max_re);
     if (!q->z) {
       goto clean;
     }
@@ -211,7 +215,9 @@ void srslte_pusch_free(srslte_pusch_t* q)
   if (q->z) {
     free(q->z);
   }
-
+  if (q->evm_buffer) {
+    srslte_evm_free(q->evm_buffer);
+  }
   srslte_dft_precoding_free(&q->dft_precoding);
 
   if (q->users) {
@@ -227,7 +233,7 @@ void srslte_pusch_free(srslte_pusch_t* q)
 
   srslte_sequence_free(&q->tmp_seq);
 
-  for (i = 0; i < 4; i++) {
+  for (i = 0; i < SRSLTE_MOD_NITEMS; i++) {
     srslte_modem_table_free(&q->mod[i]);
   }
   srslte_sch_free(&q->ul_sch);
@@ -240,6 +246,11 @@ int srslte_pusch_set_cell(srslte_pusch_t* q, srslte_cell_t cell)
   int ret = SRSLTE_ERROR_INVALID_INPUTS;
 
   if (q != NULL && srslte_cell_isvalid(&cell)) {
+
+    // Resize EVM buffer, only for eNb
+    if (!q->is_ue && q->evm_buffer) {
+      srslte_evm_buffer_resize(q->evm_buffer, cell.nof_prb);
+    }
 
     q->cell   = cell;
     q->max_re = cell.nof_prb * MAX_PUSCH_RE(cell.cp);
@@ -478,6 +489,13 @@ int srslte_pusch_decode(srslte_pusch_t*        q,
       return SRSLTE_ERROR;
     }
 
+    // Measure Energy per Resource Element
+    if (cfg->meas_epre_en) {
+      out->epre_dbfs = srslte_convert_power_to_dB(srslte_vec_avg_power_cf(q->d, n));
+    } else {
+      out->epre_dbfs = NAN;
+    }
+
     /* extract channel estimates */
     n = pusch_get(q, &cfg->grant, channel->ce, q->ce, sf->shortened);
     if (n != cfg->grant.nof_re) {
@@ -496,6 +514,16 @@ int srslte_pusch_decode(srslte_pusch_t*        q,
       srslte_demod_soft_demodulate_b(cfg->grant.tb.mod, q->d, q->q, cfg->grant.nof_re);
     } else {
       srslte_demod_soft_demodulate_s(cfg->grant.tb.mod, q->d, q->q, cfg->grant.nof_re);
+    }
+
+    if (cfg->meas_evm_en && q->evm_buffer) {
+      if (q->llr_is_8bit) {
+        out->evm = srslte_evm_run_b(q->evm_buffer, &q->mod[cfg->grant.tb.mod], q->d, q->q, cfg->grant.tb.nof_bits);
+      } else {
+        out->evm = srslte_evm_run_s(q->evm_buffer, &q->mod[cfg->grant.tb.mod], q->d, q->q, cfg->grant.tb.nof_bits);
+      }
+    } else {
+      out->evm = NAN;
     }
 
     // Generate scrambling sequence if not pre-generated
@@ -563,7 +591,11 @@ uint32_t srslte_pusch_tx_info(srslte_pusch_cfg_t* cfg, srslte_uci_value_t* uci_d
   return len;
 }
 
-uint32_t srslte_pusch_rx_info(srslte_pusch_cfg_t* cfg, srslte_pusch_res_t* res, char* str, uint32_t str_len)
+uint32_t srslte_pusch_rx_info(srslte_pusch_cfg_t*    cfg,
+                              srslte_pusch_res_t*    res,
+                              srslte_chest_ul_res_t* chest_res,
+                              char*                  str,
+                              uint32_t               str_len)
 {
 
   uint32_t len = srslte_print_check(str, str_len, 0, "rnti=0x%x", cfg->rnti);
@@ -574,6 +606,23 @@ uint32_t srslte_pusch_rx_info(srslte_pusch_cfg_t* cfg, srslte_pusch_res_t* res, 
       str, str_len, len, ", crc=%s, avg_iter=%.1f", res->crc ? "OK" : "KO", res->avg_iterations_block);
 
   len += srslte_uci_data_info(&cfg->uci_cfg, &res->uci, &str[len], str_len - len);
+
+  len = srslte_print_check(str, str_len, len, ", snr=%.1f dB", chest_res->snr_db);
+
+  // Append Energy Per Resource Element
+  if (cfg->meas_epre_en) {
+    len = srslte_print_check(str, str_len, len, ", epre=%.1f dBfs", res->epre_dbfs);
+  }
+
+  // Append Time Aligment information if available
+  if (cfg->meas_ta_en) {
+    len = srslte_print_check(str, str_len, len, ", ta=%.1f us", chest_res->ta_us);
+  }
+
+  // Append EVM measurement if available
+  if (cfg->meas_evm_en) {
+    len = srslte_print_check(str, str_len, len, ", evm=%.1f %%", res->evm * 100);
+  }
 
   if (cfg->meas_time_en) {
     len = srslte_print_check(str, str_len, len, ", t=%d us", cfg->meas_time_value);

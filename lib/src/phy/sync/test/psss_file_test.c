@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -120,10 +120,10 @@ int main(int argc, char** argv)
   printf("I/Q samples per subframe=%d\n", sf_n_samples);
 
   uint32_t sf_n_re   = SRSLTE_CP_NSYMB(SRSLTE_CP_NORM) * SRSLTE_NRE * 2 * nof_prb;
-  cf_t*    sf_buffer = srslte_vec_malloc(sizeof(cf_t) * sf_n_re);
+  cf_t*    sf_buffer = srslte_vec_cf_malloc(sf_n_re);
 
-  cf_t* input_buffer      = srslte_vec_malloc(sizeof(cf_t) * sf_n_samples);
-  cf_t* input_buffer_temp = srslte_vec_malloc(sizeof(cf_t) * sf_n_samples);
+  cf_t* input_buffer      = srslte_vec_cf_malloc(sf_n_samples);
+  cf_t* input_buffer_temp = srslte_vec_cf_malloc(sf_n_samples);
 
   // init PSSS
   srslte_psss_t psss = {};

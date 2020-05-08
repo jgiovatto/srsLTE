@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -21,6 +21,9 @@
 
 #include "srslte/common/timers.h"
 #include <iostream>
+#include <random>
+#include <srslte/common/tti_sync_cv.h>
+#include <thread>
 
 #define TESTASSERT(cond)                                                                                               \
   do {                                                                                                                 \
@@ -32,7 +35,7 @@
 
 using namespace srslte;
 
-int timers2_test()
+int timers_test1()
 {
   timer_handler timers;
   uint32_t      dur = 5;
@@ -127,7 +130,7 @@ int timers2_test()
   return SRSLTE_SUCCESS;
 }
 
-int timers2_test2()
+int timers_test2()
 {
   /**
    * Description:
@@ -162,7 +165,7 @@ int timers2_test2()
   return SRSLTE_SUCCESS;
 }
 
-int timers2_test3()
+int timers_test3()
 {
   /**
    * Description:
@@ -193,12 +196,230 @@ int timers2_test3()
   return SRSLTE_SUCCESS;
 }
 
+struct timers_test4_ctxt {
+  std::vector<timer_handler::unique_timer> timers;
+  srslte::tti_sync_cv                      tti_sync1;
+  srslte::tti_sync_cv                      tti_sync2;
+  const uint32_t                           duration = 1000;
+};
+
+static void timers2_test4_thread(timers_test4_ctxt* ctx)
+{
+  std::mt19937                          mt19937(4);
+  std::uniform_real_distribution<float> real_dist(0.0f, 1.0f);
+  for (uint32_t d = 0; d < ctx->duration; d++) {
+    // make random events
+    for (uint32_t i = 1; i < ctx->timers.size(); i++) {
+      if (0.1f > real_dist(mt19937)) {
+        ctx->timers[i].run();
+      }
+      if (0.1f > real_dist(mt19937)) {
+        ctx->timers[i].stop();
+      }
+      if (0.1f > real_dist(mt19937)) {
+        ctx->timers[i].set(static_cast<uint32_t>(ctx->duration * real_dist(mt19937)));
+        ctx->timers[i].run();
+      }
+    }
+
+    // Send finished to main thread
+    ctx->tti_sync1.increase();
+
+    // Wait to main thread to check results
+    ctx->tti_sync2.wait();
+  }
+}
+
+int timers_test4()
+{
+  timers_test4_ctxt*                    ctx = new timers_test4_ctxt;
+  timer_handler                         timers;
+  uint32_t                              nof_timers = 32;
+  std::mt19937                          mt19937(4);
+  std::uniform_real_distribution<float> real_dist(0.0f, 1.0f);
+
+  // Generate all timers and start them
+  for (uint32_t i = 0; i < nof_timers; i++) {
+    ctx->timers.push_back(timers.get_unique_timer());
+    ctx->timers[i].set(ctx->duration);
+    ctx->timers[i].run();
+  }
+
+  // Create side thread
+  std::thread thread(timers2_test4_thread, ctx);
+
+  for (uint32_t d = 0; d < ctx->duration; d++) {
+    // make random events
+    for (uint32_t i = 1; i < nof_timers; i++) {
+      if (0.1f > real_dist(mt19937)) {
+        ctx->timers[i].run();
+      }
+      if (0.1f > real_dist(mt19937)) {
+        ctx->timers[i].stop();
+      }
+      if (0.1f > real_dist(mt19937)) {
+        ctx->timers[i].set(static_cast<uint32_t>(ctx->duration * real_dist(mt19937)));
+        ctx->timers[i].run();
+      }
+    }
+
+    // first times, does not have event, it shall keep running
+    TESTASSERT(ctx->timers[0].is_running());
+
+    // Increment time
+    timers.step_all();
+
+    // wait second thread to finish events
+    ctx->tti_sync1.wait();
+
+    // assert no timer got wrong values
+    for (uint32_t i = 0; i < nof_timers; i++) {
+      if (ctx->timers[i].is_running()) {
+        TESTASSERT(ctx->timers[i].time_elapsed() <= ctx->timers[i].duration());
+      }
+    }
+
+    // Start new TTI
+    ctx->tti_sync2.increase();
+  }
+
+  // Finish asynchronous thread
+  thread.join();
+
+  // First timer should have expired
+  TESTASSERT(ctx->timers[0].is_expired());
+  TESTASSERT(not ctx->timers[0].is_running());
+
+  // Run for the maximum period
+  for (uint32_t d = 0; d < ctx->duration; d++) {
+    timers.step_all();
+  }
+
+  // No timer should be running
+  for (uint32_t i = 0; i < nof_timers; i++) {
+    TESTASSERT(not ctx->timers[i].is_running());
+  }
+
+  delete ctx;
+
+  return SRSLTE_SUCCESS;
+}
+
+/**
+ * Description: Delaying a callback using the timer_handler
+ */
+int timers_test5()
+{
+  timer_handler timers;
+  TESTASSERT(timers.nof_timers() == 0);
+  TESTASSERT(timers.nof_running_timers() == 0);
+
+  std::vector<int> vals;
+
+  // TTI 0: Add a unique_timer of duration=5
+  timer_handler::unique_timer t = timers.get_unique_timer();
+  TESTASSERT(timers.nof_timers() == 1);
+  t.set(5, [&vals](uint32_t tid) { vals.push_back(1); });
+  t.run();
+  TESTASSERT(timers.nof_running_timers() == 1);
+  timers.step_all();
+
+  // TTI 1: Add two delayed callbacks, with duration=2 and 6
+  {
+    // ensure captures by value are ok
+    std::string string = "test string";
+    timers.defer_callback(2, [&vals, string]() {
+      vals.push_back(2);
+      if (string != "test string") {
+        ERROR("string was not captured correctly\n");
+        exit(-1);
+      }
+    });
+  }
+  timers.defer_callback(6, [&vals]() { vals.push_back(3); });
+  TESTASSERT(timers.nof_timers() == 3);
+  TESTASSERT(timers.nof_running_timers() == 3);
+  timers.step_all();
+  timers.step_all();
+
+  // TTI 3: First callback should have been triggered by now
+  TESTASSERT(timers.nof_running_timers() == 2);
+  TESTASSERT(timers.nof_timers() == 2);
+  TESTASSERT(vals.size() == 1);
+  TESTASSERT(vals[0] == 2);
+  timers.step_all();
+  timers.step_all();
+
+  // TTI 5: Unique timer should have been triggered by now
+  TESTASSERT(timers.nof_running_timers() == 1);
+  TESTASSERT(timers.nof_timers() == 2);
+  TESTASSERT(vals.size() == 2);
+  TESTASSERT(vals[1] == 1);
+  timers.step_all();
+  timers.step_all();
+
+  // TTI 7: Second callback should have been triggered by now
+  TESTASSERT(timers.nof_running_timers() == 0);
+  TESTASSERT(timers.nof_timers() == 1);
+  TESTASSERT(vals.size() == 3);
+  TESTASSERT(vals[2] == 3);
+
+  return SRSLTE_SUCCESS;
+}
+
+/**
+ * Description: Check if erasure of a running timer is safe
+ */
+int timers_test6()
+{
+  timer_handler timers;
+
+  std::vector<int> vals;
+
+  // Event: Add a timer that gets erased 1 tti after.
+  {
+    timer_handler::unique_timer t = timers.get_unique_timer();
+    t.set(2, [&vals](uint32_t tid) { vals.push_back(1); });
+    t.run();
+    TESTASSERT(timers.nof_running_timers() == 1);
+    timers.step_all();
+  }
+  TESTASSERT(timers.nof_running_timers() == 0);
+  TESTASSERT(timers.nof_timers() == 0);
+
+  // TEST: The timer callback should not have been called
+  timers.step_all();
+  TESTASSERT(vals.empty());
+
+  // Event: Add a timer that gets erased right after, and add another timer with same timeout
+  {
+    timer_handler::unique_timer t = timers.get_unique_timer();
+    t.set(2, [&vals](uint32_t tid) { vals.push_back(2); });
+    t.run();
+    TESTASSERT(timers.nof_running_timers() == 1);
+    timers.step_all();
+    TESTASSERT(t.time_elapsed() == 1);
+  }
+  timer_handler::unique_timer t = timers.get_unique_timer();
+  t.set(1, [&vals](uint32_t tid) { vals.push_back(3); });
+  t.run();
+  TESTASSERT(timers.nof_running_timers() == 1);
+
+  // TEST: The second timer's callback should be the one being called, and should be called only once
+  timers.step_all();
+  TESTASSERT(vals.size() == 1 and vals[0] == 3);
+
+  return SRSLTE_SUCCESS;
+}
+
 int main()
 {
-  TESTASSERT(timers2_test() == SRSLTE_SUCCESS);
-  TESTASSERT(timers2_test2() == SRSLTE_SUCCESS);
-  TESTASSERT(timers2_test3() == SRSLTE_SUCCESS);
-
+  TESTASSERT(timers_test1() == SRSLTE_SUCCESS);
+  TESTASSERT(timers_test2() == SRSLTE_SUCCESS);
+  TESTASSERT(timers_test3() == SRSLTE_SUCCESS);
+  TESTASSERT(timers_test4() == SRSLTE_SUCCESS);
+  TESTASSERT(timers_test5() == SRSLTE_SUCCESS);
+  TESTASSERT(timers_test6() == SRSLTE_SUCCESS);
   printf("Success\n");
   return 0;
 }

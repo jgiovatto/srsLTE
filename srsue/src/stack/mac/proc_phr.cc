@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -38,15 +38,17 @@ phr_proc::phr_proc()
   phr_cfg          = {};
 }
 
-void phr_proc::init(phy_interface_mac_lte* phy_h_, srslte::log* log_h_, srslte::timer_handler* timers_db_)
+void phr_proc::init(phy_interface_mac_lte*          phy_h_,
+                    srslte::log_ref                 log_h_,
+                    srslte::task_handler_interface* task_handler_)
 {
-  phy_h     = phy_h_;
-  log_h     = log_h_;
-  timers_db = timers_db_;
-  initiated = true;
+  phy_h        = phy_h_;
+  log_h        = log_h_;
+  task_handler = task_handler_;
+  initiated    = true;
 
-  timer_periodic = timers_db->get_unique_timer();
-  timer_prohibit = timers_db->get_unique_timer();
+  timer_periodic = task_handler->get_unique_timer();
+  timer_prohibit = task_handler->get_unique_timer();
 
   reset();
 }
@@ -126,7 +128,7 @@ void phr_proc::timer_expired(uint32_t timer_id)
   }
 }
 
-void phr_proc::step(uint32_t tti)
+void phr_proc::step()
 {
   if (phr_cfg.enabled && initiated) {
     if (pathloss_changed() && timer_prohibit.is_expired()) {

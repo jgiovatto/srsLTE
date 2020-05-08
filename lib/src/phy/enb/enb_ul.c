@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -26,12 +26,6 @@
 #include <math.h>
 #include <string.h>
 
-#define CURRENT_FFTSIZE srslte_symbol_sz(q->cell.nof_prb)
-#define CURRENT_SFLEN SRSLTE_SF_LEN(CURRENT_FFTSIZE)
-
-#define CURRENT_SLOTLEN_RE SRSLTE_SLOT_LEN_RE(q->cell.nof_prb, q->cell.cp)
-#define CURRENT_SFLEN_RE SRSLTE_NOF_RE(q->cell)
-
 int srslte_enb_ul_init(srslte_enb_ul_t* q, cf_t* in_buffer, uint32_t max_prb)
 {
   int ret = SRSLTE_ERROR_INVALID_INPUTS;
@@ -41,24 +35,30 @@ int srslte_enb_ul_init(srslte_enb_ul_t* q, cf_t* in_buffer, uint32_t max_prb)
 
     bzero(q, sizeof(srslte_enb_ul_t));
 
-    q->sf_symbols = srslte_vec_malloc(SRSLTE_SF_LEN_RE(max_prb, SRSLTE_CP_NORM) * sizeof(cf_t));
+    q->sf_symbols = srslte_vec_cf_malloc(SRSLTE_SF_LEN_RE(max_prb, SRSLTE_CP_NORM));
     if (!q->sf_symbols) {
       perror("malloc");
       goto clean_exit;
     }
 
-    q->chest_res.ce = srslte_vec_malloc(SRSLTE_SF_LEN_RE(max_prb, SRSLTE_CP_NORM) * sizeof(cf_t));
+    q->chest_res.ce = srslte_vec_cf_malloc(SRSLTE_SF_LEN_RE(max_prb, SRSLTE_CP_NORM));
     if (!q->chest_res.ce) {
       perror("malloc");
       goto clean_exit;
     }
 
-    if (srslte_ofdm_rx_init(&q->fft, SRSLTE_CP_NORM, in_buffer, q->sf_symbols, max_prb)) {
+    srslte_ofdm_cfg_t ofdm_cfg = {};
+    ofdm_cfg.nof_prb           = max_prb;
+    ofdm_cfg.in_buffer         = in_buffer;
+    ofdm_cfg.out_buffer        = q->sf_symbols;
+    ofdm_cfg.cp                = SRSLTE_CP_NORM;
+    ofdm_cfg.freq_shift_f      = -0.5f;
+    ofdm_cfg.normalize         = false;
+    ofdm_cfg.rx_window_offset  = 0.5f;
+    if (srslte_ofdm_rx_init_cfg(&q->fft, &ofdm_cfg)) {
       ERROR("Error initiating FFT\n");
       goto clean_exit;
     }
-    srslte_ofdm_set_normalize(&q->fft, false);
-    srslte_ofdm_set_freq_shift(&q->fft, -0.5);
 
     if (srslte_pucch_init_enb(&q->pucch)) {
       ERROR("Error creating PUCCH object\n");
@@ -172,30 +172,64 @@ void srslte_enb_ul_fft(srslte_enb_ul_t* q)
 
 static int get_pucch(srslte_enb_ul_t* q, srslte_ul_sf_cfg_t* ul_sf, srslte_pucch_cfg_t* cfg, srslte_pucch_res_t* res)
 {
-  srslte_uci_value_t uci_value_default = {};
-  srslte_ue_ul_pucch_resource_selection(&q->cell, cfg, &cfg->uci_cfg, &uci_value_default);
+  int                ret                               = SRSLTE_SUCCESS;
+  uint32_t           n_pucch_i[SRSLTE_PUCCH_MAX_ALLOC] = {};
+  srslte_pucch_res_t pucch_res                         = {};
+  uint32_t           uci_cfg_total_ack                 = srslte_uci_cfg_total_ack(&cfg->uci_cfg);
 
-  // Prepare configuration
-  if (srslte_chest_ul_estimate_pucch(&q->chest, ul_sf, cfg, q->sf_symbols, &q->chest_res)) {
-    ERROR("Error estimating PUCCH DMRS\n");
+  // Drop CQI if there is collision with ACK
+  if (!cfg->simul_cqi_ack && uci_cfg_total_ack > 0 && cfg->uci_cfg.cqi.data_enable) {
+    cfg->uci_cfg.cqi.data_enable = false;
+  }
+
+  // Select format
+  cfg->format = srslte_pucch_proc_select_format(&q->cell, cfg, &cfg->uci_cfg, NULL);
+  if (cfg->format == SRSLTE_PUCCH_FORMAT_ERROR) {
+    ERROR("Returned Error while selecting PUCCH format\n");
     return SRSLTE_ERROR;
   }
 
-  int ret_val = srslte_pucch_decode(&q->pucch, ul_sf, cfg, &q->chest_res, q->sf_symbols, res);
-  if (ret_val < 0) {
-    ERROR("Error decoding PUCCH\n");
+  // Get possible resources
+  int nof_resources = srslte_pucch_proc_get_resources(&q->cell, cfg, &cfg->uci_cfg, NULL, n_pucch_i);
+  if (nof_resources < 1 || nof_resources > SRSLTE_PUCCH_CS_MAX_ACK) {
+    ERROR("No PUCCH resource could be calculated (%d)\n", nof_resources);
     return SRSLTE_ERROR;
   }
-  return ret_val;
-}
 
-uint32_t srslte_enb_ul_get_pucch_prb_idx(srslte_cell_t* cell, srslte_pucch_cfg_t* cfg, uint32_t ns)
-{
-  // compute Format and n_pucch
-  srslte_ue_ul_pucch_resource_selection(cell, cfg, &cfg->uci_cfg, NULL);
+  // Initialise minimum correlation
+  res->correlation = 0.0f;
 
-  // compute prb_idx
-  return srslte_pucch_n_prb(cell, cfg, ns);
+  // Iterate possible resources and select the one with higher correlation
+  for (int i = 0; i < nof_resources && ret == SRSLTE_SUCCESS; i++) {
+    // Configure resource
+    cfg->n_pucch = n_pucch_i[i];
+
+    // Prepare configuration
+    if (srslte_chest_ul_estimate_pucch(&q->chest, ul_sf, cfg, q->sf_symbols, &q->chest_res)) {
+      ERROR("Error estimating PUCCH DMRS\n");
+      return SRSLTE_ERROR;
+    }
+
+    ret = srslte_pucch_decode(&q->pucch, ul_sf, cfg, &q->chest_res, q->sf_symbols, &pucch_res);
+    if (ret < SRSLTE_SUCCESS) {
+      ERROR("Error decoding PUCCH\n");
+    } else {
+
+      // Get PUCCH Format 1b with channel selection if used
+      if (uci_cfg_total_ack > 0 && cfg->format == SRSLTE_PUCCH_FORMAT_1B &&
+          cfg->ack_nack_feedback_mode == SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_CS) {
+        uint8_t b[2] = {pucch_res.uci_data.ack.ack_value[0], pucch_res.uci_data.ack.ack_value[1]};
+        srslte_pucch_cs_get_ack(cfg, &cfg->uci_cfg, i, b, &pucch_res.uci_data);
+      }
+
+      // Check correlation value, keep maximum
+      if (i == 0 || pucch_res.correlation > res->correlation) {
+        *res = pucch_res;
+      }
+    }
+  }
+
+  return ret;
 }
 
 int srslte_enb_ul_get_pucch(srslte_enb_ul_t*    q,
@@ -206,11 +240,11 @@ int srslte_enb_ul_get_pucch(srslte_enb_ul_t*    q,
 
   if (!srslte_pucch_cfg_isvalid(cfg, q->cell.nof_prb)) {
     ERROR("Invalid PUCCH configuration\n");
-    return -1;
+    return SRSLTE_ERROR_INVALID_INPUTS;
   }
 
   if (get_pucch(q, ul_sf, cfg, res)) {
-    return -1;
+    return SRSLTE_ERROR;
   }
 
   // If we are looking for SR and ACK at the same time and ret=0, means there is no SR.
@@ -218,7 +252,7 @@ int srslte_enb_ul_get_pucch(srslte_enb_ul_t*    q,
   if (cfg->uci_cfg.is_scheduling_request_tti && srslte_uci_cfg_total_ack(&cfg->uci_cfg) && !res->detected) {
     cfg->uci_cfg.is_scheduling_request_tti = false;
     if (get_pucch(q, ul_sf, cfg, res)) {
-      return -1;
+      return SRSLTE_ERROR;
     }
   }
 

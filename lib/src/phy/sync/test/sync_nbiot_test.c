@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -114,7 +114,7 @@ int main(int argc, char** argv)
   }
 
   printf("SFLEN is %d samples\n", SFLEN);
-  fft_buffer = malloc(sizeof(cf_t) * SFLEN * 2);
+  fft_buffer = srslte_vec_cf_malloc(SFLEN * 2);
   if (!fft_buffer) {
     perror("malloc");
     goto exit;

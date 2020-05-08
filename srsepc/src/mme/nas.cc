@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -28,7 +28,7 @@
 
 namespace srsepc {
 
-nas::nas(nas_init_t args, nas_if_t itf, srslte::log* nas_log) :
+nas::nas(const nas_init_t& args, const nas_if_t& itf, srslte::log* nas_log) :
   m_pool(srslte::byte_buffer_pool::get_instance()),
   m_nas_log(nas_log),
   m_gtpc(itf.gtpc),
@@ -72,8 +72,8 @@ void nas::reset()
 bool nas::handle_attach_request(uint32_t                enb_ue_s1ap_id,
                                 struct sctp_sndrcvinfo* enb_sri,
                                 srslte::byte_buffer_t*  nas_rx,
-                                nas_init_t              args,
-                                nas_if_t                itf,
+                                const nas_init_t&       args,
+                                const nas_if_t&         itf,
                                 srslte::log*            nas_log)
 {
   uint32_t                                       m_tmsi = 0;
@@ -201,8 +201,8 @@ bool nas::handle_imsi_attach_request_unknown_ue(uint32_t                        
                                                 struct sctp_sndrcvinfo*                               enb_sri,
                                                 const LIBLTE_MME_ATTACH_REQUEST_MSG_STRUCT&           attach_req,
                                                 const LIBLTE_MME_PDN_CONNECTIVITY_REQUEST_MSG_STRUCT& pdn_con_req,
-                                                nas_init_t                                            args,
-                                                nas_if_t                                              itf,
+                                                const nas_init_t&                                     args,
+                                                const nas_if_t&                                       itf,
                                                 srslte::log*                                          nas_log)
 {
   nas*                      nas_ctx;
@@ -302,8 +302,8 @@ bool nas::handle_imsi_attach_request_known_ue(nas*                              
                                               const LIBLTE_MME_ATTACH_REQUEST_MSG_STRUCT&           attach_req,
                                               const LIBLTE_MME_PDN_CONNECTIVITY_REQUEST_MSG_STRUCT& pdn_con_req,
                                               srslte::byte_buffer_t*                                nas_rx,
-                                              nas_init_t                                            args,
-                                              nas_if_t                                              itf,
+                                              const nas_init_t&                                     args,
+                                              const nas_if_t&                                       itf,
                                               srslte::log*                                          nas_log)
 {
   bool err;
@@ -333,8 +333,8 @@ bool nas::handle_guti_attach_request_unknown_ue(uint32_t                        
                                                 struct sctp_sndrcvinfo*                               enb_sri,
                                                 const LIBLTE_MME_ATTACH_REQUEST_MSG_STRUCT&           attach_req,
                                                 const LIBLTE_MME_PDN_CONNECTIVITY_REQUEST_MSG_STRUCT& pdn_con_req,
-                                                nas_init_t                                            args,
-                                                nas_if_t                                              itf,
+                                                const nas_init_t&                                     args,
+                                                const nas_if_t&                                       itf,
                                                 srslte::log*                                          nas_log)
 
 {
@@ -411,8 +411,8 @@ bool nas::handle_guti_attach_request_known_ue(nas*                              
                                               const LIBLTE_MME_ATTACH_REQUEST_MSG_STRUCT&           attach_req,
                                               const LIBLTE_MME_PDN_CONNECTIVITY_REQUEST_MSG_STRUCT& pdn_con_req,
                                               srslte::byte_buffer_t*                                nas_rx,
-                                              nas_init_t                                            args,
-                                              nas_if_t                                              itf,
+                                              const nas_init_t&                                     args,
+                                              const nas_if_t&                                       itf,
                                               srslte::log*                                          nas_log)
 {
   bool                      msg_valid = false;
@@ -565,8 +565,8 @@ bool nas::handle_service_request(uint32_t                m_tmsi,
                                  uint32_t                enb_ue_s1ap_id,
                                  struct sctp_sndrcvinfo* enb_sri,
                                  srslte::byte_buffer_t*  nas_rx,
-                                 nas_init_t              args,
-                                 nas_if_t                itf,
+                                 const nas_init_t&       args,
+                                 const nas_if_t&         itf,
                                  srslte::log*            nas_log)
 {
   nas_log->info("Service request -- S-TMSI 0x%x\n", m_tmsi);
@@ -714,8 +714,8 @@ bool nas::handle_detach_request(uint32_t                m_tmsi,
                                 uint32_t                enb_ue_s1ap_id,
                                 struct sctp_sndrcvinfo* enb_sri,
                                 srslte::byte_buffer_t*  nas_rx,
-                                nas_init_t              args,
-                                nas_if_t                itf,
+                                const nas_init_t&       args,
+                                const nas_if_t&         itf,
                                 srslte::log*            nas_log)
 {
   nas_log->info("Detach Request -- S-TMSI 0x%x\n", m_tmsi);
@@ -772,10 +772,12 @@ bool nas::handle_tracking_area_update_request(uint32_t                m_tmsi,
                                               uint32_t                enb_ue_s1ap_id,
                                               struct sctp_sndrcvinfo* enb_sri,
                                               srslte::byte_buffer_t*  nas_rx,
-                                              nas_init_t              args,
-                                              nas_if_t                itf,
+                                              const nas_init_t&       args,
+                                              const nas_if_t&         itf,
                                               srslte::log*            nas_log)
 {
+  srslte::byte_buffer_pool* pool = srslte::byte_buffer_pool::get_instance();
+
   nas_log->info("Tracking Area Update Request -- S-TMSI 0x%x\n", m_tmsi);
   nas_log->console("Tracking Area Update Request -- S-TMSI 0x%x\n", m_tmsi);
   nas_log->info("Tracking Area Update Request -- eNB UE S1AP Id %d\n", enb_ue_s1ap_id);
@@ -789,20 +791,17 @@ bool nas::handle_tracking_area_update_request(uint32_t                m_tmsi,
   hss_interface_nas*  hss  = itf.hss;
   gtpc_interface_nas* gtpc = itf.gtpc;
 
-  uint64_t imsi = s1ap->find_imsi_from_m_tmsi(m_tmsi);
-  if (imsi == 0) {
-    nas_log->console("Could not find IMSI from M-TMSI. M-TMSI 0x%x\n", m_tmsi);
-    nas_log->error("Could not find IMSI from M-TMSI. M-TMSI 0x%x\n", m_tmsi);
-    return true;
-  }
+  // TODO don't search for NAS ctxt, just send that reject
+  // with context we could enable integrity protection
 
-  nas*       nas_ctx = s1ap->find_nas_ctx_from_imsi(imsi);
-  emm_ctx_t* emm_ctx = &nas_ctx->m_emm_ctx;
-  ecm_ctx_t* ecm_ctx = &nas_ctx->m_ecm_ctx;
+  nas nas_tmp(args, itf, nas_log);
+  nas_tmp.m_ecm_ctx.enb_ue_s1ap_id = enb_ue_s1ap_id;
+  nas_tmp.m_ecm_ctx.mme_ue_s1ap_id = s1ap->get_next_mme_ue_s1ap_id();
 
-  sec_ctx_t* sec_ctx = &nas_ctx->m_sec_ctx;
-
-  sec_ctx->ul_nas_count++; // Increment the NAS count, not to break the security ctx
+  srslte::byte_buffer_t* nas_tx = pool->allocate();
+  nas_tmp.pack_tracking_area_update_reject(nas_tx, LIBLTE_MME_EMM_CAUSE_IMPLICITLY_DETACHED);
+  s1ap->send_downlink_nas_transport(enb_ue_s1ap_id, nas_tmp.m_ecm_ctx.mme_ue_s1ap_id, nas_tx, *enb_sri);
+  pool->deallocate(nas_tx);
   return true;
 }
 
@@ -1149,6 +1148,18 @@ bool nas::handle_tracking_area_update_request(srslte::byte_buffer_t* nas_rx)
 {
   m_nas_log->console("Warning: Tracking Area Update Request messages not handled yet.\n");
   m_nas_log->warning("Warning: Tracking Area Update Request messages not handled yet.\n");
+
+  srslte::byte_buffer_pool* pool = srslte::byte_buffer_pool::get_instance();
+  srslte::byte_buffer_t*    nas_tx;
+
+  /* TAU handling unsupported, therefore send TAU reject with cause IMPLICITLY DETACHED.
+   * this will trigger full re-attach by the UE, instead of going to a TAU request loop */
+  nas_tx = pool->allocate();
+  // TODO we could enable integrity protection in some cases, but UE should comply anyway
+  pack_tracking_area_update_reject(nas_tx, LIBLTE_MME_EMM_CAUSE_IMPLICITLY_DETACHED);
+  // Send reply
+  m_s1ap->send_downlink_nas_transport(m_ecm_ctx.enb_ue_s1ap_id, m_ecm_ctx.mme_ue_s1ap_id, nas_tx, m_ecm_ctx.enb_sri);
+  pool->deallocate(nas_tx);
 
   return true;
 }
@@ -1561,6 +1572,28 @@ bool nas::pack_service_reject(srslte::byte_buffer_t* nas_buffer, uint8_t emm_cau
   return true;
 }
 
+bool nas::pack_tracking_area_update_reject(srslte::byte_buffer_t* nas_buffer, uint8_t emm_cause)
+{
+  LIBLTE_MME_TRACKING_AREA_UPDATE_REJECT_MSG_STRUCT tau_rej;
+  tau_rej.t3446_present = false;
+  tau_rej.t3446         = 0;
+  tau_rej.emm_cause     = emm_cause;
+
+  if (emm_cause == LIBLTE_MME_EMM_CAUSE_CONGESTION) {
+    // Standard would want T3446 set in this case
+    m_nas_log->error("Tracking Area Update Reject EMM Cause set to \"CONGESTION\", but back-off timer not set.\n");
+  }
+
+  LIBLTE_ERROR_ENUM err = liblte_mme_pack_tracking_area_update_reject_msg(
+      &tau_rej, LIBLTE_MME_SECURITY_HDR_TYPE_PLAIN_NAS, 0, (LIBLTE_BYTE_MSG_STRUCT*)nas_buffer);
+  if (err != LIBLTE_SUCCESS) {
+    m_nas_log->error("Error packing Tracking Area Update Reject\n");
+    m_nas_log->console("Error packing Tracking Area Update Reject\n");
+    return false;
+  }
+  return true;
+}
+
 /************************
  *
  * Security Functions
@@ -1633,16 +1666,17 @@ bool nas::short_integrity_check(srslte::byte_buffer_t* pdu)
 
 bool nas::integrity_check(srslte::byte_buffer_t* pdu)
 {
-  uint8_t  exp_mac[4] = {0x00, 0x00, 0x00, 0x00};
-  uint8_t* mac        = &pdu->msg[1];
-  int      i;
+  uint8_t        exp_mac[4] = {};
+  const uint8_t* mac        = &pdu->msg[1];
+
+  uint32_t estimated_count = (m_sec_ctx.ul_nas_count & 0xffffff00) | (pdu->msg[5] & 0xff);
 
   switch (m_sec_ctx.integ_algo) {
     case srslte::INTEGRITY_ALGORITHM_ID_EIA0:
       break;
     case srslte::INTEGRITY_ALGORITHM_ID_128_EIA1:
       srslte::security_128_eia1(&m_sec_ctx.k_nas_int[16],
-                                m_sec_ctx.ul_nas_count,
+                                estimated_count,
                                 0,
                                 srslte::SECURITY_DIRECTION_UPLINK,
                                 &pdu->msg[5],
@@ -1651,7 +1685,7 @@ bool nas::integrity_check(srslte::byte_buffer_t* pdu)
       break;
     case srslte::INTEGRITY_ALGORITHM_ID_128_EIA2:
       srslte::security_128_eia2(&m_sec_ctx.k_nas_int[16],
-                                m_sec_ctx.ul_nas_count,
+                                estimated_count,
                                 0,
                                 srslte::SECURITY_DIRECTION_UPLINK,
                                 &pdu->msg[5],
@@ -1660,7 +1694,7 @@ bool nas::integrity_check(srslte::byte_buffer_t* pdu)
       break;
     case srslte::INTEGRITY_ALGORITHM_ID_128_EIA3:
       srslte::security_128_eia3(&m_sec_ctx.k_nas_int[16],
-                                m_sec_ctx.ul_nas_count,
+                                estimated_count,
                                 0,
                                 srslte::SECURITY_DIRECTION_UPLINK,
                                 &pdu->msg[5],
@@ -1671,11 +1705,12 @@ bool nas::integrity_check(srslte::byte_buffer_t* pdu)
       break;
   }
   // Check if expected mac equals the sent mac
-  for (i = 0; i < 4; i++) {
+  for (int i = 0; i < 4; i++) {
     if (exp_mac[i] != mac[i]) {
       m_nas_log->warning("Integrity check failure. Algorithm=EIA%d\n", (int)m_sec_ctx.integ_algo);
-      m_nas_log->warning("UL Local: count=%d, MAC=[%02x %02x %02x %02x], "
+      m_nas_log->warning("UL Local: est_count=%d, old_count=%d, MAC=[%02x %02x %02x %02x], "
                          "Received: UL count=%d, MAC=[%02x %02x %02x %02x]\n",
+                         estimated_count,
                          m_sec_ctx.ul_nas_count,
                          exp_mac[0],
                          exp_mac[1],
@@ -1689,7 +1724,9 @@ bool nas::integrity_check(srslte::byte_buffer_t* pdu)
       return false;
     }
   }
-  m_nas_log->info("Integrity check ok. Local: count=%d, Received: count=%d\n", m_sec_ctx.ul_nas_count, pdu->msg[5]);
+  m_nas_log->info("Integrity check ok. Local: count=%d, Received: count=%d\n", estimated_count, pdu->msg[5]);
+  m_sec_ctx.ul_nas_count = estimated_count;
+
   return true;
 }
 

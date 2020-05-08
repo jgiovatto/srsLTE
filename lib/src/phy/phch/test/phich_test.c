@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -121,7 +121,7 @@ int main(int argc, char** argv)
   srslte_chest_dl_res_set_ones(&chest_res);
 
   for (i = 0; i < SRSLTE_MAX_PORTS; i++) {
-    slot_symbols[i] = malloc(sizeof(cf_t) * nof_re);
+    slot_symbols[i] = srslte_vec_cf_malloc(nof_re);
     if (!slot_symbols[i]) {
       perror("malloc");
       exit(-1);

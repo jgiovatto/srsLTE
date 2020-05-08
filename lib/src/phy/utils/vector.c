@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -27,6 +27,7 @@
 
 #include "srslte/phy/utils/bit.h"
 #include "srslte/phy/utils/debug.h"
+#include "srslte/phy/utils/simd.h"
 #include "srslte/phy/utils/vector.h"
 #include "srslte/phy/utils/vector_simd.h"
 
@@ -154,6 +155,76 @@ float* srslte_vec_f_malloc(uint32_t nsamples)
   return (float*)srslte_vec_malloc((uint32_t)sizeof(float) * nsamples);
 }
 
+int32_t* srslte_vec_i32_malloc(uint32_t nsamples)
+{
+  return (int32_t*)srslte_vec_malloc((uint32_t)sizeof(int32_t) * nsamples);
+}
+
+uint32_t* srslte_vec_u32_malloc(uint32_t nsamples)
+{
+  return (uint32_t*)srslte_vec_malloc((uint32_t)sizeof(uint32_t) * nsamples);
+}
+
+int16_t* srslte_vec_i16_malloc(uint32_t nsamples)
+{
+  return (int16_t*)srslte_vec_malloc((uint32_t)sizeof(int16_t) * nsamples);
+}
+
+uint16_t* srslte_vec_u16_malloc(uint32_t nsamples)
+{
+  return (uint16_t*)srslte_vec_malloc((uint32_t)sizeof(uint16_t) * nsamples);
+}
+
+int8_t* srslte_vec_i8_malloc(uint32_t nsamples)
+{
+  return (int8_t*)srslte_vec_malloc((uint32_t)sizeof(int8_t) * nsamples);
+}
+
+uint8_t* srslte_vec_u8_malloc(uint32_t nsamples)
+{
+  return (uint8_t*)srslte_vec_malloc((uint32_t)sizeof(uint8_t) * nsamples);
+}
+
+void srslte_vec_u8_zero(uint8_t* ptr, uint32_t nsamples)
+{
+  memset(ptr, 0, sizeof(uint8_t) * nsamples);
+}
+
+void srslte_vec_i16_zero(int16_t* ptr, uint32_t nsamples)
+{
+  memset(ptr, 0, sizeof(int16_t) * nsamples);
+}
+
+void srslte_vec_u32_zero(uint32_t* ptr, uint32_t nsamples)
+{
+  memset(ptr, 0, sizeof(uint32_t) * nsamples);
+}
+
+void srslte_vec_cf_zero(cf_t* ptr, uint32_t nsamples)
+{
+  memset(ptr, 0, sizeof(cf_t) * nsamples);
+}
+
+void srslte_vec_f_zero(float* ptr, uint32_t nsamples)
+{
+  memset(ptr, 0, sizeof(float) * nsamples);
+}
+
+void srslte_vec_cf_copy(cf_t* dst, const cf_t* src, uint32_t len)
+{
+  memcpy(dst, src, sizeof(cf_t) * len);
+}
+
+void srslte_vec_f_copy(float* dst, const float* src, uint32_t len)
+{
+  memcpy(dst, src, sizeof(float) * len);
+}
+
+void srslte_vec_u8_copy(uint8_t* dst, const uint8_t* src, uint32_t len)
+{
+  memcpy(dst, src, sizeof(uint8_t) * len);
+}
+
 void* srslte_vec_realloc(void* ptr, uint32_t old_size, uint32_t new_size)
 {
 #ifndef LV_HAVE_SSE
@@ -170,7 +241,7 @@ void* srslte_vec_realloc(void* ptr, uint32_t old_size, uint32_t new_size)
 #endif
 }
 
-void srslte_vec_fprint_c(FILE* stream, cf_t* x, const uint32_t len)
+void srslte_vec_fprint_c(FILE* stream, const cf_t* x, const uint32_t len)
 {
   int i;
   fprintf(stream, "[");
@@ -180,7 +251,7 @@ void srslte_vec_fprint_c(FILE* stream, cf_t* x, const uint32_t len)
   fprintf(stream, "];\n");
 }
 
-void srslte_vec_fprint_f(FILE* stream, float* x, const uint32_t len)
+void srslte_vec_fprint_f(FILE* stream, const float* x, const uint32_t len)
 {
   int i;
   fprintf(stream, "[");
@@ -190,7 +261,7 @@ void srslte_vec_fprint_f(FILE* stream, float* x, const uint32_t len)
   fprintf(stream, "];\n");
 }
 
-void srslte_vec_fprint_b(FILE* stream, uint8_t* x, const uint32_t len)
+void srslte_vec_fprint_b(FILE* stream, const uint8_t* x, const uint32_t len)
 {
   int i;
   fprintf(stream, "[");
@@ -200,7 +271,7 @@ void srslte_vec_fprint_b(FILE* stream, uint8_t* x, const uint32_t len)
   fprintf(stream, "];\n");
 }
 
-void srslte_vec_fprint_bs(FILE* stream, int8_t* x, const uint32_t len)
+void srslte_vec_fprint_bs(FILE* stream, const int8_t* x, const uint32_t len)
 {
   int i;
   fprintf(stream, "[");
@@ -210,7 +281,7 @@ void srslte_vec_fprint_bs(FILE* stream, int8_t* x, const uint32_t len)
   fprintf(stream, "];\n");
 }
 
-void srslte_vec_fprint_byte(FILE* stream, uint8_t* x, const uint32_t len)
+void srslte_vec_fprint_byte(FILE* stream, const uint8_t* x, const uint32_t len)
 {
   int i;
   fprintf(stream, "[");
@@ -220,7 +291,7 @@ void srslte_vec_fprint_byte(FILE* stream, uint8_t* x, const uint32_t len)
   fprintf(stream, "];\n");
 }
 
-void srslte_vec_fprint_i(FILE* stream, int* x, const uint32_t len)
+void srslte_vec_fprint_i(FILE* stream, const int* x, const uint32_t len)
 {
   int i;
   fprintf(stream, "[");
@@ -230,7 +301,7 @@ void srslte_vec_fprint_i(FILE* stream, int* x, const uint32_t len)
   fprintf(stream, "];\n");
 }
 
-void srslte_vec_fprint_s(FILE* stream, short* x, const uint32_t len)
+void srslte_vec_fprint_s(FILE* stream, const int16_t* x, const uint32_t len)
 {
   int i;
   fprintf(stream, "[");
@@ -429,6 +500,28 @@ float srslte_vec_avg_power_cf(const cf_t* x, const uint32_t len)
   return crealf(srslte_vec_dot_prod_conj_ccc(x, x, len)) / len;
 }
 
+float srslte_vec_avg_power_sf(const int16_t* x, const uint32_t len)
+{
+  // Accumulator
+  float acc = 0.0f;
+
+  for (uint32_t i = 0; i < len; i++) {
+    // Read value and typecast to float
+    float t = (float)x[i];
+
+    // Square value
+    acc += t * t;
+  }
+
+  // Do average
+  if (len) {
+    acc /= len;
+  }
+
+  // Return accumulated value
+  return acc;
+}
+
 // Correlation assumes zero-mean x and y
 float srslte_vec_corr_ccc(const cf_t* x, cf_t* y, const uint32_t len)
 {
@@ -499,18 +592,18 @@ uint32_t srslte_vec_max_abs_ci(const cf_t* x, const uint32_t len)
   return srslte_vec_max_ci_simd(x, len);
 }
 
-void srslte_vec_quant_fus(float* in, uint16_t* out, float gain, float offset, float clip, uint32_t len)
+void srslte_vec_quant_fus(const float*   in,
+                          uint16_t*      out,
+                          const float    gain,
+                          const float    offset,
+                          const uint16_t clip,
+                          const uint32_t len)
 {
-  int  i;
-  long tmp;
-
-  for (i = 0; i < len; i++) {
-    tmp = (long)(offset + gain * in[i]);
-    if (tmp < 0)
-      tmp = 0;
-    if (tmp > clip)
-      tmp = clip;
-    out[i] = (uint16_t)tmp;
+  for (uint32_t i = 0; i < len; i++) {
+    int32_t tmp = (int32_t)(offset + gain * in[i]);
+    tmp         = SRSLTE_MAX(tmp, 0);
+    tmp         = SRSLTE_MIN(tmp, (int32_t)clip);
+    out[i]      = (uint16_t)tmp;
   }
 }
 
@@ -518,58 +611,45 @@ void srslte_vec_quant_fuc(const float*   in,
                           uint8_t*       out,
                           const float    gain,
                           const float    offset,
-                          const float    clip,
+                          const uint8_t  clip,
                           const uint32_t len)
 {
-  int i;
-  int tmp;
-
-  for (i = 0; i < len; i++) {
-    tmp = (int)(offset + gain * in[i]);
-    if (tmp < 0)
-      tmp = 0;
-    if (tmp > clip)
-      tmp = clip;
-    out[i] = (uint8_t)tmp;
+  for (uint32_t i = 0; i < len; i++) {
+    int32_t tmp = (int32_t)(offset + gain * in[i]);
+    tmp         = SRSLTE_MAX(tmp, 0);
+    tmp         = SRSLTE_MIN(tmp, (int32_t)clip);
+    out[i]      = (uint8_t)tmp;
   }
 }
 
 void srslte_vec_quant_suc(const int16_t* in,
                           uint8_t*       out,
                           const float    gain,
-                          const int16_t  offset,
-                          const int16_t  clip,
+                          const float    offset,
+                          const uint8_t  clip,
                           const uint32_t len)
 {
-  int     i;
-  int16_t tmp;
-
-  for (i = 0; i < len; i++) {
-    tmp = (int16_t)(offset + in[i] * gain);
-    if (tmp < 0)
-      tmp = 0;
-    if (tmp > clip)
-      tmp = clip;
-    out[i] = (uint8_t)tmp;
+  for (uint32_t i = 0; i < len; i++) {
+    int32_t tmp = (int32_t)(offset + (float)in[i] * gain);
+    tmp         = SRSLTE_MAX(tmp, 0);
+    tmp         = SRSLTE_MIN(tmp, (int32_t)clip);
+    out[i]      = (uint8_t)tmp;
   }
 }
 
-void srslte_vec_quant_sus(const int16_t* in, uint16_t* out, const float gain, const int16_t offset, const uint32_t len)
+void srslte_vec_quant_sus(const int16_t* in,
+                          uint16_t*      out,
+                          const float    gain,
+                          const float    offset,
+                          const uint16_t clip,
+                          const uint32_t len)
 {
-  int     i;
-  int16_t tmp;
-
-  for (i = 0; i < len; i++) {
-    tmp = (offset + in[i] * gain);
-    if (tmp < 0)
-      tmp = 0;
-    out[i] = (uint16_t)tmp;
+  for (uint32_t i = 0; i < len; i++) {
+    int32_t tmp = (int32_t)(offset + gain * (float)in[i]);
+    tmp         = SRSLTE_MAX(tmp, 0);
+    tmp         = SRSLTE_MIN(tmp, (int32_t)clip);
+    out[i]      = (uint16_t)tmp;
   }
-}
-
-void srs_vec_cf_cpy(const cf_t* src, cf_t* dst, int len)
-{
-  srslte_vec_cp_simd(src, dst, len);
 }
 
 void srslte_vec_interleave(const cf_t* x, const cf_t* y, cf_t* z, const int len)

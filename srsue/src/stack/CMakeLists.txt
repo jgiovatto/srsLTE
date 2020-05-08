@@ -1,5 +1,5 @@
 #
-# Copyright 2013-2019 Software Radio Systems Limited
+# Copyright 2013-2020 Software Radio Systems Limited
 #
 # This file is part of srsLTE
 #
@@ -10,7 +10,7 @@
 #
 # srsLTE is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU Affero General Public License for more details.
 #
 # A copy of the GNU Affero General Public License can be found in
@@ -23,8 +23,4 @@ add_subdirectory(rrc)
 add_subdirectory(upper)
 
 set(SOURCES ue_stack_lte.cc)
-
 add_library(srsue_stack STATIC ${SOURCES})
-
-install(TARGETS srsue_stack DESTINATION ${LIBRARY_DIR})
-
