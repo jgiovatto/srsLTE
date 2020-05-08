@@ -50,7 +50,8 @@ SRSLTE_API   float  rf_dummy_get_rssi(void *h);
 SRSLTE_API   void   rf_dummy_suppress_stdout(void *h);
 
 SRSLTE_API   void   rf_dummy_register_error_handler(void *h, 
-                                                   srslte_rf_error_handler_t error_handler);
+                                                    srslte_rf_error_handler_t error_handler,
+                                                    void * arg);
 
 SRSLTE_API   int    rf_dummy_open(char *args, void **h);
 

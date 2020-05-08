@@ -54,25 +54,25 @@ static bool log_stdout = true;
 
 // rf dev info
 typedef struct {
-   char *               dev_name;
-   int                  nodetype;
-   uint32_t             nof_tx_ports;
-   uint32_t             nof_rx_ports;
-   double               rx_gain;
-   double               tx_gain;
-   double               rx_srate;
-   double               tx_srate;
-   double               rx_freq;
-   double               tx_freq;
-   double               clock_rate;
-   void (*error_handler)(srslte_rf_error_t error);
-   bool                 rx_stream;
-   srslte_rf_info_t     rf_info;
+   char *                    dev_name;
+   int                       nodetype;
+   uint32_t                  nof_tx_ports;
+   uint32_t                  nof_rx_ports;
+   double                    rx_gain;
+   double                    tx_gain;
+   double                    rx_srate;
+   double                    tx_srate;
+   double                    rx_freq;
+   double                    tx_freq;
+   double                    clock_rate;
+   srslte_rf_error_handler_t error_handler;
+   bool                      rx_stream;
+   srslte_rf_info_t          rf_info;
 } rf_dummy_info_t;
 
 
 
-static void rf_dummy_handle_error(srslte_rf_error_t error)
+static void rf_dummy_handle_error(void * arg, srslte_rf_error_t error)
 {
   printf("type %s", 
           error.type == SRSLTE_RF_ERROR_LATE      ? "late"      :
@@ -167,7 +167,7 @@ float rf_dummy_get_rssi(void *h)
  }
 
 
-void rf_dummy_register_error_handler(void *h, srslte_rf_error_handler_t error_handler)
+void rf_dummy_register_error_handler(void *h, srslte_rf_error_handler_t error_handler, void *arg)
  {
    GET_DEV_INFO(h);
 

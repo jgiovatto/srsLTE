@@ -245,21 +245,22 @@ typedef struct {
    double               rx_freq;
    double               tx_freq;
    double               clock_rate;
-   void (*error_handler)(srslte_rf_error_t error);
-   bool                 rx_stream;
-   uint64_t             tx_seqnum;
-   pthread_mutex_t      state_lock;
-   struct timeval       tv_sos;      // start of stream
-   struct timeval       tv_this_tti;
-   struct timeval       tv_next_tti;
-   size_t               tx_nof_late;
-   size_t               tx_nof_ok;
-   size_t               tx_nof_drop;
-   srslte_rf_info_t     rf_info;
-   int                  shm_dl_fd;
-   int                  shm_ul_fd;
-   void *               shm_dl;      // dl shared mem
-   void *               shm_ul;      // ul shared mem
+   srslte_rf_error_handler_t error_handler;
+   void *                    error_arg;
+   bool                      rx_stream;
+   uint64_t                  tx_seqnum;
+   pthread_mutex_t           state_lock;
+   struct timeval            tv_sos;      // start of stream
+   struct timeval            tv_this_tti;
+   struct timeval            tv_next_tti;
+   size_t                    tx_nof_late;
+   size_t                    tx_nof_ok;
+   size_t                    tx_nof_drop;
+   srslte_rf_info_t          rf_info;
+   int                       shm_dl_fd;
+   int                       shm_ul_fd;
+   void *                    shm_dl;      // dl shared mem
+   void *                    shm_ul;      // ul shared mem
    rf_shmem_segment_t * rx_segment;  // rx bins
    rf_shmem_segment_t * tx_segment;  // tx bins
    int                  rand_loss;   // random loss 0=none, 100=all
@@ -285,7 +286,7 @@ static inline uint32_t get_bin(const struct timeval * tv)
  }
 
 
-static void rf_shmem_handle_error(srslte_rf_error_t error)
+static void rf_shmem_handle_error(void * arg, srslte_rf_error_t error)
 {
   // XXX TODO make use of this handler
   printf("type %s", 
@@ -309,6 +310,7 @@ static rf_shmem_state_t rf_shmem_state = { .dev_name        = "shmemrf",
                                            .tx_freq         = 0.0,
                                            .clock_rate      = 0.0,
                                            .error_handler   = rf_shmem_handle_error,
+                                           .error_arg       = NULL,
                                            .rx_stream       = false,
                                            .tx_seqnum       = 0,
                                            .state_lock      = PTHREAD_MUTEX_INITIALIZER,
@@ -719,11 +721,12 @@ float rf_shmem_get_rssi(void *h)
  }
 
 
-void rf_shmem_register_error_handler(void *h, srslte_rf_error_handler_t error_handler)
+void rf_shmem_register_error_handler(void *h, srslte_rf_error_handler_t error_handler, void * arg)
  {
    RF_SHMEM_GET_STATE(h);
 
    _state->error_handler = error_handler;
+   _state->error_arg     = arg;
  }
 
 
