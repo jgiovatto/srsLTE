@@ -179,9 +179,12 @@ static char rf_shmem_node_type = ' ';
 
 #define RF_SHMEM_NUM_SF_X_FRAME 10
 
+// the driver runs the TTI, 1 msec might be too small for some systems.
+#define RF_TIME_SCALE 2
+
 static const struct timeval tv_zero  = {0,0};
-static const struct timeval tv_step  = {0, 1000}; // 1 sf
-static const struct timeval tv_4step = {0, 4000}; // 4 sf
+static const struct timeval tv_step  = {0, 1000 * RF_TIME_SCALE}; // 1 sf
+static const struct timeval tv_4step = {0, 4000 * RF_TIME_SCALE}; // 4 sf
 
 
 // msg element meta data
@@ -479,7 +482,13 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
           }
         else
           {
-            RF_SHMEM_WARN("failed to get shm_dl_fd %s, retry", strerror(errno));
+            if(errno == EPERM || errno == EACCES) {
+              RF_SHMEM_WARN("failed to get shm_dl_fd %s, running as root ???", strerror(errno));
+
+              return -1;
+            }
+           
+            RF_SHMEM_WARN("failed to get shm_dl_fd %s, is enb up ???, retry", strerror(errno));
 
             sleep(1);
           }

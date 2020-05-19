@@ -35,7 +35,8 @@
 extern "C" {
 #endif // __cplusplus
 
-#define SRSLTE_TERM_TIMEOUT_S (5)
+// ALINK impatient, was 5 sec
+#define SRSLTE_TERM_TIMEOUT_S (1)
 
 // static vars required by signal handling
 static srslte::logger_file logger_file;
