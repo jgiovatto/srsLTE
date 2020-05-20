@@ -82,6 +82,7 @@
 
 #include "srslte/srslte.h"
 #include "rf_shmem_imp.h"
+#include "rf_helper.h"
 #include "srslte/phy/rf/rf.h"
 #include "srslte/phy/resampling/resample_arb.h"
 
@@ -145,13 +146,9 @@ static char rf_shmem_node_type = ' ';
 
 #define RF_SHMEM_NUM_SF_X_FRAME 10
 
-// the driver runs the TTI, 1 msec might be too small for some systems.
-#define RF_TIME_SCALE 1
-
 static const struct timeval tv_zero  = {0,0};
-static const struct timeval tv_step  = {0, 1000 * RF_TIME_SCALE}; // 1 sf
-static const struct timeval tv_4step = {0, 4000 * RF_TIME_SCALE}; // 4 sf
-
+static struct timeval tv_step  = {0, 1000}; // 1 sf
+static struct timeval tv_4step = {0, 4000}; // 4 sf
 
 // msg element meta data
 typedef struct {
@@ -203,17 +200,17 @@ const char * printMsg(const rf_shmem_element_t * element, char * buff, int buff_
 
 // rf dev info
 typedef struct {
-   char *               dev_name;
-   int                  nodetype;
-   uint32_t             nof_tx_ports;
-   uint32_t             nof_rx_ports;
-   double               rx_gain;
-   double               tx_gain;
-   double               rx_srate;
-   double               tx_srate;
-   double               rx_freq;
-   double               tx_freq;
-   double               clock_rate;
+   char *                    dev_name;
+   int                       nodetype;
+   uint32_t                  nof_tx_ports;
+   uint32_t                  nof_rx_ports;
+   double                    rx_gain;
+   double                    tx_gain;
+   double                    rx_srate;
+   double                    tx_srate;
+   double                    rx_freq;
+   double                    tx_freq;
+   double                    clock_rate;
    srslte_rf_error_handler_t error_handler;
    void *                    error_arg;
    bool                      rx_stream;
@@ -230,10 +227,10 @@ typedef struct {
    int                       shm_ul_fd;
    void *                    shm_dl;      // dl shared mem
    void *                    shm_ul;      // ul shared mem
-   rf_shmem_segment_t * rx_segment;  // rx bins
-   rf_shmem_segment_t * tx_segment;  // tx bins
-   int                  rand_loss;   // random loss 0=none, 100=all
-   int                  ctrl_fd;     // control fd
+   rf_shmem_segment_t *      rx_segment;  // rx bins
+   rf_shmem_segment_t *      tx_segment;  // tx bins
+   int                       rand_loss;   // random loss 0=none, 100=all
+   int                       ctrl_fd;     // control fd
 } rf_shmem_state_t;
 
 
@@ -724,6 +721,7 @@ int rf_shmem_open_multi(char *args, void **h, uint32_t nof_channels)
       return -1;
     }
 
+
    if(args && strncmp(args, "enb", strlen("enb")) == 0)
     {
       _state->nof_rx_ports = nof_channels;
@@ -749,7 +747,31 @@ int rf_shmem_open_multi(char *args, void **h, uint32_t nof_channels)
 
       return -1;
     }
+
+    // the driver runs the TTI, 1 msec might be too small for some systems.
+    // MUST set all nodes to be the same
+    uint32_t time_scale = 1;
+
+    parse_uint32(args, "time_scale", 1, &time_scale);
+
+    if(time_scale > 1)
+     {
+        // seen when > 4, "Proc "SI Acquire" - Timeout while acquiring SIB"
+        if(time_scale > 4)
+         {
+           time_scale = 4;
        
+           RF_SHMEM_INFO("clamp time_scale to %u", time_scale);
+         }
+        else
+         {
+           RF_SHMEM_INFO("time_scale set to %u", time_scale);
+         }
+
+        tv_step.tv_usec  *= time_scale;
+        tv_4step.tv_usec *= time_scale;
+     }
+
    if(rf_shmem_open_ipc(&rf_shmem_state) < 0)
     {
       RF_SHMEM_WARN("could not create ipc channel");
