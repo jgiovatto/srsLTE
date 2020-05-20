@@ -103,9 +103,8 @@ static char rf_shmem_node_type = ' ';
 
 #define RF_SHMEM_LOG_FMT "%02d:%02d:%02d.%06ld [SRF.%c] [%c] %s,  "
 
-
-#define RF_SHMEM_WARN(_fmt, ...) do {                                                   \
-                                 if(rf_shmem_log_warn) {                                \
+#define RF_SHMEM_LOG(_lvl, _C, _fmt, ...) do {                                          \
+                                 if(_lvl) {                                             \
                                    struct timeval _tv_now;                              \
                                    struct tm _tm[1];                                    \
                                    gettimeofday(&_tv_now, NULL);                        \
@@ -116,49 +115,16 @@ static char rf_shmem_node_type = ' ';
                                            _tm[0].tm_sec,                               \
                                            _tv_now.tv_usec,                             \
                                            rf_shmem_node_type,                          \
-                                           'W',                                         \
+                                           _C,                                          \
                                            __func__,                                    \
                                            ##__VA_ARGS__);                              \
                                      }                                                  \
                                  } while(0);
 
 
-#define RF_SHMEM_DBUG(_fmt, ...) do {                                                   \
-                                 if(rf_shmem_log_dbug) {                                \
-                                   struct timeval _tv_now;                              \
-                                   struct tm _tm[1];                                    \
-                                   gettimeofday(&_tv_now, NULL);                        \
-                                   localtime_r(&_tv_now.tv_sec, &_tm[0]);               \
-                                   fprintf(stdout, RF_SHMEM_LOG_FMT _fmt "\n",          \
-                                           _tm[0].tm_hour,                              \
-                                           _tm[0].tm_min,                               \
-                                           _tm[0].tm_sec,                               \
-                                           _tv_now.tv_usec,                             \
-                                           rf_shmem_node_type,                          \
-                                           'D',                                         \
-                                           __func__,                                    \
-                                           ##__VA_ARGS__);                              \
-                                 }                                                      \
-                             } while(0);
-
-#define RF_SHMEM_INFO(_fmt, ...) do {                                                   \
-                                 if(rf_shmem_log_info) {                                \
-                                   struct timeval _tv_now;                              \
-                                   struct tm _tm[1];                                    \
-                                   gettimeofday(&_tv_now, NULL);                        \
-                                   localtime_r(&_tv_now.tv_sec, &_tm[0]);               \
-                                   fprintf(stdout, RF_SHMEM_LOG_FMT _fmt "\n",          \
-                                           _tm[0].tm_hour,                              \
-                                           _tm[0].tm_min,                               \
-                                           _tm[0].tm_sec,                               \
-                                           _tv_now.tv_usec,                             \
-                                           rf_shmem_node_type,                          \
-                                           'I',                                         \
-                                           __func__,                                    \
-                                           ##__VA_ARGS__);                              \
-                                 }                                                      \
-                             } while(0);
-
+#define RF_SHMEM_WARN(_fmt, ...) RF_SHMEM_LOG(rf_shmem_log_warn, 'W', _fmt, ##__VA_ARGS__)
+#define RF_SHMEM_DBUG(_fmt, ...) RF_SHMEM_LOG(rf_shmem_log_dbug, 'D', _fmt, ##__VA_ARGS__)
+#define RF_SHMEM_INFO(_fmt, ...) RF_SHMEM_LOG(rf_shmem_log_info, 'I', _fmt, ##__VA_ARGS__)
 
 #define RF_SHMEM_LOG_FUNC_TODO fprintf(stderr, "XXX_TODO file:%s func:%s line:%d XXX_TODO\n", \
                                        __FILE__,                                              \
@@ -180,7 +146,7 @@ static char rf_shmem_node_type = ' ';
 #define RF_SHMEM_NUM_SF_X_FRAME 10
 
 // the driver runs the TTI, 1 msec might be too small for some systems.
-#define RF_TIME_SCALE 2
+#define RF_TIME_SCALE 1
 
 static const struct timeval tv_zero  = {0,0};
 static const struct timeval tv_step  = {0, 1000 * RF_TIME_SCALE}; // 1 sf
