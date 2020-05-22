@@ -612,6 +612,15 @@ void cc_worker::update_measurements()
   dl_metrics.sinr     = phy->avg_snr_db_cqi[cc_idx];
   dl_metrics.sync_err = ue_dl.chest_res.sync_error;
 
+  Debug("cc_idx avg_noise %3.3f, acg_rsrp_dbm %3.3f, avg_rsrq_db %3.3f, avg_rssi_dbm %3.3f, pathloss %3.3f, avg_snr_db_cqi % 3.3f, sync_err %f\n",
+       phy->avg_noise[cc_idx],
+       phy->avg_rsrp_dbm[cc_idx],
+       phy->avg_rsrq_db[cc_idx],
+       phy->avg_rssi_dbm[cc_idx],
+       phy->pathloss[cc_idx],
+       phy->avg_snr_db_cqi[cc_idx],
+       ue_dl.chest_res.sync_error);
+
   phy->set_dl_metrics(dl_metrics, cc_idx);
   phy->set_ul_metrics(ul_metrics, cc_idx);
 }
