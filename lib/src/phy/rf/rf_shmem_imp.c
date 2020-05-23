@@ -229,7 +229,7 @@ typedef struct {
    void *                    shm_ul;      // ul shared mem
    rf_shmem_segment_t *      rx_segment;  // rx bins
    rf_shmem_segment_t *      tx_segment;  // tx bins
-   int                       rand_loss;   // random loss 0=none, 100=all
+   int                       tx_loss;   // random loss 0=none, 100=all
    int                       ctrl_fd;     // control fd
 } rf_shmem_state_t;
 
@@ -293,7 +293,7 @@ static rf_shmem_state_t rf_shmem_state = { .dev_name        = "shmemrf",
                                            .shm_ul          = NULL,
                                            .rx_segment      = NULL,
                                            .tx_segment      = NULL,
-                                           .rand_loss       = 0,
+                                           .tx_loss         = 0,
                                            .ctrl_fd         = -1,
                                         };
 
@@ -748,28 +748,42 @@ int rf_shmem_open_multi(char *args, void **h, uint32_t nof_channels)
       return -1;
     }
 
+    uint32_t temp_val = 1;
+
     // the driver runs the TTI, 1 msec might be too small for some systems.
     // MUST set all nodes to be the same
-    uint32_t time_scale = 1;
+    parse_uint32(args, "time_scale", 1, &temp_val);
 
-    parse_uint32(args, "time_scale", 1, &time_scale);
-
-    if(time_scale > 1)
+    if(temp_val > 1)
      {
-        // seen when > 4, "Proc "SI Acquire" - Timeout while acquiring SIB"
-        if(time_scale > 4)
+        // note: when > 4, "Proc "SI Acquire" - Timeout while acquiring SIB"
+        if(temp_val > 4)
          {
-           time_scale = 4;
+           temp_val = 4;
        
-           RF_SHMEM_INFO("clamp time_scale to %u", time_scale);
+           RF_SHMEM_INFO("clamp time_scale to %u", temp_val);
          }
         else
          {
-           RF_SHMEM_INFO("time_scale set to %u", time_scale);
+           RF_SHMEM_INFO("time_scale set to %u", temp_val);
          }
 
-        tv_step.tv_usec  *= time_scale;
-        tv_4step.tv_usec *= time_scale;
+        tv_step.tv_usec  *= temp_val;
+        tv_4step.tv_usec *= temp_val;
+     }
+
+   temp_val = 0;
+   // percent of tx loss
+   parse_uint32(args, "tx_loss", 0, &temp_val);
+
+   if(temp_val > 0)
+     {
+       if(temp_val > 100)
+        {
+         temp_val = 100;
+        } 
+
+       _state->tx_loss = temp_val;
      }
 
    if(rf_shmem_open_ipc(&rf_shmem_state) < 0)
@@ -1113,15 +1127,15 @@ int rf_shmem_send_timed_multi(void *h, void *data[4], int nsamples,
      {
        const int val = atoi(buff); 
  
-       RF_SHMEM_INFO("set tx loss to from %d to %d", _state->rand_loss, val);
+       RF_SHMEM_INFO("set tx loss to from %d to %d", _state->tx_loss, val);
 
-       _state->rand_loss = val;
+       _state->tx_loss = val;
      }
 
    // some random loss the higher the number the more loss (0-100)
-   if(_state->rand_loss > 0)
+   if(_state->tx_loss > 0)
     {
-      if((rand() % 100) < _state->rand_loss)
+      if((rand() % 100) < _state->tx_loss)
        {
          ++_state->tx_nof_drop;
          return nsamples;
