@@ -462,7 +462,7 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
           {
             ftruncate(_state->shm_dl_fd, RF_SHMEM_DATA_SEGMENT_SIZE);
           }
-        RF_SHMEM_WARN("got shm_dl_fd 0x%x", _state->shm_dl_fd);
+        RF_SHMEM_INFO("got shm_dl_fd 0x%x", _state->shm_dl_fd);
       }
   } while(_state->shm_dl_fd < 0);
     
@@ -490,7 +490,7 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
           {
             ftruncate(_state->shm_ul_fd, RF_SHMEM_DATA_SEGMENT_SIZE);
           }
-        RF_SHMEM_WARN("got shm_ul_fd 0x%x", _state->shm_ul_fd);
+        RF_SHMEM_INFO("got shm_ul_fd 0x%x", _state->shm_ul_fd);
       }
   } while(_state->shm_ul_fd < 0);
 
@@ -552,7 +552,7 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
            }
           else
            {
-             RF_SHMEM_WARN("created sem %s", name);
+             RF_SHMEM_INFO("created sem %s", name);
            }
         }
        else
@@ -567,7 +567,7 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
            }
           else
            {
-             RF_SHMEM_WARN("opened sem %s", name);
+             RF_SHMEM_INFO("opened sem %s", name);
            }
         }
     }
@@ -641,7 +641,7 @@ int rf_shmem_start_rx_stream(void *h, bool now)
    _state->tv_this_tti = _state->tv_sos;
    timeradd(&_state->tv_sos, &tv_step, &_state->tv_next_tti);
 
-   RF_SHMEM_WARN("start rx stream, time_0 %ld:%06ld, next_tti %ld:%06ld", 
+   RF_SHMEM_INFO("start rx stream, time_0 %ld:%06ld, next_tti %ld:%06ld", 
                  _state->tv_sos.tv_sec, 
                  _state->tv_sos.tv_usec,
                  _state->tv_next_tti.tv_sec, 
@@ -661,7 +661,7 @@ int rf_shmem_stop_rx_stream(void *h)
 
    pthread_mutex_lock(&_state->state_lock);
 
-   RF_SHMEM_WARN("end rx stream");
+   RF_SHMEM_INFO("end rx stream");
 
    _state->rx_stream = false;
 
