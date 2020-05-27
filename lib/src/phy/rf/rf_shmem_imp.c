@@ -35,10 +35,6 @@
 // worth of iqdata and metadata is held in a "bin" where tx bin index is 4 sf 
 // ahead of the rx bin index.
 
-// J Giovatto Aug 08, 2018
-// suggest running non DEBUG_MODE with n_prb of 15 or 25 anything higher has not 
-// been able to achieve sync, yet ...
-//
 // changes to ue and enb conf resp:
 // device_name = shmemrf
 // device_args = ue or enb
@@ -58,6 +54,9 @@
 // enb listens on port 12000 and ue on 12001 (pass via args todo)
 // for example using netcat to set the enb tx loss to 100%
 // echo "100" | ncat -u localhost 12000
+
+// J Giovatto May 20, 2020
+// noted all prb values (6-100) are working !
 
 #include <string.h>
 #include <stdio.h>
@@ -146,6 +145,8 @@ static char rf_shmem_node_type = ' ';
 
 #define RF_SHMEM_NUM_SF_X_FRAME 10
 
+#define MAX_CHANNELS 5
+
 static const struct timeval tv_zero  = {0,0};
 static struct timeval tv_step  = {0, 1000}; // 1 sf
 static struct timeval tv_4step = {0, 4000}; // 4 sf
@@ -174,7 +175,7 @@ typedef struct {
   cf_t                    iqdata[RF_SHMEM_MAX_CF_LEN]; // data
 } rf_shmem_element_t;
 
-sem_t * sem[RF_SHMEM_NUM_SF_X_FRAME] = {0};  // element r/w bin locks
+sem_t * sem[MAX_CHANNELS][RF_SHMEM_NUM_SF_X_FRAME] = {0};  // element r/w bin locks
 
 // msg element bins 1 for each sf (tti)
 typedef struct {
@@ -202,8 +203,6 @@ const char * printMsg(const rf_shmem_element_t * element, char * buff, int buff_
 typedef struct {
    char *                    dev_name;
    int                       nodetype;
-   uint32_t                  nof_tx_ports;
-   uint32_t                  nof_rx_ports;
    double                    rx_gain;
    double                    tx_gain;
    double                    rx_srate;
@@ -229,8 +228,9 @@ typedef struct {
    void *                    shm_ul;      // ul shared mem
    rf_shmem_segment_t *      rx_segment;  // rx bins
    rf_shmem_segment_t *      tx_segment;  // tx bins
-   int                       tx_loss;   // random loss 0=none, 100=all
+   int                       tx_loss;     // random loss 0=none, 100=all
    int                       ctrl_fd;     // control fd
+   int                       channel_id; 
 } rf_shmem_state_t;
 
 
@@ -266,8 +266,6 @@ static void rf_shmem_handle_error(void * arg, srslte_rf_error_t error)
 
 static rf_shmem_state_t rf_shmem_state = { .dev_name        = "shmemrf",
                                            .nodetype        = RF_SHMEM_NTYPE_NONE,
-                                           .nof_tx_ports    = 1,
-                                           .nof_rx_ports    = 1,
                                            .rx_gain         = 0.0,
                                            .tx_gain         = 0.0,
                                            .rx_srate        = SRSLTE_CS_SAMP_FREQ,
@@ -295,6 +293,7 @@ static rf_shmem_state_t rf_shmem_state = { .dev_name        = "shmemrf",
                                            .tx_segment      = NULL,
                                            .tx_loss         = 0,
                                            .ctrl_fd         = -1,
+                                           .channel_id      = 0,
                                         };
 
 #define RF_SHMEM_GET_STATE(h)  assert(h); rf_shmem_state_t *_state = (rf_shmem_state_t *)(h)
@@ -412,8 +411,9 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
   int dl_shm_flags = 0;
   int ul_shm_flags = 0;
 
-  // assume 1 enb which is resposible for creating all shared resources
+  // 1 enb which is resposible for creating all shared resources
   bool wait_for_create = false;
+
   mode_t mode = S_IRWXU;// | S_IRWXG | S_IRWXO;
 
   if(rf_shmem_is_enb(_state))
@@ -435,7 +435,11 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
     }
 
   do {
-    if((_state->shm_dl_fd = shm_open("/srslte_shm_dl", dl_shm_flags, mode)) < 0)
+    char shmem_name[64] = {0};
+
+    snprintf(shmem_name, sizeof(shmem_name), "/shmemrf_shmem_dl_%02d", _state->channel_id);
+
+    if((_state->shm_dl_fd = shm_open(shmem_name, dl_shm_flags, mode)) < 0)
       {
         if(wait_for_create == false)
           {
@@ -469,7 +473,11 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
 
   // ul shm key
   do {
-    if((_state->shm_ul_fd = shm_open("/srslte_shm_ul", ul_shm_flags, mode)) < 0)
+    char shmem_name[64] = {0};
+
+    snprintf(shmem_name, sizeof(shmem_name), "/shmemrf_shmem_ul_%02d", _state->channel_id);
+
+    if((_state->shm_ul_fd = shm_open(shmem_name, ul_shm_flags, mode)) < 0)
       {
         if(wait_for_create == false)
           {
@@ -493,7 +501,6 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
         RF_SHMEM_INFO("got shm_ul_fd 0x%x", _state->shm_ul_fd);
       }
   } while(_state->shm_ul_fd < 0);
-
 
 
   // dl shm addr
@@ -532,19 +539,19 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
   // shared sems, 1 for each bin
   for(int i = 0; i < RF_SHMEM_NUM_SF_X_FRAME; ++i)
     {
-      char name[32] = {0};
+      char sem_name[64] = {0};
 
-      snprintf(name, sizeof(name), "/shmemrf_sem_%d", i);
+      snprintf(sem_name, sizeof(sem_name), "/shmemrf_sem_%02d.%02d", _state->channel_id, i);
 
       if(rf_shmem_is_enb(_state))
         {
           // cleanup any orphans
-          sem_unlink(name);
+          sem_unlink(sem_name);
  
           // initial value 1
-          if((sem[i] = sem_open(name, O_CREAT, 0600, 1)) == NULL)
+          if((sem[_state->channel_id][i] = sem_open(sem_name, O_CREAT, 0600, 1)) == NULL)
            {
-             RF_SHMEM_WARN("failed to create sem %s, %s", name, strerror(errno));
+             RF_SHMEM_WARN("failed to create sem %s, %s", sem_name, strerror(errno));
 
              rf_shmem_close(_state);
 
@@ -552,14 +559,14 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
            }
           else
            {
-             RF_SHMEM_INFO("created sem %s", name);
+             RF_SHMEM_INFO("created sem %s", sem_name);
            }
         }
        else
         {
-          if((sem[i] = sem_open(name, 0)) == NULL)
+          if((sem[_state->channel_id][i] = sem_open(sem_name, 0)) == NULL)
            {
-             RF_SHMEM_WARN("failed to open sem %s, %s", name, strerror(errno));
+             RF_SHMEM_WARN("failed to open sem %s, %s", sem_name, strerror(errno));
 
              rf_shmem_close(_state);
 
@@ -567,7 +574,7 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
            }
           else
            {
-             RF_SHMEM_INFO("opened sem %s", name);
+             RF_SHMEM_INFO("opened sem %s", sem_name);
            }
         }
     }
@@ -724,14 +731,10 @@ int rf_shmem_open_multi(char *args, void **h, uint32_t nof_channels)
 
    if(args && strncmp(args, "enb", strlen("enb")) == 0)
     {
-      _state->nof_rx_ports = nof_channels;
-
       rf_shmem_state.nodetype = RF_SHMEM_NTYPE_ENB;
     }
    else if(args && strncmp(args, "ue", strlen("ue")) == 0)
     {
-      _state->nof_rx_ports = 1;
-
       rf_shmem_state.nodetype = RF_SHMEM_NTYPE_UE;
     }
    else
@@ -847,11 +850,11 @@ int rf_shmem_close(void *h)
 
   for(int i = 0; i < RF_SHMEM_NUM_SF_X_FRAME; ++i)
     {
-      if(sem[i])
+      if(sem[_state->channel_id][i])
        {
-         sem_close(sem[i]);
+         sem_close(sem[_state->channel_id][i]);
 
-         sem[i] = NULL;
+         sem[_state->channel_id][i] = NULL;
        }
     }
 
@@ -1050,7 +1053,7 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
         const uint32_t bin = get_bin(&_state->tv_this_tti);
 
         // lock this bin
-        if(sem_wait(sem[bin]) < 0)
+        if(sem_wait(sem[_state->channel_id][bin]) < 0)
          {
            RF_SHMEM_WARN("sem_wait error %s", strerror(errno));
          }
@@ -1083,7 +1086,7 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
          }
 
        // unlock
-       sem_post(sem[bin]);
+       sem_post(sem[_state->channel_id][bin]);
      }
 
    // set rx timestamp to this tti
@@ -1175,7 +1178,7 @@ int rf_shmem_send_timed_multi(void *h, void *data[4], int nsamples,
        const uint32_t bin = get_bin(&tv_tx_tti);
 
        // lock this bin
-       if(sem_wait(sem[bin]) < 0)
+       if(sem_wait(sem[_state->channel_id][bin]) < 0)
          {
            RF_SHMEM_WARN("sem_wait error %s", strerror(errno));
          }
@@ -1224,7 +1227,7 @@ int rf_shmem_send_timed_multi(void *h, void *data[4], int nsamples,
 #endif
 
        // unlock
-       sem_post(sem[bin]);
+       sem_post(sem[_state->channel_id][bin]);
      }
 
    return nsamples;
