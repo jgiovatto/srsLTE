@@ -790,29 +790,21 @@ int rf_shmem_open_multi(char *args, void **h, uint32_t nof_channels)
       return -1;
     }
 
-   uint32_t temp_val = 0;
+   uint32_t temp_val = 1;
 
    // the driver runs the TTI, 1 msec might be too small for some systems.
-   // MUST set all nodes to be the same
-   parse_uint32(args, "time_scale", 1, &temp_val);
+   parse_uint32(args, "time_scale", 0, &temp_val);
 
-   if(temp_val > 1)
+   // not fully integrated with HARQ delay and past/gap samples see radio.cc tx()
+   if(temp_val != 1)
     {
-      // note: when > 4, "Proc "SI Acquire" - Timeout while acquiring SIB"
-      if(temp_val > 4)
-       {
-         temp_val = 4;
-      
-         RF_SHMEM_INFO("clamp time_scale to %u", temp_val);
-       }
-      else
-       {
-         RF_SHMEM_INFO("time_scale set to %u", temp_val);
-       }
+      RF_SHMEM_INFO("time_scale not fully integrated\n");
 
-      tv_step.tv_usec  *= temp_val;
-      tv_4step.tv_usec *= temp_val;
+      // tv_step.tv_usec  *= temp_val;
+      // tv_4step.tv_usec *= temp_val;
     }
+
+   temp_val = 0;
 
    // percent of tx loss
    parse_uint32(args, "tx_loss", 0, &temp_val);
@@ -1080,18 +1072,17 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
 
    pthread_mutex_lock(&_state->state_lock);
 
-   struct timeval tv_now;
-
    // nof bytes requested
    const uint32_t nbytes = RF_SHMEM_BYTES_X_SAMPLE(nsamples);
 
    // working in units of subframes
    const int nof_sf = (nsamples / (_state->rx_srate / 1000.0f));
 
-   RF_SHMEM_DBUG("get: nof_samples %u, nbytes %u, nof_sf %d", 
-                 nsamples, nbytes, nof_sf);
+   RF_SHMEM_DBUG("nof_samples %u, nbytes %u, nof_sf %d", nsamples, nbytes, nof_sf);
 
    uint32_t offset[_state->num_carriers];
+
+   struct timeval tv_now;
 
    for(uint32_t carrier = 0; carrier < _state->num_carriers; ++carrier)
     {
@@ -1111,45 +1102,49 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
 
       for(uint32_t carrier = 0; carrier < _state->num_carriers; ++carrier)
        { 
-         memset(data[carrier], 0x0, nbytes);
-
-         // lock this bin
-         if(sem_wait(sem[carrier][bin]) < 0)
+         if(data[carrier] && _state->rx_freq[carrier])
           {
-            RF_SHMEM_WARN("sem_wait error %s", strerror(errno));
-          }
+            // lock this bin
+            if(sem_wait(sem[carrier][bin]) < 0)
+             {
+               RF_SHMEM_WARN("sem_wait error %s", strerror(errno));
+             }
 
-         rf_shmem_element_t * element = &_state->rx_segment[carrier]->elements[bin];
-       
-         // check current tti w/bin tti 
-         if(timercmp(&_state->tv_this_tti, &element->meta.tv_tx_tti, ==))
-          {
-            const int result = rf_shmem_resample(element->meta.tx_srate,
-                                                 _state->rx_srate,
-                                                 element->iqdata,
-                                                 ((uint8_t*)data[carrier]) + offset[carrier],
-                                                 element->meta.nof_bytes);
+            memset(data[carrier], 0x0, nbytes);
 
-            offset[carrier] += result;
-
+            rf_shmem_element_t * element = &_state->rx_segment[carrier]->elements[bin];
+ 
 #ifdef RF_SHMEM_DEBUG_MODE
-           char logbuff[256] = {0};
-           RF_SHMEM_DBUG("RX, carrier %u, bin %u, new_len %u, total %u, %s", 
-                         carrier, bin, new_len, offset[carrier], printMsg(element, logbuff, sizeof(logbuff)));
+            char logbuff[256] = {0};
+            RF_SHMEM_INFO("RX, TTI %ld:%06ld, carrier %u, bin %u, offset %u, %s", 
+                           _state->tv_this_tti.tv_sec, _state->tv_this_tti.tv_usec, 
+                           carrier, bin, offset[carrier], printMsg(element, logbuff, sizeof(logbuff)));
 #endif
-          }
+      
+            // check current tti w/bin tti 
+            if(timercmp(&_state->tv_this_tti, &element->meta.tv_tx_tti, ==))
+             {
+               const int result = rf_shmem_resample(element->meta.tx_srate,
+                                                    _state->rx_srate,
+                                                    element->iqdata,
+                                                    ((uint8_t*)data[carrier]) + offset[carrier],
+                                                    element->meta.nof_bytes);
 
-         if(rf_shmem_is_enb(_state))
-          {
-            // enb clear ul bin on every rx
-            // ue leaves data for other ue(s) to read
-            memset(element, 0x0, sizeof(*element));
-          }
+               offset[carrier] += result;
+             }
 
-         // unlock
-         sem_post(sem[carrier][bin]);
+            if(rf_shmem_is_enb(_state))
+             {
+               // enb clear ul bin on every rx
+               // ue leaves data for other ue(s) to read
+               memset(element, 0x0, sizeof(*element));
+             }
+
+            // unlock
+            sem_post(sem[carrier][bin]);
+          }
        }
-     }
+    }
 
    // set rx timestamp to this tti
    rf_shmem_tv_to_fs(&_state->tv_this_tti, full_secs, frac_secs);
@@ -1176,12 +1171,12 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
  {
    RF_SHMEM_GET_STATE(h);
 
-   if(nsamples <= 0)
-     {
-       RF_SHMEM_DBUG("msg len %d, sob %d, eob %d", nsamples, is_sob, is_eob);
+   RF_SHMEM_DBUG("msg len %d, sob %d, eob %d", nsamples, is_sob, is_eob);
 
-       return 0;
-     }
+   if(nsamples == 0)
+    {
+      return SRSLTE_SUCCESS;
+    }
 
    // some random loss the higher the number the more loss (0-100)
    if(_state->tx_loss > 0)
@@ -1189,7 +1184,7 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
       if((rand() % 100) < _state->tx_loss)
        {
          ++_state->tx_nof_drop;
-         return nsamples;
+         return SRSLTE_SUCCESS;
        }
     } 
 
@@ -1204,82 +1199,86 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
 
    // this msg tx tti time has passed it should be well into the future
    if(timercmp(&tv_tx_tti, &tv_now, <))
-     {
-       struct timeval tv_diff;
+    {
+      struct timeval tv_diff;
 
-       timersub(&tv_tx_tti, &tv_now, &tv_diff);
+      timersub(&tv_tx_tti, &tv_now, &tv_diff);
 
-       ++_state->tx_nof_late;
+      ++_state->tx_nof_late;
 
-       RF_SHMEM_WARN("TX late, seqnum %lu, tx_tti %ld:%06ld, overrun %6.6lf, total late %zu",
-                     _state->tx_seqnum++,
-                     tv_tx_tti.tv_sec,
-                     tv_tx_tti.tv_usec,
-                     -rf_shmem_get_fs(&tv_diff),
-                     _state->tx_nof_late);
-     }
+      RF_SHMEM_WARN("TX late, seqnum %lu, tx_tti %ld:%06ld, overrun %6.6lf, total late %zu",
+                    _state->tx_seqnum++,
+                    tv_tx_tti.tv_sec,
+                    tv_tx_tti.tv_usec,
+                    -rf_shmem_get_fs(&tv_diff),
+                    _state->tx_nof_late);
+    }
    else
-     {
-       const uint32_t nbytes = RF_SHMEM_BYTES_X_SAMPLE(nsamples);
+    {
+      const uint32_t nbytes = RF_SHMEM_BYTES_X_SAMPLE(nsamples);
 
-       // get the bin for this tx_tti
-       const uint32_t bin = get_bin(&tv_tx_tti);
+      // get the bin for this tx_tti
+      const uint32_t bin = get_bin(&tv_tx_tti);
 
-       for(uint32_t carrier = 0; carrier < _state->num_carriers; ++carrier)
-        {
-          // lock this bin
-          if(sem_wait(sem[carrier][bin]) < 0)
-           {
-             RF_SHMEM_WARN("sem_wait error %s", strerror(errno));
-           }
+      for(uint32_t carrier = 0; carrier < _state->num_carriers; ++carrier)
+       {
+         if(data[carrier] && _state->tx_freq[carrier])
+          {
+            // lock this bin
+            if(sem_wait(sem[carrier][bin]) < 0)
+             {
+               RF_SHMEM_WARN("sem_wait error %s", strerror(errno));
+             }
 
-          rf_shmem_element_t * element = &_state->tx_segment[carrier]->elements[bin];
+            rf_shmem_element_t * element = &_state->tx_segment[carrier]->elements[bin];
 
-          // 1 and only 1 enb for tx
-          if(rf_shmem_is_enb(_state))
-           {
-             // enb clears stale dl bin before tx
-             memset(element, 0x0, sizeof(*element));
-           }
+            // 1 and only 1 enb for tx
+            if(rf_shmem_is_enb(_state))
+             {
+               // enb clears stale dl bin before tx
+               memset(element, 0x0, sizeof(*element));
+             }
 
-          // new bin entry
-          if(element->meta.nof_sf == 0)
-           {
-             memcpy(element->iqdata, data[carrier], nbytes);
+            // new bin entry
+            if(element->meta.nof_sf == 0)
+             {
+               memcpy(element->iqdata, data[carrier], nbytes);
 
-             element->meta.is_sob     = is_sob;
-             element->meta.is_eob     = is_eob;
-             element->meta.tx_srate   = _state->tx_srate;
-             element->meta.seqnum     = _state->tx_seqnum++;
-             element->meta.nof_bytes  = nbytes;
-             element->meta.tv_tx_time = tv_now;
-             element->meta.tv_tx_tti  = tv_tx_tti;
-           }
-          else
-           {
-             cf_t * q = (cf_t*)data[carrier];
+               element->meta.is_sob     = is_sob;
+               element->meta.is_eob     = is_eob;
+               element->meta.tx_srate   = _state->tx_srate;
+               element->meta.seqnum     = _state->tx_seqnum++;
+               element->meta.nof_bytes  = nbytes;
+               element->meta.tv_tx_time = tv_now;
+               element->meta.tv_tx_tti  = tv_tx_tti;
+             }
+            else
+             {
+               cf_t * q = (cf_t*)data[carrier];
 
-             // XXX TODO I/Q data from multiple UL transmission needs to be summed
-             for(int i = 0; i < nsamples; ++i)
-              {
-                // is this correct, just sum iq data ???
-                element->iqdata[i] += q[i];
-              }
-           }
+               // XXX TODO I/Q data from multiple UL transmission needs to be summed
+               for(int i = 0; i < nsamples; ++i)
+                {
+                  // is this correct, just sum iq data ???
+                  element->iqdata[i] += q[i];
+                }
+             }
 
-          ++element->meta.nof_sf;
+            ++element->meta.nof_sf;
 
-          ++_state->tx_nof_ok;
+            ++_state->tx_nof_ok;
 
 #ifdef RF_SHMEM_DEBUG_MODE
-          char logbuff[256] = {0};
-          RF_SHMEM_DBUG("TX, bin %u, %s", bin, printMsg(element, logbuff, sizeof(logbuff)));
+            char logbuff[256] = {0};
+            RF_SHMEM_INFO("TX, TTI %ld:%06ld, carrier %u, bin %u, %s", 
+                          _state->tv_this_tti.tv_sec, _state->tv_this_tti.tv_usec, carrier, bin, printMsg(element, logbuff, sizeof(logbuff)));
 #endif
 
-          // unlock
-          sem_post(sem[carrier][bin]);
-        }
-     }
+            // unlock
+            sem_post(sem[carrier][bin]);
+          }
+       }
+    }
 
-   return nsamples;
+   return SRSLTE_SUCCESS;
  }
