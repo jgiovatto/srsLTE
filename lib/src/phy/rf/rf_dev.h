@@ -301,7 +301,7 @@ static rf_dev_t *available_devices[] = {
     &dev_dummy,
 #endif
 #ifdef ENABLE_SHMEMRF
-  &dev_shmem,
+    &dev_shmem,
 #endif
   NULL
 };

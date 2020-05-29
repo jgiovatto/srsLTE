@@ -90,13 +90,13 @@
 #undef RF_SHMEM_DEBUG_MODE
 
 #ifdef RF_SHMEM_DEBUG_MODE
-static bool rf_shmem_log_dbug  = true;
-static bool rf_shmem_log_info  = true;
-static bool rf_shmem_log_warn  = true;
+static bool rf_shmem_log_dbug = true;
+static bool rf_shmem_log_info = true;
+static bool rf_shmem_log_warn = true;
 #else
-static bool rf_shmem_log_dbug  = false;
-static bool rf_shmem_log_info  = true;
-static bool rf_shmem_log_warn  = true;
+static bool rf_shmem_log_dbug = false;
+static bool rf_shmem_log_info = true;
+static bool rf_shmem_log_warn = true;
 #endif
 
 static char rf_shmem_node_type = ' ';
@@ -143,11 +143,9 @@ static char rf_shmem_node_type = ' ';
 
 #define RF_SHMEM_NUM_SF_X_FRAME 10
 
-#define RF_SHMEM_CHANNELS 5
-
-static const struct timeval tv_zero  = {0,0};
-static struct timeval tv_step  = {0, 1000}; // 1 sf
-static struct timeval tv_4step = {0, 4000}; // 4 sf
+static const struct timeval tv_zero = {0,0};
+static struct timeval tv_step       = {0, 1000}; // 1 sf
+static struct timeval tv_4step      = {0, 4000}; // 4 sf
 
 // msg element meta data
 typedef struct {
@@ -173,7 +171,7 @@ typedef struct {
   cf_t                    iqdata[RF_SHMEM_MAX_CF_LEN]; // data
 } rf_shmem_element_t;
 
-sem_t * sem[RF_SHMEM_CHANNELS][RF_SHMEM_NUM_SF_X_FRAME] = {{0}};  // element r/w bin locks
+sem_t * sem[SRSLTE_MAX_CARRIERS][RF_SHMEM_NUM_SF_X_FRAME] = {{0}};  // element r/w bin locks
 
 // msg element bins 1 for each sf (tti)
 typedef struct {
@@ -199,14 +197,14 @@ const char * printMsg(const rf_shmem_element_t * element, char * buff, int buff_
 
 // rf dev info
 typedef struct {
-   char *                    dev_name;
+   const char *              dev_name;
    int                       nodetype;
    double                    rx_gain;
    double                    tx_gain;
    double                    rx_srate;
    double                    tx_srate;
-   double                    rx_freq;
-   double                    tx_freq;
+   double                    rx_freq[SRSLTE_MAX_CARRIERS];
+   double                    tx_freq[SRSLTE_MAX_CARRIERS];
    double                    clock_rate;
    srslte_rf_error_handler_t error_handler;
    void *                    error_arg;
@@ -220,18 +218,18 @@ typedef struct {
    size_t                    tx_nof_ok;
    size_t                    tx_nof_drop;
    srslte_rf_info_t          rf_info;
-   int                       shm_dl_fd;
-   int                       shm_ul_fd;
-   void *                    shm_dl;      // dl shared mem
-   void *                    shm_ul;      // ul shared mem
-   rf_shmem_segment_t *      rx_segment;  // rx bins
-   rf_shmem_segment_t *      tx_segment;  // tx bins
-   int                       tx_loss;     // random loss 0=none, 100=all
-   uint32_t                  channel_id;  // carrier/channel id
+   int                       shm_dl_fd[SRSLTE_MAX_CARRIERS];
+   int                       shm_ul_fd[SRSLTE_MAX_CARRIERS];
+   void *                    shm_dl[SRSLTE_MAX_CARRIERS];       // dl shared mem
+   void *                    shm_ul[SRSLTE_MAX_CARRIERS];       // ul shared mem
+   rf_shmem_segment_t *      rx_segment[SRSLTE_MAX_CARRIERS];   // rx bins
+   rf_shmem_segment_t *      tx_segment[SRSLTE_MAX_CARRIERS];   // tx bins
+   int                       tx_loss;                           // random loss 0=none, 100=all
+   uint32_t                  num_carriers; 
+   int                       ctrl_sock;                         // sock control  
 } rf_shmem_state_t;
 
 
-int  rf_shmem_ctrl_fd = -1;     // control fd
 
 void rf_shmem_suppress_stdout(void *h)
  {
@@ -250,7 +248,6 @@ static inline uint32_t get_bin(const struct timeval * tv)
    return (tv_to_usec(tv) / tv_to_usec(&tv_step)) % RF_SHMEM_NUM_SF_X_FRAME;
  }
 
-
 static void rf_shmem_handle_error(void * arg, srslte_rf_error_t error)
 {
   // XXX TODO make use of this handler
@@ -262,43 +259,49 @@ static void rf_shmem_handle_error(void * arg, srslte_rf_error_t error)
           "unknown error");
 }
 
+static rf_shmem_state_t rf_shmem_state = { .dev_name        = "shmemrf",
+                                           .nodetype        = RF_SHMEM_NTYPE_NONE,
+                                           .rx_gain         = 0.0,
+                                           .tx_gain         = 0.0,
+                                           .rx_srate        = SRSLTE_CS_SAMP_FREQ,
+                                           .tx_srate        = SRSLTE_CS_SAMP_FREQ,
+                                           .rx_freq         = {0.0},
+                                           .tx_freq         = {0.0},
+                                           .clock_rate      = 0.0,
+                                           .error_handler   = rf_shmem_handle_error,
+                                           .error_arg       = NULL,
+                                           .rx_stream       = false,
+                                           .tx_seqnum       = 0,
+                                           .state_lock      = PTHREAD_MUTEX_INITIALIZER,
+                                           .tv_sos          = {},
+                                           .tv_this_tti     = {},
+                                           .tv_next_tti     = {},
+                                           .tx_nof_late     = 0,
+                                           .tx_nof_ok       = 0,
+                                           .tx_nof_drop     = 0,
+                                           .rf_info         = {},
+                                           .shm_dl_fd       = {-1},
+                                           .shm_ul_fd       = {-1},
+                                           .shm_dl          = {NULL},
+                                           .shm_ul          = {NULL},
+                                           .rx_segment      = {NULL},
+                                           .tx_segment      = {NULL},
+                                           .tx_loss         = 0,
+                                           .num_carriers    = 0,
+                                           .ctrl_sock       = -1,
+                                         };
 
-static rf_shmem_state_t rf_shmem_state[RF_SHMEM_CHANNELS] = {{ .dev_name        = "shmemrf",
-                                                          .nodetype        = RF_SHMEM_NTYPE_NONE,
-                                                          .rx_gain         = 0.0,
-                                                          .tx_gain         = 0.0,
-                                                          .rx_srate        = SRSLTE_CS_SAMP_FREQ,
-                                                          .tx_srate        = SRSLTE_CS_SAMP_FREQ,
-                                                          .rx_freq         = 0.0,
-                                                          .tx_freq         = 0.0,
-                                                          .clock_rate      = 0.0,
-                                                          .error_handler   = rf_shmem_handle_error,
-                                                          .error_arg       = NULL,
-                                                          .rx_stream       = false,
-                                                          .tx_seqnum       = 0,
-                                                          .state_lock      = PTHREAD_MUTEX_INITIALIZER,
-                                                          .tv_sos          = {},
-                                                          .tv_this_tti     = {},
-                                                          .tv_next_tti     = {},
-                                                          .tx_nof_late     = 0,
-                                                          .tx_nof_ok       = 0,
-                                                          .tx_nof_drop     = 0,
-                                                          .rf_info         = {},
-                                                          .shm_dl_fd       = 0,
-                                                          .shm_ul_fd       = 0,
-                                                          .shm_dl          = NULL,
-                                                          .shm_ul          = NULL,
-                                                          .rx_segment      = NULL,
-                                                          .tx_segment      = NULL,
-                                                          .tx_loss         = 0,
-                                                          .channel_id      = 0,
-                                                         }};
+#define RF_SHMEM_GET_STATE(h)  if(!h) printf("NULL handle in call to %s !!!\n", __func__); \
+                               rf_shmem_state_t *_state = (rf_shmem_state_t *)(h)
 
-#define RF_SHMEM_GET_STATE(h)  assert(h); rf_shmem_state_t *_state = (rf_shmem_state_t *)(h)
 
-static inline bool rf_shmem_is_enb(rf_shmem_state_t * _state)
+#define  RF_SHMEM_DL_FMT  "/shmemrf_shmem_dl_%02d"
+#define  RF_SHMEM_UL_FMT  "/shmemrf_shmem_ul_%02d"
+#define  RF_SHMEM_SEM_FMT "/shmemrf_sem_%02d.%02d"
+
+static inline bool rf_shmem_is_enb(rf_shmem_state_t * state)
 {
-  return (_state->nodetype == RF_SHMEM_NTYPE_ENB);
+  return (state->nodetype == RF_SHMEM_NTYPE_ENB);
 }
 
 // timeval to full and frac seconds
@@ -364,15 +367,15 @@ static int rf_shmem_resample(double srate_in,
 }
 
 
-static int rf_shmem_open_ctrl_sock(rf_shmem_state_t * _state)
+static int rf_shmem_open_ctrl_sock(rf_shmem_state_t * state)
 {
-   if(rf_shmem_ctrl_fd < 0)
+   if(state->ctrl_sock < 0)
     {
       const int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
       if(s < 0)
        {
-         RF_SHMEM_WARN("failed to get ctrl_fd %s", strerror(errno));
+         RF_SHMEM_WARN("failed to get ctrl_sock %s", strerror(errno));
 
          return -1;
        }
@@ -381,11 +384,13 @@ static int rf_shmem_open_ctrl_sock(rf_shmem_state_t * _state)
          struct sockaddr_in sin;
          sin.sin_family      = AF_INET;
          sin.sin_addr.s_addr = INADDR_ANY;
-         sin.sin_port        = rf_shmem_is_enb(_state) ? htons(12000) : htons(12001); // TODO pass via args
+         sin.sin_port        = rf_shmem_is_enb(state) ? 
+                               htons(12000) : 
+                               htons(12001); // TODO pass via args
 
          if(bind(s, (const struct sockaddr *) &sin, sizeof(sin)) < 0)
           {
-             RF_SHMEM_WARN("failed to bind ctrl_fd %s, %s:%d",
+             RF_SHMEM_WARN("failed to bind ctrl_sock %s, %s:%d",
                            strerror(errno), 
                            inet_ntoa(sin.sin_addr),
                            ntohs(sin.sin_port));
@@ -394,9 +399,9 @@ static int rf_shmem_open_ctrl_sock(rf_shmem_state_t * _state)
           }
         else
           {
-            RF_SHMEM_INFO("bind ctrl_fd %s:%d", inet_ntoa(sin.sin_addr), ntohs(sin.sin_port));
+            RF_SHMEM_INFO("bind ctrl_sock %s:%d", inet_ntoa(sin.sin_addr), ntohs(sin.sin_port));
 
-            rf_shmem_ctrl_fd = s;
+            state->ctrl_sock = s;
 
           }
        }
@@ -406,7 +411,7 @@ static int rf_shmem_open_ctrl_sock(rf_shmem_state_t * _state)
 }
 
 
-static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
+static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t carrier)
 {
   int dl_shm_flags = 0;
   int ul_shm_flags = 0;
@@ -416,7 +421,7 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
 
   mode_t mode = S_IRWXU;// | S_IRWXG | S_IRWXO;
 
-  if(rf_shmem_is_enb(_state))
+  if(rf_shmem_is_enb(state))
     {
       rf_shmem_node_type = 'E';
 
@@ -437,9 +442,9 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
   do {
     char shmem_name[64] = {0};
 
-    snprintf(shmem_name, sizeof(shmem_name), "/shmemrf_shmem_dl_%02d", _state->channel_id);
+    snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_DL_FMT, carrier);
 
-    if((_state->shm_dl_fd = shm_open(shmem_name, dl_shm_flags, mode)) < 0)
+    if((state->shm_dl_fd[carrier] = shm_open(shmem_name, dl_shm_flags, mode)) < 0)
       {
         if(wait_for_create == false)
           {
@@ -462,22 +467,22 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
       }
     else
       {
-        if(rf_shmem_is_enb(_state))
+        if(rf_shmem_is_enb(state))
           {
-            ftruncate(_state->shm_dl_fd, RF_SHMEM_DATA_SEGMENT_SIZE);
+            ftruncate(state->shm_dl_fd[carrier], RF_SHMEM_DATA_SEGMENT_SIZE);
           }
-        RF_SHMEM_INFO("got shm_dl_fd 0x%x", _state->shm_dl_fd);
+        RF_SHMEM_INFO("got shm_dl_fd 0x%x", state->shm_dl_fd[carrier]);
       }
-  } while(_state->shm_dl_fd < 0);
+  } while(state->shm_dl_fd[carrier] < 0);
     
 
   // ul shm key
   do {
     char shmem_name[64] = {0};
 
-    snprintf(shmem_name, sizeof(shmem_name), "/shmemrf_shmem_ul_%02d", _state->channel_id);
+    snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_UL_FMT, carrier);
 
-    if((_state->shm_ul_fd = shm_open(shmem_name, ul_shm_flags, mode)) < 0)
+    if((state->shm_ul_fd[carrier] = shm_open(shmem_name, ul_shm_flags, mode)) < 0)
       {
         if(wait_for_create == false)
           {
@@ -494,45 +499,53 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
       }
     else
       {
-        if(rf_shmem_is_enb(_state))
+        if(rf_shmem_is_enb(state))
           {
-            ftruncate(_state->shm_ul_fd, RF_SHMEM_DATA_SEGMENT_SIZE);
+            ftruncate(state->shm_ul_fd[carrier], RF_SHMEM_DATA_SEGMENT_SIZE);
           }
-        RF_SHMEM_INFO("got shm_ul_fd 0x%x", _state->shm_ul_fd);
+        RF_SHMEM_INFO("got shm_ul_fd 0x%x", state->shm_ul_fd[carrier]);
       }
-  } while(_state->shm_ul_fd < 0);
+  } while(state->shm_ul_fd[carrier] < 0);
 
 
   // dl shm addr
-  if((_state->shm_dl = mmap(0, RF_SHMEM_DATA_SEGMENT_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, _state->shm_dl_fd, 0)) == (void *) -1)
+  if((state->shm_dl[carrier] = 
+             mmap(0, 
+                  RF_SHMEM_DATA_SEGMENT_SIZE, 
+                  PROT_READ | PROT_WRITE, MAP_SHARED, 
+                  state->shm_dl_fd[carrier], 0)) == (void *) -1)
     {
       RF_SHMEM_WARN("failed to map shm_dl %s", strerror(errno));
 
-      rf_shmem_close(_state);
+      rf_shmem_close(state);
 
       return -1;
     }
 
   // ul shm addr
-  if((_state->shm_ul = mmap(0, RF_SHMEM_DATA_SEGMENT_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, _state->shm_ul_fd, 0)) == (void *) -1)
+  if((state->shm_ul[carrier] = 
+             mmap(0, 
+             RF_SHMEM_DATA_SEGMENT_SIZE,
+             PROT_READ | PROT_WRITE, MAP_SHARED,
+             state->shm_ul_fd[carrier], 0)) == (void *) -1)
     {
       RF_SHMEM_WARN("failed to map shm_ul %s", strerror(errno));
 
-      rf_shmem_close(_state);
+      rf_shmem_close(state);
 
       return -1;
     }
 
   // set ul/dl bins to avoid ue/enb cross talk
-  if(rf_shmem_is_enb(_state))
+  if(rf_shmem_is_enb(state))
     {
-      _state->tx_segment = (rf_shmem_segment_t *) _state->shm_dl;
-      _state->rx_segment = (rf_shmem_segment_t *) _state->shm_ul;
+      state->tx_segment[carrier] = (rf_shmem_segment_t *) state->shm_dl[carrier];
+      state->rx_segment[carrier] = (rf_shmem_segment_t *) state->shm_ul[carrier];
     }
   else
     {
-      _state->tx_segment = (rf_shmem_segment_t *) _state->shm_ul;
-      _state->rx_segment = (rf_shmem_segment_t *) _state->shm_dl;
+      state->tx_segment[carrier] = (rf_shmem_segment_t *) state->shm_ul[carrier];
+      state->rx_segment[carrier] = (rf_shmem_segment_t *) state->shm_dl[carrier];
     }
 
 
@@ -541,19 +554,19 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
     {
       char sem_name[64] = {0};
 
-      snprintf(sem_name, sizeof(sem_name), "/shmemrf_sem_%02d.%02d", _state->channel_id, i);
+      snprintf(sem_name, sizeof(sem_name), RF_SHMEM_SEM_FMT, carrier, i);
 
-      if(rf_shmem_is_enb(_state))
+      if(rf_shmem_is_enb(state))
         {
           // cleanup any orphans
           sem_unlink(sem_name);
  
           // initial value 1
-          if((sem[_state->channel_id][i] = sem_open(sem_name, O_CREAT, 0600, 1)) == NULL)
+          if((sem[carrier][i] = sem_open(sem_name, O_CREAT, 0600, 1)) == NULL)
            {
              RF_SHMEM_WARN("failed to create sem %s, %s", sem_name, strerror(errno));
 
-             rf_shmem_close(_state);
+             rf_shmem_close(state);
 
              return -1;
            }
@@ -564,11 +577,11 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
         }
        else
         {
-          if((sem[_state->channel_id][i] = sem_open(sem_name, 0)) == NULL)
+          if((sem[carrier][i] = sem_open(sem_name, 0)) == NULL)
            {
              RF_SHMEM_WARN("failed to open sem %s, %s", sem_name, strerror(errno));
 
-             rf_shmem_close(_state);
+             rf_shmem_close(state);
 
              return -1;
            }
@@ -580,12 +593,11 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * _state)
     }
 
   // clear data segments
-  memset(_state->shm_ul, 0x0, RF_SHMEM_DATA_SEGMENT_SIZE);
-  memset(_state->shm_dl, 0x0, RF_SHMEM_DATA_SEGMENT_SIZE);
+  memset(state->shm_ul[carrier], 0x0, RF_SHMEM_DATA_SEGMENT_SIZE);
+  memset(state->shm_dl[carrier], 0x0, RF_SHMEM_DATA_SEGMENT_SIZE);
 
   return 0;
 }
-
 
 
 
@@ -615,6 +627,30 @@ static void rf_shmem_wait_next_tti(void *h, struct timeval * tv_ref)
    gettimeofday(tv_ref, NULL);
 }
 
+
+// XXX TODO create a thread for this
+#if 0
+static void * rf_shmem_get_loss(void * h)
+{
+   RF_SHMEM_GET_STATE(h);
+
+   // check for loss change
+   char buff[256] = {0};
+
+   const int n = recv(_state->ctrl_sock, buff, sizeof(buff)-1, MSG_DONTWAIT);
+
+   if(n > 0)
+     {
+       const int val = atoi(buff); 
+ 
+       RF_SHMEM_INFO("set tx loss to from %d to %d", _state->tx_loss, val);
+
+       _state->tx_loss = val;
+     }
+
+   return NULL;
+}
+#endif
 
 
 // ************ begin RF API ************
@@ -719,87 +755,97 @@ int rf_shmem_open_multi(char *args, void **h, uint32_t nof_channels)
  {
    RF_SHMEM_INFO("channels %u, args [%s]", nof_channels, args ? args : "none");
 
-   for(uint32_t channel = 0; (channel < nof_channels) && (channel < RF_SHMEM_CHANNELS); ++channel)
+   *h = NULL;
+
+   if(! (nof_channels < SRSLTE_MAX_CARRIERS))
+     {
+        RF_SHMEM_INFO("channels %u !< MAX %u", nof_channels, SRSLTE_MAX_CARRIERS);
+
+        return -1;
+     }
+
+   rf_shmem_state_t * state = &rf_shmem_state;
+
+   state->num_carriers = nof_channels;
+
+   if(args && strncmp(args, "enb", strlen("enb")) == 0)
     {
-      rf_shmem_state_t * _state = &rf_shmem_state[channel];
-
-      _state->channel_id = channel;
-
-      if(args && strncmp(args, "enb", strlen("enb")) == 0)
+      state->nodetype = RF_SHMEM_NTYPE_ENB;
+    }
+   else if(args && strncmp(args, "ue", strlen("ue")) == 0)
+    {
+      state->nodetype = RF_SHMEM_NTYPE_UE;
+    }
+   else
+    {
+      if(!args)
        {
-         _state->nodetype = RF_SHMEM_NTYPE_ENB;
-       }
-      else if(args && strncmp(args, "ue", strlen("ue")) == 0)
-       {
-         _state->nodetype = RF_SHMEM_NTYPE_UE;
+         RF_SHMEM_WARN("expected node type enb or ue\n");
        }
       else
        {
-         if(!args)
-          {
-            RF_SHMEM_WARN("expected node type enb or ue\n");
-          }
-         else
-          {
-            RF_SHMEM_WARN("unexpected node type %s\n", args);
-          }
-
-         return -1;
+         RF_SHMEM_WARN("unexpected node type %s\n", args);
        }
 
-       uint32_t temp_val = 0;
-
-       // the driver runs the TTI, 1 msec might be too small for some systems.
-       // MUST set all nodes to be the same
-       parse_uint32(args, "time_scale", 1, &temp_val);
-
-       if(temp_val > 1)
-        {
-           // note: when > 4, "Proc "SI Acquire" - Timeout while acquiring SIB"
-           if(temp_val > 4)
-            {
-              temp_val = 4;
-       
-              RF_SHMEM_INFO("clamp time_scale to %u", temp_val);
-            }
-           else
-            {
-              RF_SHMEM_INFO("time_scale set to %u", temp_val);
-            }
-
-           tv_step.tv_usec  *= temp_val;
-           tv_4step.tv_usec *= temp_val;
-        }
-
-      // percent of tx loss
-      parse_uint32(args, "tx_loss", 0, &temp_val);
-
-      if(temp_val > 0)
-        {
-          if(temp_val > 100)
-           {
-            temp_val = 100;
-           } 
-
-          _state->tx_loss = temp_val;
-        }
-
-      if(rf_shmem_open_ipc(_state) < 0)
-       {
-         RF_SHMEM_WARN("could not create ipc channel");
-
-         return -1;
-       }
-
-      if(rf_shmem_open_ctrl_sock(_state) < 0)
-       {
-         RF_SHMEM_WARN("could not create control channel");
-
-         return -1;
-       }
-
-      h[channel] = _state;
+      return -1;
     }
+
+   uint32_t temp_val = 0;
+
+   // the driver runs the TTI, 1 msec might be too small for some systems.
+   // MUST set all nodes to be the same
+   parse_uint32(args, "time_scale", 1, &temp_val);
+
+   if(temp_val > 1)
+    {
+      // note: when > 4, "Proc "SI Acquire" - Timeout while acquiring SIB"
+      if(temp_val > 4)
+       {
+         temp_val = 4;
+      
+         RF_SHMEM_INFO("clamp time_scale to %u", temp_val);
+       }
+      else
+       {
+         RF_SHMEM_INFO("time_scale set to %u", temp_val);
+       }
+
+      tv_step.tv_usec  *= temp_val;
+      tv_4step.tv_usec *= temp_val;
+    }
+
+   // percent of tx loss
+   parse_uint32(args, "tx_loss", 0, &temp_val);
+
+   if(temp_val > 0)
+    {
+      if(temp_val > 100)
+       {
+         temp_val = 100;
+       } 
+
+       state->tx_loss = temp_val;
+     }
+
+   if(rf_shmem_open_ctrl_sock(state) < 0)
+    {
+      RF_SHMEM_WARN("could not create control carrier");
+
+      return -1;
+    }
+
+   for(uint32_t carrier = 0; carrier < nof_channels; ++carrier)
+    {
+      if(rf_shmem_open_ipc(state, carrier) < 0)
+       {
+         RF_SHMEM_WARN("could not create ipc carrier");
+
+         return -1;
+       }
+      RF_SHMEM_INFO("carrier %u, %p", carrier, state);
+    }
+
+   *h = state;
 
    return 0;
  }
@@ -811,53 +857,66 @@ int rf_shmem_close(void *h)
 
    RF_SHMEM_GET_STATE(h);
 
-   // enb creats/cleans up all shared resources
-   if(rf_shmem_is_enb(_state))
+   for(uint32_t carrier = 0; carrier < _state->num_carriers; ++carrier)
     {
-      if(_state->shm_dl)
-        {
-          munmap(_state->shm_dl, RF_SHMEM_DATA_SEGMENT_SIZE);
-
-          shm_unlink("/srslte_shm_dl");
-
-          if(close(_state->shm_dl_fd) < 0)
-            {
-              RF_SHMEM_WARN("failed to close shm_dl_fd %s", strerror(errno));
-            }
-
-          _state->shm_dl = NULL;
-        }
-
-      if(_state->shm_ul)
-        {
-          munmap(_state->shm_ul, RF_SHMEM_DATA_SEGMENT_SIZE);
-
-          shm_unlink("/srslte_shm_ul");
-
-          if(close(_state->shm_ul_fd) < 0)
-            {
-              RF_SHMEM_WARN("failed to close shm_ul_fd %s", strerror(errno));
-            }
-
-          _state->shm_ul = NULL;
-        }
-    }
-
-  for(int i = 0; i < RF_SHMEM_NUM_SF_X_FRAME; ++i)
-    {
-      if(sem[_state->channel_id][i])
+      // enb creats/cleans up all shared resources
+      if(rf_shmem_is_enb(_state))
        {
-         sem_close(sem[_state->channel_id][i]);
+         if(_state->shm_dl[carrier])
+          {
+            munmap(_state->shm_dl[carrier], RF_SHMEM_DATA_SEGMENT_SIZE);
 
-         sem[_state->channel_id][i] = NULL;
+            char shmem_name[64] = {0};
+ 
+            snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_DL_FMT, carrier);
+
+            shm_unlink(shmem_name);
+
+            close(_state->shm_dl_fd[carrier]);
+
+            _state->shm_dl_fd[carrier] = -1;
+
+            _state->shm_dl[carrier] = NULL;
+          }
+
+         if(_state->shm_ul[carrier])
+          {
+            munmap(_state->shm_ul[carrier], RF_SHMEM_DATA_SEGMENT_SIZE);
+
+            char shmem_name[64] = {0};
+ 
+            snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_UL_FMT, carrier);
+
+            shm_unlink(shmem_name);
+
+            close(_state->shm_ul_fd[carrier]);
+
+            _state->shm_ul_fd[carrier] = -1;
+
+            _state->shm_ul[carrier] = NULL;
+          }
        }
+
+      for(int i = 0; i < RF_SHMEM_NUM_SF_X_FRAME; ++i)
+       {
+        if(sem[carrier][i])
+         {
+           char sem_name[64] = {0};
+
+           snprintf(sem_name, sizeof(sem_name), RF_SHMEM_SEM_FMT, carrier, i);
+
+           sem_close(sem[carrier][i]);
+
+           sem[carrier][i] = NULL;
+         }
+      }
     }
 
-  close(rf_shmem_ctrl_fd);
+   close(_state->ctrl_sock);
 
-  rf_shmem_ctrl_fd = -1;
+   _state->ctrl_sock = -1;
  
-  return 0;
+   return 0;
  }
 
 
@@ -966,11 +1025,11 @@ double rf_shmem_set_rx_freq(void *h, uint32_t ch, double freq)
    RF_SHMEM_GET_STATE(h);
 
    RF_SHMEM_INFO("ch %u, freq %4.2lf MHz to %4.2lf MHz", 
-                 ch, _state->rx_freq / 1e6, freq / 1e6);
+                 ch, _state->rx_freq[ch] / 1e6, freq / 1e6);
 
-   _state->rx_freq = freq;
+   _state->rx_freq[ch] = freq;
 
-   return _state->rx_freq;
+   return _state->rx_freq[ch];
  }
 
 
@@ -978,14 +1037,14 @@ double rf_shmem_set_tx_freq(void *h, uint32_t ch, double freq)
  {
    RF_SHMEM_GET_STATE(h);
 
-   if(_state->tx_freq != freq) {
+   if(_state->tx_freq[ch] != freq) {
      RF_SHMEM_INFO("ch %u, freq %4.2lf MHz to %4.2lf MHz", 
-                   ch, _state->tx_freq / 1e6, freq / 1e6);
+                   ch, _state->tx_freq[ch] / 1e6, freq / 1e6);
 
-     _state->tx_freq = freq;
+     _state->tx_freq[ch] = freq;
    }
 
-   return _state->tx_freq;
+   return _state->tx_freq[ch];
  }
 
 
@@ -1000,9 +1059,9 @@ void rf_shmem_get_time(void *h, time_t *full_secs, double *frac_secs)
 
 
 int rf_shmem_recv_with_time(void *h, void *data, uint32_t nsamples, 
-                           bool blocking, time_t *full_secs, double *frac_secs)
+                            bool blocking, time_t *full_secs, double *frac_secs)
  {
-   void *d[4] = {data, NULL, NULL, NULL};
+   void *d[SRSLTE_MAX_PORTS] = {data, NULL, NULL, NULL};
 
    return rf_shmem_recv_with_time_multi(h, 
                                        d,
@@ -1030,60 +1089,66 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
    const int nof_sf = (nsamples / (_state->rx_srate / 1000.0f));
 
    RF_SHMEM_DBUG("get: nof_samples %u, nbytes %u, nof_sf %d", 
-                 nsamples,
-                 nbytes,
-                 nof_sf);
+                 nsamples, nbytes, nof_sf);
 
-   uint32_t offset = 0;
+   uint32_t offset[_state->num_carriers];
 
-   memset(data[0], 0x0, nbytes);
+   for(uint32_t carrier = 0; carrier < _state->num_carriers; ++carrier)
+    {
+      offset[carrier] = 0;
+    }
 
    // for each requested subframe
-   for(int sf = 0; (sf < nof_sf) && (offset < RF_SHMEM_MAX_CF_LEN); ++sf)
-     { 
-        gettimeofday(&tv_now, NULL);
+   for(int sf = 0; sf < nof_sf; ++sf)
+    { 
+      gettimeofday(&tv_now, NULL);
 
-        // wait for the next tti
-        rf_shmem_wait_next_tti(h, &tv_now);
+      // wait for the next tti
+      rf_shmem_wait_next_tti(h, &tv_now);
 
-        // find bin for this tti
-        const uint32_t bin = get_bin(&_state->tv_this_tti);
+      // find bin for this tti
+      const uint32_t bin = get_bin(&_state->tv_this_tti);
 
-        // lock this bin
-        if(sem_wait(sem[_state->channel_id][bin]) < 0)
-         {
-           RF_SHMEM_WARN("sem_wait error %s", strerror(errno));
-         }
+      for(uint32_t carrier = 0; carrier < _state->num_carriers; ++carrier)
+       { 
+         memset(data[carrier], 0x0, nbytes);
 
-        rf_shmem_element_t * element = &_state->rx_segment->elements[bin];
+         // lock this bin
+         if(sem_wait(sem[carrier][bin]) < 0)
+          {
+            RF_SHMEM_WARN("sem_wait error %s", strerror(errno));
+          }
+
+         rf_shmem_element_t * element = &_state->rx_segment[carrier]->elements[bin];
        
-        // check current tti w/bin tti 
-        if(timercmp(&_state->tv_this_tti, &element->meta.tv_tx_tti, ==))
-         {
-           const int result = rf_shmem_resample(element->meta.tx_srate,
-                                                   _state->rx_srate,
-                                                   element->iqdata,
-                                                   ((uint8_t*)data[0]) + offset,
-                                                   element->meta.nof_bytes);
+         // check current tti w/bin tti 
+         if(timercmp(&_state->tv_this_tti, &element->meta.tv_tx_tti, ==))
+          {
+            const int result = rf_shmem_resample(element->meta.tx_srate,
+                                                 _state->rx_srate,
+                                                 element->iqdata,
+                                                 ((uint8_t*)data[carrier]) + offset[carrier],
+                                                 element->meta.nof_bytes);
 
-           offset += result;
+            offset[carrier] += result;
 
 #ifdef RF_SHMEM_DEBUG_MODE
            char logbuff[256] = {0};
-           RF_SHMEM_DBUG("RX, bin %u, new_len %u, total %u, %s", 
-                         bin, new_len, offset, printMsg(element, logbuff, sizeof(logbuff)));
+           RF_SHMEM_DBUG("RX, carrier %u, bin %u, new_len %u, total %u, %s", 
+                         carrier, bin, new_len, offset[carrier], printMsg(element, logbuff, sizeof(logbuff)));
 #endif
-         }
+          }
 
-        if(rf_shmem_is_enb(_state))
-         {
-           // enb clear ul bin on every rx
-           // ue leaves data for other ue(s) to read
-           memset(element, 0x0, sizeof(*element));
-         }
+         if(rf_shmem_is_enb(_state))
+          {
+            // enb clear ul bin on every rx
+            // ue leaves data for other ue(s) to read
+            memset(element, 0x0, sizeof(*element));
+          }
 
-       // unlock
-       sem_post(sem[_state->channel_id][bin]);
+         // unlock
+         sem_post(sem[carrier][bin]);
+       }
      }
 
    // set rx timestamp to this tti
@@ -1099,13 +1164,13 @@ int rf_shmem_send_timed(void *h, void *data, int nsamples,
                        time_t full_secs, double frac_secs, bool has_time_spec,
                        bool blocking, bool is_sob, bool is_eob)
  {
-   void *d[4] = {data, NULL, NULL, NULL};
+   void *d[SRSLTE_MAX_PORTS] = {data, NULL, NULL, NULL};
 
    return rf_shmem_send_timed_multi(h, d, nsamples, full_secs, frac_secs, has_time_spec, blocking, is_sob, is_eob);
  }
 
 
-int rf_shmem_send_timed_multi(void *h, void *data[4], int nsamples,
+int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
                               time_t full_secs, double frac_secs, bool has_time_spec,
                               bool blocking, bool is_sob, bool is_eob)
  {
@@ -1116,20 +1181,6 @@ int rf_shmem_send_timed_multi(void *h, void *data[4], int nsamples,
        RF_SHMEM_DBUG("msg len %d, sob %d, eob %d", nsamples, is_sob, is_eob);
 
        return 0;
-     }
-
-   // check for loss change
-   char buff[256] = {0};
-
-   const int n = recv(rf_shmem_ctrl_fd, buff, sizeof(buff)-1, MSG_DONTWAIT);
-
-   if(n > 0)
-     {
-       const int val = atoi(buff); 
- 
-       RF_SHMEM_INFO("set tx loss to from %d to %d", _state->tx_loss, val);
-
-       _state->tx_loss = val;
      }
 
    // some random loss the higher the number the more loss (0-100)
@@ -1174,57 +1225,60 @@ int rf_shmem_send_timed_multi(void *h, void *data[4], int nsamples,
        // get the bin for this tx_tti
        const uint32_t bin = get_bin(&tv_tx_tti);
 
-       // lock this bin
-       if(sem_wait(sem[_state->channel_id][bin]) < 0)
-         {
-           RF_SHMEM_WARN("sem_wait error %s", strerror(errno));
-         }
-
-       rf_shmem_element_t * element = &_state->tx_segment->elements[bin];
-
-       // 1 and only 1 enb for tx
-       if(rf_shmem_is_enb(_state))
-         {
-           // enb clears stale dl bin before tx
-           memset(element, 0x0, sizeof(*element));
-         }
-
-       // new bin entry
-       if(element->meta.nof_sf == 0)
+       for(uint32_t carrier = 0; carrier < _state->num_carriers; ++carrier)
         {
-          memcpy(element->iqdata, data[0], nbytes);
-
-          element->meta.is_sob     = is_sob;
-          element->meta.is_eob     = is_eob;
-          element->meta.tx_srate   = _state->tx_srate;
-          element->meta.seqnum     = _state->tx_seqnum++;
-          element->meta.nof_bytes  = nbytes;
-          element->meta.tv_tx_time = tv_now;
-          element->meta.tv_tx_tti  = tv_tx_tti;
-        }
-       else
-        {
-          cf_t * q = (cf_t*)data[0];
-
-          // XXX TODO I/Q data from multiple UL transmission needs to be summed
-          for(int i = 0; i < nsamples; ++i)
+          // lock this bin
+          if(sem_wait(sem[carrier][bin]) < 0)
            {
-             // is this correct, just sum iq data ???
-             element->iqdata[i] += q[i];
+             RF_SHMEM_WARN("sem_wait error %s", strerror(errno));
            }
-        }
 
-       ++element->meta.nof_sf;
+          rf_shmem_element_t * element = &_state->tx_segment[carrier]->elements[bin];
 
-       ++_state->tx_nof_ok;
+          // 1 and only 1 enb for tx
+          if(rf_shmem_is_enb(_state))
+           {
+             // enb clears stale dl bin before tx
+             memset(element, 0x0, sizeof(*element));
+           }
+
+          // new bin entry
+          if(element->meta.nof_sf == 0)
+           {
+             memcpy(element->iqdata, data[carrier], nbytes);
+
+             element->meta.is_sob     = is_sob;
+             element->meta.is_eob     = is_eob;
+             element->meta.tx_srate   = _state->tx_srate;
+             element->meta.seqnum     = _state->tx_seqnum++;
+             element->meta.nof_bytes  = nbytes;
+             element->meta.tv_tx_time = tv_now;
+             element->meta.tv_tx_tti  = tv_tx_tti;
+           }
+          else
+           {
+             cf_t * q = (cf_t*)data[carrier];
+
+             // XXX TODO I/Q data from multiple UL transmission needs to be summed
+             for(int i = 0; i < nsamples; ++i)
+              {
+                // is this correct, just sum iq data ???
+                element->iqdata[i] += q[i];
+              }
+           }
+
+          ++element->meta.nof_sf;
+
+          ++_state->tx_nof_ok;
 
 #ifdef RF_SHMEM_DEBUG_MODE
-       char logbuff[256] = {0};
-       RF_SHMEM_DBUG("TX, bin %u, %s", bin, printMsg(element, logbuff, sizeof(logbuff)));
+          char logbuff[256] = {0};
+          RF_SHMEM_DBUG("TX, bin %u, %s", bin, printMsg(element, logbuff, sizeof(logbuff)));
 #endif
 
-       // unlock
-       sem_post(sem[_state->channel_id][bin]);
+          // unlock
+          sem_post(sem[carrier][bin]);
+        }
      }
 
    return nsamples;
