@@ -23,7 +23,7 @@ mnc = 01
 mme_addr = 127.0.1.100
 gtp_bind_addr = 127.0.1.1
 s1c_bind_addr = 127.0.1.1
-n_prb = 6
+n_prb = 25
 #tm = 4
 #nof_ports = 2
 
@@ -37,7 +37,7 @@ n_prb = 6
 #####################################################################
 [enb_files]
 sib_config = sib.conf
-rr_config  = rr.conf
+rr_config  = rr_2.conf
 drb_config = drb.conf
 
 #####################################################################
@@ -131,7 +131,8 @@ s1ap_filename = /tmp/enb_s1ap.pcap
 #                If set to negative, a single log file will be created.
 #####################################################################
 [log]
-all_level = warning
+all_level = info
+phy_level = info
 all_hex_limit = 32
 filename = stdout
 file_max_size = -1

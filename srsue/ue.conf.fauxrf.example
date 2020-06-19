@@ -28,12 +28,12 @@
 #                     Default is auto (yes for UHD, no for rest)
 #####################################################################
 [rf]
-dl_earfcn = 3400
+dl_earfcn = 2850,3050
 freq_offset = 0
 tx_gain = 80
 #rx_gain = 40
 
-#nof_carriers = 1
+nof_carriers = 2
 #nof_antennas = 1
 
 # For best performance in 2x2 MIMO and >= 15 MHz use the following device_args settings:
@@ -95,8 +95,8 @@ nas_filename = /tmp/nas.pcap
 #                If set to negative, a single log file will be created.
 #####################################################################
 [log]
-all_level = warning
-phy_lib_level = warning
+all_level = info
+phy_lib_level = info
 all_hex_limit = 32
 filename = stdout
 file_max_size = -1
@@ -136,7 +136,8 @@ imei = 353490069873319
 # mbms_service_port: Port of the MBMS service
 #####################################################################
 [rrc]
-#ue_category       = 4
+ue_category       = 7
+ue_category_dl    = 10
 #release           = 8
 #feature_group     = 0xe6041000
 #mbms_service_id   = -1
