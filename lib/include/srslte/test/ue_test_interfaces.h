@@ -22,6 +22,7 @@
 #ifndef SRSUE_DUMMY_CLASSES_H
 #define SRSUE_DUMMY_CLASSES_H
 
+#include "srslte/common/task_scheduler.h"
 #include "srslte/interfaces/ue_interfaces.h"
 
 namespace srsue {
@@ -29,50 +30,32 @@ namespace srsue {
 class stack_test_dummy : public stack_interface_rrc
 {
 public:
-  stack_test_dummy() { stack_queue_id = pending_tasks.add_queue(); }
+  stack_test_dummy() {}
 
-  srslte::timer_handler::unique_timer get_unique_timer() override { return timers.get_unique_timer(); }
-  void                                start_cell_search() override {}
-  void                                start_cell_select(const phy_interface_rrc_lte::phy_cell_t* cell) override {}
-  srslte::tti_point get_current_tti() override { return srslte::tti_point{timers.get_cur_time() % 10240}; }
-  srslte::task_multiqueue::queue_handler make_task_queue() final { return pending_tasks.get_queue_handler(); }
-  void                                   enqueue_background_task(std::function<void(uint32_t)> f) override { f(0); }
-  void                                   notify_background_task_result(srslte::move_task_t task) override { task(); }
-  void                                   defer_callback(uint32_t duration_ms, std::function<void()> func) final
+  srslte::tti_point get_current_tti() override
   {
-    timers.defer_callback(duration_ms, func);
+    return srslte::tti_point{task_sched.get_timer_handler()->get_cur_time() % 10240};
   }
-  void defer_task(srslte::move_task_t task) final { pending_tasks.push(stack_queue_id, std::move(task)); }
 
   // Testing utility functions
-  void call_on_every_tti(srslte::move_task_t t) { tti_callbacks.push_back(std::move(t)); }
-  void process_tasks()
-  {
-    // Make sure to process any stack pending tasks
-    srslte::move_task_t task;
-    while (pending_tasks.try_pop(&task) >= 0) {
-      task();
-    }
-  }
   void run_tti()
   {
-    process_tasks();
-    for (auto& t : tti_callbacks) {
-      t();
-    }
-    timers.step_all();
+    // update clock and run internal tasks
+    task_sched.tic();
+
+    task_sched.run_pending_tasks();
   }
 
-  srslte::timer_handler            timers{100};
-  srslte::task_multiqueue          pending_tasks;
-  std::vector<srslte::move_task_t> tti_callbacks;
-  int                              stack_queue_id = -1;
+  // run pending tasks without updating timers
+  void run_pending_tasks() { task_sched.run_pending_tasks(); }
+
+  srslte::task_scheduler task_sched{512, 0, 100};
 };
 
 class rlc_dummy_interface : public rlc_interface_mac
 {
 public:
-  bool     has_data(const uint32_t lcid) override { return false; }
+  bool     has_data_locked(const uint32_t lcid) override { return false; }
   uint32_t get_buffer_state(const uint32_t lcid) override { return 0; }
   int      read_pdu(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes) override { return 0; }
   void     write_pdu(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes) override {}
@@ -80,6 +63,28 @@ public:
   void     write_pdu_bcch_dlsch(uint8_t* payload, uint32_t nof_bytes) override {}
   void     write_pdu_pcch(srslte::unique_byte_buffer_t payload) override {}
   void     write_pdu_mch(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes) override {}
+};
+
+class phy_dummy_interface : public phy_interface_rrc_lte
+{
+  bool set_config(srslte::phy_cfg_t config, uint32_t cc_idx) override { return true; }
+  bool set_scell(srslte_cell_t cell_info, uint32_t cc_idx, uint32_t earfcn) override { return true; }
+  void set_config_tdd(srslte_tdd_config_t& tdd_config) override {}
+  void set_config_mbsfn_sib2(srslte::mbsfn_sf_cfg_t* cfg_list, uint32_t nof_cfgs) override {}
+  void set_config_mbsfn_sib13(const srslte::sib13_t& sib13) override {}
+  void set_config_mbsfn_mcch(const srslte::mcch_msg_t& mcch) override {}
+  void set_activation_deactivation_scell(uint32_t cmd) override {}
+
+  /* Measurements interface */
+  void set_cells_to_meas(uint32_t earfcn, const std::set<uint32_t>& pci) override {}
+  void meas_stop() override {}
+
+  /* Cell search and selection procedures */
+  bool cell_search() override { return true; }
+  bool cell_select(phy_cell_t cell) override { return true; }
+  bool cell_is_camping() override { return false; }
+
+  void enable_pregen_signals(bool enable) override {}
 };
 
 } // namespace srsue

@@ -33,15 +33,20 @@
 
 namespace srsenb {
 
-struct sched_ue_carrier {
+typedef enum { UCI_PUSCH_NONE = 0, UCI_PUSCH_CQI, UCI_PUSCH_ACK, UCI_PUSCH_ACK_CQI } uci_pusch_t;
+enum class cc_st { active, idle, activating, deactivating };
+
+struct cc_sched_ue {
   const static int SCHED_MAX_HARQ_PROC = FDD_HARQ_DELAY_UL_MS + FDD_HARQ_DELAY_DL_MS;
 
-  sched_ue_carrier(const sched_interface::ue_cfg_t& cfg_,
-                   const sched_cell_params_t&       cell_cfg_,
-                   uint16_t                         rnti_,
-                   uint32_t                         ue_cc_idx);
+  cc_sched_ue(const sched_interface::ue_cfg_t& cfg_,
+              const sched_cell_params_t&       cell_cfg_,
+              uint16_t                         rnti_,
+              uint32_t                         ue_cc_idx,
+              srslte::tti_point                current_tti);
   void reset();
   void set_cfg(const sched_interface::ue_cfg_t& cfg); ///< reconfigure ue carrier
+  void finish_tti(srslte::tti_point tti_rx);
 
   uint32_t                   get_aggr_level(uint32_t nof_bits);
   int                        alloc_tbs(uint32_t nof_prb, uint32_t nof_re, uint32_t req_bytes, bool is_ul, int* mcs);
@@ -50,8 +55,9 @@ struct sched_ue_carrier {
   int                        get_required_prb_dl(uint32_t req_bytes, uint32_t nof_ctrl_symbols);
   uint32_t                   get_required_prb_ul(uint32_t req_bytes);
   const sched_cell_params_t* get_cell_cfg() const { return cell_params; }
-  bool                       is_active() const { return active; }
   void                       set_dl_cqi(uint32_t tti_tx_dl, uint32_t dl_cqi);
+  int   cqi_to_tbs(uint32_t nof_prb, uint32_t nof_re, bool use_tbs_index_alt, bool is_ul, uint32_t* mcs);
+  cc_st cc_state() const { return cc_state_; }
 
   harq_entity harq_ent;
 
@@ -64,6 +70,9 @@ struct sched_ue_carrier {
   uint32_t ul_cqi     = 1;
   uint32_t ul_cqi_tti = 0;
   bool     dl_cqi_rx  = false;
+
+  // Enables or disables uplink 64QAM. Not yet functional.
+  bool ul_64qam_enabled = false;
 
   uint32_t max_mcs_dl = 28, max_mcs_dl_alt = 27, max_mcs_ul = 28;
   uint32_t max_aggr_level = 3;
@@ -79,7 +88,59 @@ private:
   const sched_cell_params_t*       cell_params = nullptr;
   uint16_t                         rnti;
   uint32_t                         ue_cc_idx = 0;
-  bool                             active    = false;
+  srslte::tti_point                cfg_tti;
+
+  // state
+  srslte::tti_point last_tti;
+  cc_st             cc_state_ = cc_st::idle;
+};
+
+const char* to_string(sched_interface::ue_bearer_cfg_t::direction_t dir);
+
+class lch_manager
+{
+  constexpr static uint32_t pbr_infinity = -1;
+  constexpr static uint32_t MAX_LC       = sched_interface::MAX_LC;
+
+public:
+  void set_cfg(const sched_interface::ue_cfg_t& cfg_);
+  void new_tti();
+
+  void config_lcid(uint32_t lcg_id, const sched_interface::ue_bearer_cfg_t& bearer_cfg);
+  void ul_bsr(uint8_t lcg_id, uint32_t bsr);
+  void ul_buffer_add(uint8_t lcid, uint32_t bytes);
+  void dl_buffer_state(uint8_t lcid, uint32_t tx_queue, uint32_t retx_queue);
+
+  int alloc_rlc_pdu(sched_interface::dl_sched_pdu_t* lcid, int rem_bytes);
+
+  bool is_bearer_active(uint32_t lcid) const;
+  bool is_bearer_ul(uint32_t lcid) const;
+  bool is_bearer_dl(uint32_t lcid) const;
+
+  int get_dl_tx_total(uint32_t lcid) const { return get_dl_tx(lcid) + get_dl_retx(lcid); }
+  int get_dl_tx(uint32_t lcid) const;
+  int get_dl_retx(uint32_t lcid) const;
+  int get_bsr(uint32_t lcid) const;
+  int get_max_prio_lcid() const;
+
+  std::string get_bsr_text() const;
+
+private:
+  struct ue_bearer_t {
+    sched_interface::ue_bearer_cfg_t cfg         = {};
+    int                              bucket_size = 0;
+    int                              buf_tx      = 0;
+    int                              buf_retx    = 0;
+    int                              Bj          = 0;
+  };
+
+  int alloc_retx_bytes(uint8_t lcid, uint32_t rem_bytes);
+  int alloc_tx_bytes(uint8_t lcid, uint32_t rem_bytes);
+
+  size_t                                           prio_idx = 0;
+  srslte::log_ref                                  log_h{"MAC"};
+  std::array<ue_bearer_t, sched_interface::MAX_LC> lch     = {};
+  std::array<int, 4>                               lcg_bsr = {};
 };
 
 /** This class is designed to be thread-safe because it is called from workers through scheduler thread and from
@@ -88,25 +149,26 @@ private:
 class sched_ue
 {
 public:
+  sched_ue();
+  void reset();
+  void init(uint16_t rnti, const std::vector<sched_cell_params_t>& cell_list_params_);
+  void new_tti(srslte::tti_point new_tti);
+
   /*************************************************************
    *
    * FAPI-like Interface
    *
    ************************************************************/
-  sched_ue();
-  void reset();
   void phy_config_enabled(uint32_t tti, bool enabled);
-  void init(uint16_t rnti, const std::vector<sched_cell_params_t>& cell_list_params_);
   void set_cfg(const sched_interface::ue_cfg_t& cfg);
 
   void set_bearer_cfg(uint32_t lc_id, srsenb::sched_interface::ue_bearer_cfg_t* cfg);
   void rem_bearer(uint32_t lc_id);
 
   void dl_buffer_state(uint8_t lc_id, uint32_t tx_queue, uint32_t retx_queue);
-  void ul_buffer_state(uint8_t lc_id, uint32_t bsr, bool set_value = true);
+  void ul_buffer_state(uint8_t lcg_id, uint32_t bsr);
   void ul_phr(int phr);
   void mac_buffer_state(uint32_t ce_code, uint32_t nof_cmds);
-  void ul_recv_len(uint32_t lcid, uint32_t len);
 
   void set_ul_cqi(uint32_t tti, uint32_t enb_cc_idx, uint32_t cqi, uint32_t ul_ch_code);
   void set_dl_ri(uint32_t tti, uint32_t enb_cc_idx, uint32_t ri);
@@ -124,9 +186,10 @@ public:
 
   const dl_harq_proc&              get_dl_harq(uint32_t idx, uint32_t cc_idx) const;
   uint16_t                         get_rnti() const { return rnti; }
-  std::pair<bool, uint32_t>        get_cell_index(uint32_t enb_cc_idx) const;
+  std::pair<bool, uint32_t>        get_active_cell_index(uint32_t enb_cc_idx) const;
   const sched_interface::ue_cfg_t& get_ue_cfg() const { return cfg; }
   uint32_t                         get_aggr_level(uint32_t ue_cc_idx, uint32_t nof_bits);
+  void                             ul_buffer_add(uint8_t lcid, uint32_t bytes);
 
   /*******************************************************
    * Functions used by scheduler metric objects
@@ -134,12 +197,12 @@ public:
 
   uint32_t get_required_prb_ul(uint32_t cc_idx, uint32_t req_bytes);
 
-  rbg_range_t                   get_required_dl_rbgs(uint32_t ue_cc_idx);
-  std::pair<uint32_t, uint32_t> get_requested_dl_bytes(uint32_t ue_cc_idx);
-  uint32_t                      get_pending_dl_new_data();
-  uint32_t                      get_pending_ul_new_data(uint32_t tti);
-  uint32_t                      get_pending_ul_old_data(uint32_t cc_idx);
-  uint32_t                      get_pending_dl_new_data_total();
+  rbg_interval               get_required_dl_rbgs(uint32_t ue_cc_idx);
+  srslte::interval<uint32_t> get_requested_dl_bytes(uint32_t ue_cc_idx);
+  uint32_t                   get_pending_dl_new_data();
+  uint32_t                   get_pending_ul_new_data(uint32_t tti, int this_ue_cc_idx);
+  uint32_t                   get_pending_ul_old_data(uint32_t cc_idx);
+  uint32_t                   get_pending_dl_new_data_total();
 
   dl_harq_proc* get_pending_dl_harq(uint32_t tti_tx_dl, uint32_t cc_idx);
   dl_harq_proc* get_empty_dl_harq(uint32_t tti_tx_dl, uint32_t cc_idx);
@@ -167,42 +230,25 @@ public:
   int generate_format0(sched_interface::ul_sched_data_t* data,
                        uint32_t                          tti,
                        uint32_t                          cc_idx,
-                       ul_harq_proc::ul_alloc_t          alloc,
+                       prb_interval                      alloc,
                        bool                              needs_pdcch,
                        srslte_dci_location_t             cce_range,
-                       int                               explicit_mcs = -1);
+                       int                               explicit_mcs = -1,
+                       uci_pusch_t                       uci_type     = UCI_PUSCH_NONE);
 
   srslte_dci_format_t get_dci_format();
   sched_dci_cce_t*    get_locations(uint32_t enb_cc_idx, uint32_t current_cfi, uint32_t sf_idx);
-  sched_ue_carrier*   get_ue_carrier(uint32_t enb_cc_idx);
+  cc_sched_ue*        find_ue_carrier(uint32_t enb_cc_idx);
 
   bool     needs_cqi(uint32_t tti, uint32_t cc_idx, bool will_send = false);
   uint32_t get_max_retx();
 
-  bool pucch_sr_collision(uint32_t current_tti, uint32_t n_cce);
-
-  static int cqi_to_tbs(uint32_t  cqi,
-                        uint32_t  nof_prb,
-                        uint32_t  nof_re,
-                        uint32_t  max_mcs,
-                        uint32_t  max_Qm,
-                        bool      use_tbs_index_alt,
-                        bool      is_ul,
-                        uint32_t* mcs);
+  bool pucch_sr_collision(uint32_t tti, uint32_t n_cce);
 
 private:
-  struct ue_bearer_t {
-    sched_interface::ue_bearer_cfg_t cfg      = {};
-    int                              buf_tx   = 0;
-    int                              buf_retx = 0;
-    int                              bsr      = 0;
-  };
-
-  void set_bearer_cfg_unlocked(uint32_t lc_id, const sched_interface::ue_bearer_cfg_t& cfg_);
-
+  void check_ue_cfg_correctness() const;
   bool is_sr_triggered();
 
-  int                 alloc_rlc_pdu(sched_interface::dl_sched_pdu_t* mac_sdu, int rem_tbs);
   uint32_t            allocate_mac_sdus(sched_interface::dl_sched_data_t* data, uint32_t total_tbs, uint32_t tbidx);
   uint32_t            allocate_mac_ces(sched_interface::dl_sched_data_t* data, uint32_t total_tbs, uint32_t ue_cc_idx);
   std::pair<int, int> allocate_new_dl_mac_pdu(sched_interface::dl_sched_data_t* data,
@@ -220,11 +266,7 @@ private:
                                           uint32_t               cfi,
                                           const srslte_dci_dl_t& dci);
 
-  static bool bearer_is_ul(const ue_bearer_t* lch);
-  static bool bearer_is_dl(const ue_bearer_t* lch);
-
   uint32_t get_pending_ul_old_data_unlocked(uint32_t cc_idx);
-  uint32_t get_pending_ul_new_data_unlocked(uint32_t tti);
 
   bool needs_cqi_unlocked(uint32_t tti, uint32_t cc_idx, bool will_send = false);
 
@@ -255,8 +297,8 @@ private:
   const sched_cell_params_t*              main_cc_params   = nullptr;
 
   /* Buffer states */
-  bool                                             sr  = false;
-  std::array<ue_bearer_t, sched_interface::MAX_LC> lch = {};
+  bool        sr = false;
+  lch_manager lch_handler;
 
   int      power_headroom  = 0;
   uint32_t cqi_request_tti = 0;
@@ -269,12 +311,16 @@ private:
 
   bool phy_config_dedicated_enabled = false;
 
-  std::vector<sched_ue_carrier> carriers; ///< map of UE CellIndex to carrier configuration
+  srslte::tti_point        current_tti;
+  std::vector<cc_sched_ue> carriers; ///< map of UE CellIndex to carrier configuration
 
   // Control Element Command queue
   using ce_cmd = srslte::dl_sch_lcid;
   std::deque<ce_cmd> pending_ces;
 };
+
+using sched_ue_list = std::map<uint16_t, sched_ue>;
+
 } // namespace srsenb
 
 #endif // SRSENB_SCHEDULER_UE_H

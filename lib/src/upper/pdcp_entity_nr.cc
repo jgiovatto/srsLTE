@@ -24,22 +24,18 @@
 
 namespace srslte {
 
-pdcp_entity_nr::pdcp_entity_nr(srsue::rlc_interface_pdcp*      rlc_,
-                               srsue::rrc_interface_pdcp*      rrc_,
-                               srsue::gw_interface_pdcp*       gw_,
-                               srslte::task_handler_interface* task_executor_,
-                               srslte::log_ref                 log_) :
-  pdcp_entity_base(task_executor_, log_),
+pdcp_entity_nr::pdcp_entity_nr(srsue::rlc_interface_pdcp* rlc_,
+                               srsue::rrc_interface_pdcp* rrc_,
+                               srsue::gw_interface_pdcp*  gw_,
+                               srslte::task_sched_handle  task_sched_,
+                               srslte::log_ref            log_,
+                               uint32_t                   lcid_,
+                               pdcp_config_t              cfg_) :
+  pdcp_entity_base(task_sched_, log_),
   rlc(rlc_),
   rrc(rrc_),
   gw(gw_),
   reordering_fnc(new pdcp_entity_nr::reordering_callback(this))
-{
-}
-
-pdcp_entity_nr::~pdcp_entity_nr() {}
-
-void pdcp_entity_nr::init(uint32_t lcid_, pdcp_config_t cfg_)
 {
   lcid                 = lcid_;
   cfg                  = cfg_;
@@ -50,16 +46,15 @@ void pdcp_entity_nr::init(uint32_t lcid_, pdcp_config_t cfg_)
   window_size = 1 << (cfg.sn_len - 1);
 
   // Timers
-  reordering_timer = task_executor->get_unique_timer();
+  reordering_timer = task_sched.get_unique_timer();
 
   // configure timer
   if (static_cast<uint32_t>(cfg.t_reordering) > 0) {
     reordering_timer.set(static_cast<uint32_t>(cfg.t_reordering), *reordering_fnc);
   }
-
-  // Mark entity as initialized
-  initialized = true;
 }
+
+pdcp_entity_nr::~pdcp_entity_nr() {}
 
 // Reestablishment procedure: 38.323 5.2
 void pdcp_entity_nr::reestablish()
@@ -76,13 +71,8 @@ void pdcp_entity_nr::reset()
 }
 
 // SDAP/RRC interface
-void pdcp_entity_nr::write_sdu(unique_byte_buffer_t sdu, bool blocking)
+void pdcp_entity_nr::write_sdu(unique_byte_buffer_t sdu)
 {
-  // Check initialization
-  if (not initialized) {
-    return;
-  }
-
   // Log SDU
   log->info_hex(sdu->msg,
                 sdu->N_bytes,
@@ -93,7 +83,7 @@ void pdcp_entity_nr::write_sdu(unique_byte_buffer_t sdu, bool blocking)
 
   // Check for COUNT overflow
   if (tx_overflow) {
-    log->warning("TX_NEXT has overflowed. Droping packet\n");
+    log->warning("TX_NEXT has overflowed. Dropping packet\n");
     return;
   }
   if (tx_next + 1 == 0) {
@@ -102,7 +92,7 @@ void pdcp_entity_nr::write_sdu(unique_byte_buffer_t sdu, bool blocking)
 
   // Start discard timer
   if (cfg.discard_timer != pdcp_discard_timer_t::infinity) {
-    timer_handler::unique_timer discard_timer = task_executor->get_unique_timer();
+    timer_handler::unique_timer discard_timer = task_sched.get_unique_timer();
     discard_callback            discard_fnc(this, tx_next);
     discard_timer.set(static_cast<uint32_t>(cfg.discard_timer), discard_fnc);
     discard_timer.run();
@@ -130,17 +120,12 @@ void pdcp_entity_nr::write_sdu(unique_byte_buffer_t sdu, bool blocking)
 
   // Check if PDCP is associated with more than on RLC entity TODO
   // Write to lower layers
-  rlc->write_sdu(lcid, std::move(sdu), blocking);
+  rlc->write_sdu(lcid, std::move(sdu));
 }
 
 // RLC interface
 void pdcp_entity_nr::write_pdu(unique_byte_buffer_t pdu)
 {
-  // Check initialization
-  if (not initialized) {
-    return;
-  }
-
   // Log PDU
   log->info_hex(pdu->msg,
                 pdu->N_bytes,
@@ -276,7 +261,6 @@ void pdcp_entity_nr::reordering_callback::operator()(uint32_t timer_id)
     parent->rx_reord = parent->rx_next;
     parent->reordering_timer.run();
   }
-  return;
 }
 
 // Discard Timer Callback (discardTimer)
@@ -290,7 +274,16 @@ void pdcp_entity_nr::discard_callback::operator()(uint32_t timer_id)
   // Remove timer from map
   // NOTE: this will delete the callback. It *must* be the last instruction.
   parent->discard_timers_map.erase(discard_sn);
-  return;
+}
+
+void pdcp_entity_nr::get_bearer_state(pdcp_lte_state_t* state)
+{
+  // TODO
+}
+
+void pdcp_entity_nr::set_bearer_state(const pdcp_lte_state_t& state)
+{
+  // TODO
 }
 
 } // namespace srslte

@@ -203,7 +203,7 @@ int rf_dummy_close(void *h)
  }
 
 
-double rf_dummy_set_rx_gain(void *h, double gain)
+int rf_dummy_set_rx_gain(void *h, double gain)
  {
    GET_DEV_INFO(h);
 
@@ -211,11 +211,11 @@ double rf_dummy_set_rx_gain(void *h, double gain)
 
    _info->rx_gain = gain;
 
-   return _info->rx_gain;
+   return SRSLTE_SUCCESS;
  }
 
 
-double rf_dummy_set_tx_gain(void *h, double gain)
+int rf_dummy_set_tx_gain(void *h, double gain)
  {
    GET_DEV_INFO(h);
 
@@ -223,7 +223,7 @@ double rf_dummy_set_tx_gain(void *h, double gain)
 
    _info->tx_gain = gain;
 
-   return _info->tx_gain;
+   return SRSLTE_SUCCESS;
  }
 
 

@@ -29,6 +29,7 @@
 
 #include "mac/mac.h"
 #include "rrc/rrc.h"
+#include "srslte/common/task_scheduler.h"
 #include "upper/gtpu.h"
 #include "upper/pdcp.h"
 #include "upper/rlc.h"
@@ -36,7 +37,6 @@
 
 #include "enb_stack_base.h"
 #include "srsenb/hdr/enb.h"
-#include "srslte/common/multiqueue.h"
 #include "srslte/interfaces/enb_interfaces.h"
 #include "srslte/interfaces/enb_rrc_interface_types.h"
 
@@ -46,7 +46,6 @@ class enb_stack_lte final : public enb_stack_base,
                             public stack_interface_phy_lte,
                             public stack_interface_s1ap_lte,
                             public stack_interface_gtpu_lte,
-                            public stack_interface_mac_lte,
                             public srslte::thread
 {
 public:
@@ -101,9 +100,6 @@ public:
   {
     mac.set_sched_dl_tti_mask(tti_mask, nof_sfs);
   }
-  // Radio-Link status
-  void rl_failure(uint16_t rnti) final { mac.rl_failure(rnti); }
-  void rl_ok(uint16_t rnti) final { mac.rl_ok(rnti); }
   void tti_clock() override;
 
   /* STACK-S1AP interface*/
@@ -112,16 +108,8 @@ public:
   void add_gtpu_s1u_socket_handler(int fd) override;
   void add_gtpu_m1u_socket_handler(int fd) override;
 
-  /* Stack-MAC interface */
-  srslte::timer_handler::unique_timer    get_unique_timer() final;
-  srslte::task_multiqueue::queue_handler make_task_queue() final;
-  void                                   defer_callback(uint32_t duration_ms, std::function<void()> func) final;
-  void                                   enqueue_background_task(std::function<void(uint32_t)> task) final;
-  void                                   notify_background_task_result(srslte::move_task_t task) final;
-  void                                   defer_task(srslte::move_task_t task) final;
-
 private:
-  static const int STACK_MAIN_THREAD_PRIO = -1; // Use default high-priority below UHD
+  static const int STACK_MAIN_THREAD_PRIO = 4;
   // thread loop
   void run_thread() override;
   void stop_impl();
@@ -135,8 +123,11 @@ private:
   stack_args_t args    = {};
   rrc_cfg_t    rrc_cfg = {};
 
+  // task handling
+  srslte::task_scheduler    task_sched;
+  srslte::task_queue_handle enb_task_queue, gtpu_task_queue, mme_task_queue, sync_task_queue;
+
   // components that layers depend on (need to be destroyed after layers)
-  srslte::timer_handler                           timers;
   std::unique_ptr<srslte::rx_multisocket_handler> rx_sockets;
 
   srsenb::mac       mac;
@@ -164,11 +155,8 @@ private:
   phy_interface_stack_lte* phy = nullptr;
 
   // state
-  bool                    started = false;
-  srslte::task_multiqueue pending_tasks;
-  int enb_queue_id = -1, sync_queue_id = -1, mme_queue_id = -1, gtpu_queue_id = -1, mac_queue_id = -1,
-      stack_queue_id = -1;
-  std::vector<srslte::move_task_t>     deferred_stack_tasks; ///< enqueues stack tasks from within. Avoids locking
+  bool started = false;
+
   srslte::block_queue<stack_metrics_t> pending_stack_metrics;
 };
 

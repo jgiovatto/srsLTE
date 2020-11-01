@@ -27,9 +27,11 @@
 #include "srslte/common/interfaces_common.h"
 #include "srslte/common/logmap.h"
 #include "srslte/common/security.h"
+#include "srslte/common/task_scheduler.h"
 #include "srslte/common/threads.h"
 #include "srslte/common/timers.h"
 #include "srslte/interfaces/pdcp_interface_types.h"
+#include "srslte/upper/byte_buffer_queue.h"
 
 namespace srslte {
 
@@ -52,10 +54,6 @@ typedef enum {
 } pdcp_d_c_t;
 static const char pdcp_d_c_text[PDCP_D_C_N_ITEMS][20] = {"Control PDU", "Data PDU"};
 
-// Specifies in which direction security (integrity and ciphering) are enabled for PDCP
-typedef enum { DIRECTION_NONE = 0, DIRECTION_TX, DIRECTION_RX, DIRECTION_TXRX, DIRECTION_N_ITEMS } srslte_direction_t;
-static const char srslte_direction_text[DIRECTION_N_ITEMS][6] = {"none", "tx", "rx", "tx/rx"};
-
 /****************************************************************************
  * PDCP Entity interface
  * Common interface for LTE and NR PDCP entities
@@ -63,7 +61,8 @@ static const char srslte_direction_text[DIRECTION_N_ITEMS][6] = {"none", "tx", "
 class pdcp_entity_base
 {
 public:
-  pdcp_entity_base(srslte::task_handler_interface* task_executor_, srslte::log_ref log_);
+  pdcp_entity_base(task_sched_handle task_sched_, srslte::log_ref log_);
+  pdcp_entity_base(pdcp_entity_base&&) = default;
   virtual ~pdcp_entity_base();
   virtual void reset()       = 0;
   virtual void reestablish() = 0;
@@ -117,10 +116,13 @@ public:
   void config_security(as_security_config_t sec_cfg_);
 
   // GW/SDAP/RRC interface
-  void write_sdu(unique_byte_buffer_t sdu, bool blocking);
+  virtual void write_sdu(unique_byte_buffer_t sdu) = 0;
 
   // RLC interface
-  void write_pdu(unique_byte_buffer_t pdu);
+  virtual void write_pdu(unique_byte_buffer_t pdu) = 0;
+
+  virtual void get_bearer_state(pdcp_lte_state_t* state)       = 0;
+  virtual void set_bearer_state(const pdcp_lte_state_t& state) = 0;
 
   // COUNT, HFN and SN helpers
   uint32_t HFN(uint32_t count);
@@ -128,8 +130,8 @@ public:
   uint32_t COUNT(uint32_t hfn, uint32_t sn);
 
 protected:
-  srslte::log_ref                 log;
-  srslte::task_handler_interface* task_executor = nullptr;
+  srslte::log_ref           log;
+  srslte::task_sched_handle task_sched;
 
   bool               active               = false;
   uint32_t           lcid                 = 0;
@@ -156,6 +158,7 @@ protected:
   void cipher_decrypt(uint8_t* ct, uint32_t ct_len, uint32_t count, uint8_t* msg);
 
   // Common packing functions
+  bool     is_control_pdu(const unique_byte_buffer_t& pdu);
   uint32_t read_data_header(const unique_byte_buffer_t& pdu);
   void     discard_data_header(const unique_byte_buffer_t& pdu);
   void     write_data_header(const srslte::unique_byte_buffer_t& sdu, uint32_t count);

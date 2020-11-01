@@ -60,10 +60,9 @@ public:
    *
    * @param tx_sem_id Semaphore identifier, the worker thread pointer is used
    * @param buffer baseband IQ sample buffer
-   * @param nof_samples number of samples to transmit
    * @param tx_time timestamp to transmit samples
    */
-  void worker_end(void* tx_sem_id, srslte::rf_buffer_t& buffer, uint32_t nof_samples, srslte_timestamp_t tx_time);
+  void worker_end(void* tx_sem_id, srslte::rf_buffer_t& buffer, srslte::rf_timestamp_t& tx_time);
 
   // Common objects
   phy_args_t params = {};
@@ -138,6 +137,28 @@ public:
     return c;
   };
 
+  void set_cell_gain(uint32_t cell_id, float gain_db)
+  {
+    auto it =
+        std::find_if(cell_list.begin(), cell_list.end(), [cell_id](phy_cell_cfg_t& x) { return x.cell_id == cell_id; });
+
+    // Check if the cell was found;
+    if (it == cell_list.end()) {
+      srslte::console("cell ID %d not found\n", cell_id);
+      return;
+    }
+
+    it->gain_db = gain_db;
+  }
+
+  float get_cell_gain(uint32_t cc_idx)
+  {
+    if (cc_idx < cell_list.size()) {
+      return cell_list.at(cc_idx).gain_db;
+    }
+    return 0.0f;
+  }
+
   // Common Physical Uplink DMRS configuration
   srslte_refsignal_dmrs_pusch_cfg_t dmrs_pusch_cfg = {};
 
@@ -163,8 +184,8 @@ public:
 
 private:
   // Common objects for scheduling grants
-  stack_interface_phy_lte::ul_sched_list_t ul_grants[TTIMOD_SZ] = {};
-  std::mutex                               grant_mutex          = {};
+  srslte::circular_array<stack_interface_phy_lte::ul_sched_list_t, TTIMOD_SZ> ul_grants   = {};
+  std::mutex                                                                  grant_mutex = {};
 
   phy_cell_cfg_list_t cell_list;
 

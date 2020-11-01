@@ -59,7 +59,7 @@ int mac_rar_pdu_unpack_test1()
   srslte::rar_pdu rar_pdu_msg;
   rar_pdu_msg.init_rx(sizeof(rar_pdu_tv1));
   rar_pdu_msg.parse_packet(rar_pdu_tv1);
-  rar_pdu_msg.fprint(stdout);
+  std::cout << rar_pdu_msg.to_string() << std::endl;
 
   TESTASSERT(not rar_pdu_msg.has_backoff());
   while (rar_pdu_msg.next()) {
@@ -76,7 +76,7 @@ int mac_rar_pdu_unpack_test2()
   srslte::rar_pdu rar_pdu_msg;
   rar_pdu_msg.init_rx(sizeof(rar_pdu_tv2));
   rar_pdu_msg.parse_packet(rar_pdu_tv2);
-  rar_pdu_msg.fprint(stdout);
+  std::cout << rar_pdu_msg.to_string() << std::endl;
 
   TESTASSERT(rar_pdu_msg.has_backoff());
   TESTASSERT(rar_pdu_msg.get_backoff() == BACKOFF_IND_TV2);
@@ -222,7 +222,7 @@ int mac_sch_pdu_pack_test1()
   mac_log->info_hex(buffer.msg, buffer.N_bytes, "MAC PDU (%d B):\n", buffer.N_bytes);
 
 #if HAVE_PCAP
-  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1);
+  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1, 0);
 #endif
 
   // compare with TV
@@ -284,7 +284,7 @@ int mac_sch_pdu_pack_test2()
   mac_log->info_hex(buffer.msg, buffer.N_bytes, "MAC PDU (%d B):\n", buffer.N_bytes);
 
 #if HAVE_PCAP
-  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1);
+  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1, 0);
 #endif
 
   // compare with TV
@@ -349,7 +349,7 @@ int mac_sch_pdu_pack_test3()
   mac_log->info_hex(buffer.msg, buffer.N_bytes, "MAC PDU (%d B):\n", buffer.N_bytes);
 
 #if HAVE_PCAP
-  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1);
+  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1, 0);
 #endif
 
   // compare with TV
@@ -399,7 +399,7 @@ int mac_sch_pdu_pack_test4()
   mac_log->info_hex(buffer.msg, buffer.N_bytes, "MAC PDU (%d B):\n", buffer.N_bytes);
 
 #if HAVE_PCAP
-  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1);
+  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1, 0);
 #endif
 
   // compare with TV
@@ -443,13 +443,13 @@ int mac_sch_pdu_pack_test5()
   mac_log->info_hex(buffer.msg, buffer.N_bytes, "MAC PDU (%d B):\n", buffer.N_bytes);
 
 #if HAVE_PCAP
-  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1);
+  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1, 0);
 #endif
 
   return SRSLTE_SUCCESS;
 }
 
-// Test for BSR CE
+// Test for Long BSR CE
 int mac_sch_pdu_pack_test6()
 {
   srslte::log_ref mac_log("MAC");
@@ -482,7 +482,7 @@ int mac_sch_pdu_pack_test6()
   mac_log->info_hex(buffer.msg, buffer.N_bytes, "MAC PDU (%d B):\n", buffer.N_bytes);
 
 #if HAVE_PCAP
-  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1);
+  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1, 0);
 #endif
 
   return SRSLTE_SUCCESS;
@@ -528,7 +528,7 @@ int mac_sch_pdu_pack_test7()
   mac_log->info_hex(buffer.msg, buffer.N_bytes, "MAC PDU (%d B):\n", buffer.N_bytes);
 
 #if HAVE_PCAP
-  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1);
+  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1, 0);
 #endif
 
   return SRSLTE_SUCCESS;
@@ -577,7 +577,132 @@ int mac_sch_pdu_pack_test8()
   log_h->info_hex(buffer.msg, buffer.N_bytes, "MAC PDU with SCell Activation CE (%d B):\n", buffer.N_bytes);
 
 #if HAVE_PCAP
-  pcap_handle->write_dl_crnti(tv, sizeof(tv), 0x1001, true, 1);
+  pcap_handle->write_dl_crnti(tv, sizeof(tv), 0x1001, true, 1, 0);
+#endif
+
+  return SRSLTE_SUCCESS;
+}
+
+// Test for Short BSR CE
+int mac_sch_pdu_pack_test9()
+{
+  srslte::log_ref mac_log("MAC");
+
+  const uint32_t  pdu_size = 3;
+  srslte::sch_pdu pdu(10, srslte::log_ref{"MAC"});
+
+  uint8_t tv[pdu_size] = {0x3f, 0x1d, 0x0a};
+
+  byte_buffer_t buffer;
+  pdu.init_tx(&buffer, pdu_size, true);
+
+  TESTASSERT(pdu.rem_size() == pdu_size);
+  TESTASSERT(pdu.get_pdu_len() == pdu_size);
+  TESTASSERT(pdu.get_sdu_space() == pdu_size - 1);
+  TESTASSERT(pdu.get_current_sdu_ptr() == buffer.msg);
+
+  // Try to add short BSR CE
+  uint32_t buff_size[4] = {36, 0, 0, 0};
+  TESTASSERT(pdu.new_subh());
+  TESTASSERT(pdu.get()->set_bsr(buff_size, srslte::ul_sch_lcid::SHORT_BSR));
+  TESTASSERT(pdu.new_subh() == false);
+
+  // write PDU
+  pdu.write_packet(srslte::log_ref{"MAC"});
+
+  // compare with tv
+  TESTASSERT(memcmp(buffer.msg, tv, buffer.N_bytes) == 0);
+
+  // log
+  mac_log->info_hex(buffer.msg, buffer.N_bytes, "MAC PDU (%d B):\n", buffer.N_bytes);
+
+#if HAVE_PCAP
+  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1, 0);
+#endif
+
+  return SRSLTE_SUCCESS;
+}
+
+// Test for Short BSR CE + PHR CE
+int mac_sch_pdu_pack_test10()
+{
+  srslte::log_ref mac_log("MAC");
+
+  const uint32_t  pdu_size = 4;
+  srslte::sch_pdu pdu(10, srslte::log_ref{"MAC"});
+
+  uint8_t tv[pdu_size] = {0x3d, 0x1a, 0x20, 0x21};
+
+  byte_buffer_t buffer;
+  pdu.init_tx(&buffer, pdu_size, true);
+
+  TESTASSERT(pdu.rem_size() == pdu_size);
+  TESTASSERT(pdu.get_pdu_len() == pdu_size);
+  TESTASSERT(pdu.get_sdu_space() == pdu_size - 1);
+  TESTASSERT(pdu.get_current_sdu_ptr() == buffer.msg);
+
+  // Try to add short BSR CE
+  uint32_t buff_size[4] = {1132, 0, 0, 0};
+  TESTASSERT(pdu.new_subh());
+  TESTASSERT(pdu.get()->set_bsr(buff_size, srslte::ul_sch_lcid::SHORT_BSR));
+
+  // Try to add PHR CE
+  TESTASSERT(pdu.new_subh());
+  TESTASSERT(pdu.get()->set_phr(10.1));
+
+  // write PDU
+  pdu.write_packet(srslte::log_ref{"MAC"});
+
+  // compare with tv
+  TESTASSERT(memcmp(buffer.msg, tv, buffer.N_bytes) == 0);
+
+  // log
+  mac_log->info_hex(buffer.msg, buffer.N_bytes, "MAC PDU (%d B):\n", buffer.N_bytes);
+
+#if HAVE_PCAP
+  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1, 0);
+#endif
+
+  return SRSLTE_SUCCESS;
+}
+
+// Pack test for short MAC PDU, trying to add long BSR but no space left
+int mac_sch_pdu_pack_test11()
+{
+  srslte::log_ref mac_log("MAC");
+
+  const uint32_t  pdu_size = 3;
+  srslte::sch_pdu pdu(10, srslte::log_ref{"MAC"});
+
+  uint8_t tv[pdu_size] = {0x1f, 0x00, 0x00};
+
+  byte_buffer_t buffer;
+  pdu.init_tx(&buffer, pdu_size, true);
+
+  TESTASSERT(pdu.rem_size() == pdu_size);
+  TESTASSERT(pdu.get_pdu_len() == pdu_size);
+  TESTASSERT(pdu.get_sdu_space() == pdu_size - 1);
+  TESTASSERT(pdu.get_current_sdu_ptr() == buffer.msg);
+
+  // Try to Long BSR CE
+  uint32_t buff_size[4] = {0, 1000, 5000, 19200000};
+  TESTASSERT(pdu.new_subh());
+  TESTASSERT(pdu.get()->set_bsr(buff_size, srslte::ul_sch_lcid::LONG_BSR) == false);
+
+  // Adding BSR failed, remove subheader again
+  pdu.del_subh();
+
+  // write PDU
+  pdu.write_packet(srslte::log_ref{"MAC"});
+
+  // compare with tv
+  TESTASSERT(memcmp(buffer.msg, tv, buffer.N_bytes) == 0);
+
+  // log
+  mac_log->info_hex(buffer.msg, buffer.N_bytes, "MAC PDU (%d B):\n", buffer.N_bytes);
+
+#if HAVE_PCAP
+  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1, 0);
 #endif
 
   return SRSLTE_SUCCESS;
@@ -635,7 +760,7 @@ int mac_sch_pdu_pack_error_test()
   mac_log->info_hex(buffer.msg, buffer.N_bytes, "MAC PDU (%d B):\n", buffer.N_bytes);
 
 #if HAVE_PCAP
-  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1);
+  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1,0);
 #endif
 
   return SRSLTE_SUCCESS;
@@ -677,14 +802,14 @@ int mac_mch_pdu_pack_test1()
   mac_log->info_hex(buffer.msg, buffer.N_bytes, "MAC PDU (%d B):\n", buffer.N_bytes);
 
 #if HAVE_PCAP
-  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1);
+  pcap_handle->write_ul_crnti(buffer.msg, buffer.N_bytes, 0x1001, true, 1,0);
 #endif
 
   // compare with TV
   TESTASSERT(memcmp(buffer.msg, tv, buffer.N_bytes) == 0);
 
 #if HAVE_PCAP
-  pcap_handle->write_ul_crnti(tv, sizeof(tv), 0x1001, true, 1);
+  pcap_handle->write_ul_crnti(tv, sizeof(tv), 0x1001, true, 1, 0);
 #endif
 
   return SRSLTE_SUCCESS;
@@ -704,7 +829,7 @@ int mac_sch_pdu_unpack_test1()
   TESTASSERT(pdu.next() == false);
 
 #if HAVE_PCAP
-  pcap_handle->write_ul_crnti(tv, sizeof(tv), 0x1001, true, 1);
+  pcap_handle->write_ul_crnti(tv, sizeof(tv), 0x1001, true, 1,0);
 #endif
 
   return SRSLTE_SUCCESS;
@@ -724,7 +849,7 @@ int mac_sch_pdu_unpack_test2()
   TESTASSERT(pdu.next() == false);
 
 #if HAVE_PCAP
-  pcap_handle->write_ul_crnti(tv, sizeof(tv), 0x1001, true, 1);
+  pcap_handle->write_ul_crnti(tv, sizeof(tv), 0x1001, true, 1,0);
 #endif
 
   return SRSLTE_SUCCESS;
@@ -744,7 +869,7 @@ int mac_slsch_pdu_unpack_test1()
   mac_log.set_hex_limit(100000);
 
 #if HAVE_PCAP
-  pcap_handle->write_sl_crnti(tv, sizeof(tv), CRNTI, true, 1);
+  pcap_handle->write_sl_crnti(tv, sizeof(tv), CRNTI, true, 1, 0);
 #endif
 
   return SRSLTE_SUCCESS;
@@ -763,82 +888,29 @@ int main(int argc, char** argv)
   mac_log->set_level(srslte::LOG_LEVEL_DEBUG);
   mac_log->set_hex_limit(100000);
 
-  if (mac_rar_pdu_unpack_test1()) {
-    fprintf(stderr, "mac_rar_pdu_unpack_test1 failed.\n");
-    return SRSLTE_ERROR;
-  }
+  TESTASSERT(mac_rar_pdu_unpack_test1() == SRSLTE_SUCCESS);
+  TESTASSERT(mac_rar_pdu_unpack_test2() == SRSLTE_SUCCESS);
+  TESTASSERT(mac_rar_pdu_pack_test1() == SRSLTE_SUCCESS);
+  TESTASSERT(mac_rar_pdu_pack_test2() == SRSLTE_SUCCESS);
 
-  if (mac_rar_pdu_unpack_test2()) {
-    fprintf(stderr, "mac_rar_pdu_unpack_test2 failed.\n");
-    return SRSLTE_ERROR;
-  }
-
-  if (mac_rar_pdu_pack_test1()) {
-    fprintf(stderr, "mac_rar_pdu_pack_test1 failed.\n");
-    return SRSLTE_ERROR;
-  }
-
-  if (mac_rar_pdu_pack_test2()) {
-    fprintf(stderr, "mac_rar_pdu_pack_test2 failed.\n");
-    return SRSLTE_ERROR;
-  }
-
-  if (mac_sch_pdu_pack_test1()) {
-    fprintf(stderr, "mac_sch_pdu_pack_test1 failed.\n");
-    return SRSLTE_ERROR;
-  }
-
-  if (mac_sch_pdu_pack_test2()) {
-    fprintf(stderr, "mac_sch_pdu_pack_test2 failed.\n");
-    return SRSLTE_ERROR;
-  }
-
-  if (mac_sch_pdu_pack_test3()) {
-    fprintf(stderr, "mac_sch_pdu_pack_test3 failed.\n");
-    return SRSLTE_ERROR;
-  }
-
-  if (mac_sch_pdu_pack_test4()) {
-    fprintf(stderr, "mac_sch_pdu_pack_test4 failed.\n");
-    return SRSLTE_ERROR;
-  }
-
-  if (mac_sch_pdu_pack_test5()) {
-    fprintf(stderr, "mac_sch_pdu_pack_test5 failed.\n");
-    return SRSLTE_ERROR;
-  }
-
-  if (mac_sch_pdu_pack_test6()) {
-    fprintf(stderr, "mac_sch_pdu_pack_test6 failed.\n");
-    return SRSLTE_ERROR;
-  }
-
-  if (mac_sch_pdu_pack_test7()) {
-    fprintf(stderr, "mac_sch_pdu_pack_test7 failed.\n");
-    return SRSLTE_ERROR;
-  }
-
-  if (mac_sch_pdu_pack_error_test()) {
-    fprintf(stderr, "mac_sch_pdu_pack_error_test failed.\n");
-    return SRSLTE_ERROR;
-  }
-
-  if (mac_mch_pdu_pack_test1()) {
-    fprintf(stderr, "mac_mch_pdu_pack_test1 failed.\n");
-    return SRSLTE_ERROR;
-  }
-
-  if (mac_sch_pdu_unpack_test1()) {
-    fprintf(stderr, "mac_sch_pdu_unpack_test1 failed.\n");
-    return SRSLTE_ERROR;
-  }
-
-  if (mac_sch_pdu_unpack_test2()) {
-    fprintf(stderr, "mac_sch_pdu_unpack_test2 failed.\n");
-    return SRSLTE_ERROR;
-  }
-
+  TESTASSERT(mac_sch_pdu_pack_test1() == SRSLTE_SUCCESS);
+  TESTASSERT(mac_sch_pdu_pack_test2() == SRSLTE_SUCCESS);
+  TESTASSERT(mac_sch_pdu_pack_test3() == SRSLTE_SUCCESS);
+  TESTASSERT(mac_sch_pdu_pack_test4() == SRSLTE_SUCCESS);
+  TESTASSERT(mac_sch_pdu_pack_test5() == SRSLTE_SUCCESS);
+  TESTASSERT(mac_sch_pdu_pack_test6() == SRSLTE_SUCCESS);
+  TESTASSERT(mac_sch_pdu_pack_test7() == SRSLTE_SUCCESS);
   TESTASSERT(mac_sch_pdu_pack_test8() == SRSLTE_SUCCESS);
+  TESTASSERT(mac_sch_pdu_pack_test9() == SRSLTE_SUCCESS);
+  TESTASSERT(mac_sch_pdu_pack_test10() == SRSLTE_SUCCESS);
+  TESTASSERT(mac_sch_pdu_pack_test11() == SRSLTE_SUCCESS);
+
+  TESTASSERT(mac_sch_pdu_pack_error_test() == SRSLTE_SUCCESS);
+
+  TESTASSERT(mac_mch_pdu_pack_test1() == SRSLTE_SUCCESS);
+
+  TESTASSERT(mac_sch_pdu_unpack_test1() == SRSLTE_SUCCESS);
+  TESTASSERT(mac_sch_pdu_unpack_test2() == SRSLTE_SUCCESS);
 
   TESTASSERT(mac_slsch_pdu_unpack_test1() == SRSLTE_SUCCESS);
 

@@ -26,20 +26,15 @@
 #include "srslte/common/common.h"
 #include "srslte/common/log.h"
 #include "srslte/interfaces/ue_interfaces.h"
+#include "srslte/upper/byte_buffer_queue.h"
 #include "srslte/upper/rlc_common.h"
-#include "srslte/upper/rlc_tx_queue.h"
 
 namespace srslte {
 
 class rlc_tm final : public rlc_common
 {
 public:
-  rlc_tm(srslte::log_ref            log_,
-         uint32_t                   lcid_,
-         srsue::pdcp_interface_rlc* pdcp_,
-         srsue::rrc_interface_rlc*  rrc_,
-         srslte::timer_handler*     timers_,
-         uint32_t                   queue_len = 16);
+  rlc_tm(srslte::log_ref log_, uint32_t lcid_, srsue::pdcp_interface_rlc* pdcp_, srsue::rrc_interface_rlc* rrc_);
   ~rlc_tm() override;
   bool configure(const rlc_config_t& cnfg) override;
   void stop() override;
@@ -53,14 +48,17 @@ public:
   void                 reset_metrics() override;
 
   // PDCP interface
-  void write_sdu(unique_byte_buffer_t sdu, bool blocking) override;
+  void write_sdu(unique_byte_buffer_t sdu) override;
   void discard_sdu(uint32_t discard_sn) override;
+  bool sdu_queue_is_full() override;
 
   // MAC interface
   bool     has_data() override;
   uint32_t get_buffer_state() override;
   int      read_pdu(uint8_t* payload, uint32_t nof_bytes) override;
   void     write_pdu(uint8_t* payload, uint32_t nof_bytes) override;
+
+  void set_bsr_callback(bsr_callback_t callback) override {}
 
 private:
   byte_buffer_pool*          pool = nullptr;
@@ -74,7 +72,7 @@ private:
   rlc_bearer_metrics_t metrics = {};
 
   // Thread-safe queues for MAC messages
-  rlc_tx_queue ul_queue;
+  byte_buffer_queue ul_queue;
 };
 
 } // namespace srslte

@@ -27,42 +27,14 @@
 
 namespace srsepc {
 
-mme_gtpc*       mme_gtpc::m_instance    = NULL;
-pthread_mutex_t mme_gtpc_instance_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-mme_gtpc::mme_gtpc()
+mme_gtpc* mme_gtpc::get_instance()
 {
-  return;
-}
-
-mme_gtpc::~mme_gtpc()
-{
-  return;
-}
-
-mme_gtpc* mme_gtpc::get_instance(void)
-{
-  pthread_mutex_lock(&mme_gtpc_instance_mutex);
-  if (NULL == m_instance) {
-    m_instance = new mme_gtpc();
-  }
-  pthread_mutex_unlock(&mme_gtpc_instance_mutex);
-  return (m_instance);
-}
-
-void mme_gtpc::cleanup(void)
-{
-  pthread_mutex_lock(&mme_gtpc_instance_mutex);
-  if (NULL != m_instance) {
-    delete m_instance;
-    m_instance = NULL;
-  }
-  pthread_mutex_unlock(&mme_gtpc_instance_mutex);
+  static std::unique_ptr<mme_gtpc> instance = std::unique_ptr<mme_gtpc>(new mme_gtpc);
+  return instance.get();
 }
 
 bool mme_gtpc::init(srslte::log_filter* mme_gtpc_log)
 {
-
   /*Init log*/
   m_mme_gtpc_log = mme_gtpc_log;
 
@@ -76,7 +48,7 @@ bool mme_gtpc::init(srslte::log_filter* mme_gtpc_log)
   }
 
   m_mme_gtpc_log->info("MME GTP-C Initialized\n");
-  m_mme_gtpc_log->console("MME GTP-C Initialized\n");
+  srslte::console("MME GTP-C Initialized\n");
   return true;
 }
 
@@ -116,7 +88,7 @@ bool mme_gtpc::init_s11()
   m_spgw_addr.sun_path[0] = '\0';
 
   m_mme_gtpc_log->info("MME S11 Initialized\n");
-  m_mme_gtpc_log->console("MME S11 Initialized\n");
+  srslte::console("MME S11 Initialized\n");
   return true;
 }
 
@@ -130,7 +102,7 @@ bool mme_gtpc::send_s11_pdu(const srslte::gtpc_pdu& pdu)
   n = sendto(m_s11, &pdu, sizeof(pdu), 0, (const sockaddr*)&m_spgw_addr, sizeof(m_spgw_addr));
   if (n < 0) {
     m_mme_gtpc_log->error("Error sending to socket. Error %s\n", strerror(errno));
-    m_mme_gtpc_log->console("Error sending to socket. Error %s\n", strerror(errno));
+    srslte::console("Error sending to socket. Error %s\n", strerror(errno));
     return false;
   } else {
     m_mme_gtpc_log->debug("MME S11 Sent %d Bytes.\n", n);
@@ -164,14 +136,12 @@ void mme_gtpc::handle_s11_pdu(srslte::byte_buffer_t* msg)
 bool mme_gtpc::send_create_session_request(uint64_t imsi)
 {
   m_mme_gtpc_log->info("Sending Create Session Request.\n");
-  m_mme_gtpc_log->console("Sending Create Session Request.\n");
-  struct srslte::gtpc_pdu                     cs_req_pdu;
-  struct srslte::gtpc_create_session_request* cs_req = &cs_req_pdu.choice.create_session_request;
-
-  struct srslte::gtpc_pdu cs_resp_pdu;
-
+  srslte::console("Sending Create Session Request.\n");
+  struct srslte::gtpc_pdu cs_req_pdu;
   // Initialize GTP-C message to zero
-  bzero(&cs_req_pdu, sizeof(struct srslte::gtpc_pdu));
+  std::memset(&cs_req_pdu, 0, sizeof(cs_req_pdu));
+
+  struct srslte::gtpc_create_session_request* cs_req = &cs_req_pdu.choice.create_session_request;
 
   // Setup GTP-C Header. TODO: Length, sequence and other fields need to be added.
   cs_req_pdu.header.piggyback    = false;
@@ -183,12 +153,11 @@ bool mme_gtpc::send_create_session_request(uint64_t imsi)
   cs_req->imsi = imsi;
   // Control TEID allocated
   cs_req->sender_f_teid.teid = get_new_ctrl_teid();
-  cs_req->sender_f_teid.ipv4 = m_mme_gtpc_ip;
 
   m_mme_gtpc_log->info("Next MME control TEID: %d\n", m_next_ctrl_teid);
   m_mme_gtpc_log->info("Allocated MME control TEID: %d\n", cs_req->sender_f_teid.teid);
-  m_mme_gtpc_log->console("Creating Session Response -- IMSI: %" PRIu64 "\n", imsi);
-  m_mme_gtpc_log->console("Creating Session Response -- MME control TEID: %d\n", cs_req->sender_f_teid.teid);
+  srslte::console("Creating Session Response -- IMSI: %" PRIu64 "\n", imsi);
+  srslte::console("Creating Session Response -- MME control TEID: %d\n", cs_req->sender_f_teid.teid);
 
   // APN
   strncpy(cs_req->apn, m_s1ap->m_s1ap_args.mme_apn.c_str(), sizeof(cs_req->apn) - 1);
@@ -222,7 +191,7 @@ bool mme_gtpc::send_create_session_request(uint64_t imsi)
 
   // Save GTP-C context
   gtpc_ctx_t gtpc_ctx;
-  bzero(&gtpc_ctx, sizeof(gtpc_ctx_t));
+  std::memset(&gtpc_ctx, 0, sizeof(gtpc_ctx_t));
   gtpc_ctx.mme_ctr_fteid = cs_req->sender_f_teid;
   m_imsi_to_gtpc_ctx.insert(std::pair<uint64_t, gtpc_ctx_t>(imsi, gtpc_ctx));
 
@@ -235,7 +204,7 @@ bool mme_gtpc::handle_create_session_response(srslte::gtpc_pdu* cs_resp_pdu)
 {
   struct srslte::gtpc_create_session_response* cs_resp = &cs_resp_pdu->choice.create_session_response;
   m_mme_gtpc_log->info("Received Create Session Response\n");
-  m_mme_gtpc_log->console("Received Create Session Response\n");
+  srslte::console("Received Create Session Response\n");
   if (cs_resp_pdu->header.type != srslte::GTPC_MSG_TYPE_CREATE_SESSION_RESPONSE) {
     m_mme_gtpc_log->warning("Could not create GTPC session. Not a create session response\n");
     // TODO Handle error
@@ -267,11 +236,11 @@ bool mme_gtpc::handle_create_session_response(srslte::gtpc_pdu* cs_resp_pdu)
     m_mme_gtpc_log->error("Did not receive SGW S1-U F-TEID in create session response\n");
     return false;
   }
-  m_mme_gtpc_log->console("Create Session Response -- SPGW control TEID %d\n", sgw_ctr_fteid.teid);
+  srslte::console("Create Session Response -- SPGW control TEID %d\n", sgw_ctr_fteid.teid);
   m_mme_gtpc_log->info("Create Session Response -- SPGW control TEID %d\n", sgw_ctr_fteid.teid);
   in_addr s1u_addr;
   s1u_addr.s_addr = cs_resp->eps_bearer_context_created.s1_u_sgw_f_teid.ipv4;
-  m_mme_gtpc_log->console("Create Session Response -- SPGW S1-U Address: %s\n", inet_ntoa(s1u_addr));
+  srslte::console("Create Session Response -- SPGW S1-U Address: %s\n", inet_ntoa(s1u_addr));
   m_mme_gtpc_log->info("Create Session Response -- SPGW S1-U Address: %s\n", inet_ntoa(s1u_addr));
 
   // Check UE Ipv4 address was allocated
@@ -295,7 +264,7 @@ bool mme_gtpc::handle_create_session_response(srslte::gtpc_pdu* cs_resp_pdu)
 
   // Save UE IP to nas ctxt
   emm_ctx->ue_ip.s_addr = cs_resp->paa.ipv4;
-  m_mme_gtpc_log->console("SPGW Allocated IP %s to IMSI %015" PRIu64 "\n", inet_ntoa(emm_ctx->ue_ip), emm_ctx->imsi);
+  srslte::console("SPGW Allocated IP %s to IMSI %015" PRIu64 "\n", inet_ntoa(emm_ctx->ue_ip), emm_ctx->imsi);
 
   // Save SGW ctrl F-TEID in GTP-C context
   std::map<uint64_t, struct gtpc_ctx>::iterator it_g = m_imsi_to_gtpc_ctx.find(imsi);
@@ -321,6 +290,7 @@ bool mme_gtpc::send_modify_bearer_request(uint64_t imsi, uint16_t erab_to_modify
 {
   m_mme_gtpc_log->info("Sending GTP-C Modify bearer request\n");
   srslte::gtpc_pdu mb_req_pdu;
+  std::memset(&mb_req_pdu, 0, sizeof(mb_req_pdu));
 
   std::map<uint64_t, gtpc_ctx_t>::iterator it = m_imsi_to_gtpc_ctx.find(imsi);
   if (it == m_imsi_to_gtpc_ctx.end()) {
@@ -368,7 +338,8 @@ void mme_gtpc::handle_modify_bearer_response(srslte::gtpc_pdu* mb_resp_pdu)
 bool mme_gtpc::send_delete_session_request(uint64_t imsi)
 {
   m_mme_gtpc_log->info("Sending GTP-C Delete Session Request request. IMSI %" PRIu64 "\n", imsi);
-  srslte::gtpc_pdu    del_req_pdu;
+  srslte::gtpc_pdu del_req_pdu;
+  std::memset(&del_req_pdu, 0, sizeof(del_req_pdu));
   srslte::gtp_fteid_t sgw_ctr_fteid;
   srslte::gtp_fteid_t mme_ctr_fteid;
 
@@ -408,7 +379,8 @@ void mme_gtpc::send_release_access_bearers_request(uint64_t imsi)
 {
   // The GTP-C connection will not be torn down, just the user plane bearers.
   m_mme_gtpc_log->info("Sending GTP-C Release Access Bearers Request\n");
-  srslte::gtpc_pdu    rel_req_pdu;
+  srslte::gtpc_pdu rel_req_pdu;
+  std::memset(&rel_req_pdu, 0, sizeof(rel_req_pdu));
   srslte::gtp_fteid_t sgw_ctr_fteid;
 
   // Get S-GW Ctr TEID
@@ -460,7 +432,7 @@ void mme_gtpc::send_downlink_data_notification_acknowledge(uint64_t imsi, enum s
   m_mme_gtpc_log->debug("Sending GTP-C Data Notification Acknowledge. Cause %d\n", cause);
   srslte::gtpc_pdu    not_ack_pdu;
   srslte::gtp_fteid_t sgw_ctr_fteid;
-  bzero(&not_ack_pdu, sizeof(srslte::gtpc_pdu));
+  std::memset(&not_ack_pdu, 0, sizeof(not_ack_pdu));
 
   // get s-gw ctr teid
   std::map<uint64_t, gtpc_ctx_t>::iterator it_ctx = m_imsi_to_gtpc_ctx.find(imsi);
@@ -490,7 +462,7 @@ bool mme_gtpc::send_downlink_data_notification_failure_indication(uint64_t imsi,
   m_mme_gtpc_log->debug("Sending GTP-C Data Notification Failure Indication. Cause %d\n", cause);
   srslte::gtpc_pdu    not_fail_pdu;
   srslte::gtp_fteid_t sgw_ctr_fteid;
-  bzero(&not_fail_pdu, sizeof(srslte::gtpc_pdu));
+  std::memset(&not_fail_pdu, 0, sizeof(not_fail_pdu));
 
   // get s-gw ctr teid
   std::map<uint64_t, gtpc_ctx_t>::iterator it_ctx = m_imsi_to_gtpc_ctx.find(imsi);

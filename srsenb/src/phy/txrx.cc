@@ -50,13 +50,15 @@ txrx::txrx() : thread("TXRX")
   /* Do nothing */
 }
 
-bool txrx::init(srslte::radio_interface_phy* radio_h_,
+bool txrx::init(stack_interface_phy_lte*     stack_,
+                srslte::radio_interface_phy* radio_h_,
                 srslte::thread_pool*         workers_pool_,
                 phy_common*                  worker_com_,
                 prach_worker_pool*           prach_,
                 srslte::log*                 log_h_,
                 uint32_t                     prio_)
 {
+  stack         = stack_;
   radio_h       = radio_h_;
   log_h         = log_h_;
   workers_pool  = workers_pool_;
@@ -87,11 +89,10 @@ void txrx::stop()
 
 void txrx::run_thread()
 {
-  sf_worker*          worker  = nullptr;
-  srslte::rf_buffer_t buffer  = {};
-  srslte_timestamp_t  rx_time = {};
-  srslte_timestamp_t  tx_time = {};
-  uint32_t            sf_len  = SRSLTE_SF_LEN_PRB(worker_com->get_nof_prb(0));
+  sf_worker*             worker    = nullptr;
+  srslte::rf_buffer_t    buffer    = {};
+  srslte::rf_timestamp_t timestamp = {};
+  uint32_t               sf_len    = SRSLTE_SF_LEN_PRB(worker_com->get_nof_prb(0));
 
   float samp_rate = srslte_sampling_freq_hz(worker_com->get_nof_prb(0));
 
@@ -104,7 +105,7 @@ void txrx::run_thread()
     double   tx_freq_hz = worker_com->get_dl_freq_hz(cc_idx);
     double   rx_freq_hz = worker_com->get_ul_freq_hz(cc_idx);
     uint32_t rf_port    = worker_com->get_rf_port(cc_idx);
-    log_h->console(
+    srslte::console(
         "Setting frequency: DL=%.1f Mhz, UL=%.1f MHz for cc_idx=%d\n", tx_freq_hz / 1e6f, rx_freq_hz / 1e6f, cc_idx);
     radio_h->set_tx_freq(rf_port, tx_freq_hz);
     radio_h->set_rx_freq(rf_port, rx_freq_hz);
@@ -134,24 +135,24 @@ void txrx::run_thread()
         }
       }
 
-      radio_h->rx_now(buffer, sf_len, &rx_time);
+      buffer.set_nof_samples(sf_len);
+      radio_h->rx_now(buffer, timestamp);
 
       if (ul_channel) {
-        ul_channel->run(buffer.to_cf_t(), buffer.to_cf_t(), sf_len, rx_time);
+        ul_channel->run(buffer.to_cf_t(), buffer.to_cf_t(), sf_len, timestamp.get(0));
       }
 
-      /* Compute TX time: Any transmission happens in TTI+4 thus advance 4 ms the reception time */
-      srslte_timestamp_copy(&tx_time, &rx_time);
-      srslte_timestamp_add(&tx_time, 0, FDD_HARQ_DELAY_UL_MS * 1e-3);
+      // Compute TX time: Any transmission happens in TTI+4 thus advance 4 ms the reception time
+      timestamp.add(FDD_HARQ_DELAY_UL_MS * 1e-3);
 
       Debug("Setting TTI=%d, tx_mutex=%d, tx_time=%ld:%f to worker %d\n",
             tti,
             tx_worker_cnt,
-            tx_time.full_secs,
-            tx_time.frac_secs,
+            timestamp.get(0).full_secs,
+            timestamp.get(0).frac_secs,
             worker->get_id());
 
-      worker->set_time(tti, tx_worker_cnt, tx_time);
+      worker->set_time(tti, tx_worker_cnt, timestamp);
       tx_worker_cnt = (tx_worker_cnt + 1) % nof_workers;
 
       // Trigger phy worker execution
@@ -162,6 +163,10 @@ void txrx::run_thread()
       for (uint32_t cc = 0; cc < worker_com->get_nof_carriers(); cc++) {
         prach->new_tti(cc, tti, buffer.get(worker_com->get_rf_port(cc), 0, worker_com->get_nof_ports(0)));
       }
+
+      // Advance stack in time
+      stack->tti_clock();
+
     } else {
       // wait_worker() only returns NULL if it's being closed. Quit now to avoid unnecessary loops here
       running = false;

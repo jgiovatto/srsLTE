@@ -29,8 +29,25 @@ if(RF_FOUND)
 
   if (UHD_FOUND)
     add_definitions(-DENABLE_UHD)
-    list(APPEND SOURCES_RF rf_uhd_imp.c uhd_c_api.cpp)
+    list(APPEND SOURCES_RF rf_uhd_imp.cc)
+
+    # If found, add a macro to inform the UHD driver about the available feature
+    if (UHD_ENABLE_X300_FW_RESET)
+      add_definitions(-DENABLE_UHD_X300_FW_RESET)
+    endif(UHD_ENABLE_X300_FW_RESET)
+    if (UHD_ENABLE_RFNOC)
+      add_definitions(-DUHD_ENABLE_RFNOC)
+    endif(UHD_ENABLE_RFNOC)
+    if (UHD_ENABLE_CUSTOM_RFNOC)
+      add_definitions(-DUHD_ENABLE_CUSTOM_RFNOC)
+    endif(UHD_ENABLE_CUSTOM_RFNOC)
   endif (UHD_FOUND)
+
+  if (UHD_FOUND AND UHD_ENABLE_CUSTOM_RFNOC)
+    add_executable(rfnoc_test rfnoc_test.cc)
+    target_link_libraries(rfnoc_test srslte_rf ${UHD_LIBRARIES} ${Boost_LIBRARIES} /usr/lib/x86_64-linux-gnu/libboost_system.so)
+    message(info ${Boost_LIBRARIES})
+  endif (UHD_FOUND AND UHD_ENABLE_CUSTOM_RFNOC)
 
   if (BLADERF_FOUND)
     add_definitions(-DENABLE_BLADERF)
@@ -49,6 +66,7 @@ if(RF_FOUND)
 
   add_library(srslte_rf SHARED ${SOURCES_RF})
   target_link_libraries(srslte_rf srslte_rf_utils srslte_phy)
+  set_target_properties(srslte_rf PROPERTIES VERSION ${SRSLTE_VERSION_STRING} SOVERSION ${SRSLTE_SOVERSION})
   
   if (UHD_FOUND)
     target_link_libraries(srslte_rf ${UHD_LIBRARIES})

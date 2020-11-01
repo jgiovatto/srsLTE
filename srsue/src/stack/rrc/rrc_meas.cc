@@ -90,17 +90,16 @@ bool rrc::rrc_meas::parse_meas_config(const rrc_conn_recfg_r8_ies_s* mob_reconf_
   bool                        ret = true;
   if (mob_reconf_r8->meas_cfg_present) {
     ret = meas_cfg.parse_meas_config(&mob_reconf_r8->meas_cfg, is_ho_reest, src_earfcn);
-  } else {
-    cell_t* serv_cell = rrc_ptr->get_serving_cell();
-    if (serv_cell != nullptr) {
-      // Run 5.5.6.1 if we don't receive Measurement configuration
-      meas_cfg.ho_reest_finish(src_earfcn, serv_cell->get_earfcn());
-    } else {
-      log_h->warning("MEAS:  Could not call ho_reest_finish because serving_cell is null\n");
-    }
+    update_phy();
   }
-  update_phy();
   return ret;
+}
+
+// Section 5.5.6.1 Actions upon handover and re-establishment
+void rrc::rrc_meas::ho_reest_actions(const uint32_t src_earfcn, const uint32_t dst_earfcn)
+{
+  meas_cfg.ho_reest_finish(src_earfcn, dst_earfcn);
+  update_phy();
 }
 
 void rrc::rrc_meas::run_tti()
@@ -183,7 +182,7 @@ void rrc::rrc_meas::var_meas_report_list::init(rrc* rrc_ptr_)
 /* Generate report procedure 5.5.5 */
 void rrc::rrc_meas::var_meas_report_list::generate_report(const uint32_t measId)
 {
-  cell_t* serv_cell = rrc_ptr->get_serving_cell();
+  meas_cell* serv_cell = rrc_ptr->get_serving_cell();
   if (serv_cell == nullptr) {
     log_h->warning("MEAS:  Serving cell not set when evaluating triggers\n");
     return;
@@ -209,11 +208,10 @@ void rrc::rrc_meas::var_meas_report_list::generate_report(const uint32_t measId)
   var_meas_report&          var_meas   = varMeasReportList.at(measId);
 
   // sort cells by RSRP
-  std::sort(var_meas.cell_triggered_list.begin(),
-            var_meas.cell_triggered_list.end(),
-            [this](phy_interface_rrc_lte::phy_cell_t a, phy_interface_rrc_lte::phy_cell_t b) {
-              return rrc_ptr->get_cell_rsrp(a.earfcn, a.pci) > rrc_ptr->get_cell_rsrp(b.earfcn, b.pci);
-            });
+  std::sort(
+      var_meas.cell_triggered_list.begin(), var_meas.cell_triggered_list.end(), [this](phy_cell_t a, phy_cell_t b) {
+        return rrc_ptr->get_cell_rsrp(a.earfcn, a.pci) > rrc_ptr->get_cell_rsrp(b.earfcn, b.pci);
+      });
 
   // set the measResultNeighCells to include the best neighbouring cells up to maxReportCells in accordance with
   // the following
@@ -337,7 +335,7 @@ void rrc::rrc_meas::var_meas_report_list::set_measId(const uint32_t            m
   // triggerType ‘event’ as well as for triggerType ‘periodical’
   if (!varMeasReportList.at(measId).periodic_timer.is_valid() &&
       (report_cfg.report_amount.to_number() > 1 || report_cfg.report_amount.to_number() == -1)) {
-    varMeasReportList.at(measId).periodic_timer = rrc_ptr->stack->get_unique_timer();
+    varMeasReportList.at(measId).periodic_timer = rrc_ptr->task_sched.get_unique_timer();
     varMeasReportList.at(measId).periodic_timer.set(report_cfg.report_interv.to_number());
   }
   varMeasReportList.at(measId).report_cfg       = std::move(report_cfg);
@@ -383,10 +381,9 @@ void rrc::rrc_meas::var_meas_cfg::report_triggers()
         for (auto& cell : trigger_state[m.first]) {
           if (cell.second.is_enter_equal(report_cfg.trigger_type.event().time_to_trigger.to_number())) {
             // Do not add if already exists
-            if (std::find_if(cells_triggered_list.begin(),
-                             cells_triggered_list.end(),
-                             [&cell](const phy_interface_rrc_lte::phy_cell_t& c) { return cell.first == c.pci; }) ==
-                cells_triggered_list.end()) {
+            if (std::find_if(cells_triggered_list.begin(), cells_triggered_list.end(), [&cell](const phy_cell_t& c) {
+                  return cell.first == c.pci;
+                }) == cells_triggered_list.end()) {
               cells_triggered_list.push_back({cell.first, meas_obj.carrier_freq});
               new_cell_trigger = true;
             }
@@ -431,6 +428,32 @@ void rrc::rrc_meas::var_meas_cfg::report_triggers()
           }
         }
       }
+      {
+        meas_cell* serv_cell = rrc_ptr->get_serving_cell();
+        if (serv_cell == nullptr) {
+          log_h->warning("MEAS:  Serving cell not set when reporting triggers\n");
+          return;
+        }
+        uint32_t serving_pci = serv_cell->get_pci();
+
+        // remove all cells in the cellsTriggeredList that are no neighbor cells anymore
+        cell_triggered_t cells_triggered_list = meas_report->get_measId_cells(m.first);
+        auto             it                   = cells_triggered_list.begin();
+        while (it != cells_triggered_list.end()) {
+          if (not rrc_ptr->has_neighbour_cell(it->earfcn, it->pci) and it->pci != serving_pci) {
+            log_h->debug("MEAS:  Removing unknown PCI=%d from event trigger list\n", it->pci);
+            it = cells_triggered_list.erase(it);
+            meas_report->upd_measId(m.first, cells_triggered_list);
+
+            // if the cellsTriggeredList defined within the VarMeasReportList for this measId is empty:
+            if (cells_triggered_list.empty()) {
+              remove_varmeas_report(m.first);
+            }
+          } else {
+            it++;
+          }
+        }
+      }
     }
 
     // upon expiry of the periodical reporting timer for this measId
@@ -448,7 +471,7 @@ bool rrc::rrc_meas::var_meas_cfg::is_rsrp(report_cfg_eutra_s::trigger_quant_opts
 /* Evaluate event trigger conditions for each cell 5.5.4 */
 void rrc::rrc_meas::var_meas_cfg::eval_triggers()
 {
-  cell_t* serv_cell = rrc_ptr->get_serving_cell();
+  meas_cell* serv_cell = rrc_ptr->get_serving_cell();
 
   if (serv_cell == nullptr) {
     log_h->warning("MEAS:  Serving cell not set when evaluating triggers\n");
@@ -471,7 +494,7 @@ void rrc::rrc_meas::var_meas_cfg::eval_triggers()
     Ofs                   = offset_val(serving_obj->second);
     auto serving_cell_off = find_pci_in_meas_obj(serving_obj->second, serving_pci);
     if (serving_cell_off != serving_obj->second.cells_to_add_mod_list.end()) {
-      Ocs = serving_cell_off->cell_individual_offset;
+      Ocs = serving_cell_off->cell_individual_offset.to_number();
     }
   }
 
@@ -494,7 +517,7 @@ void rrc::rrc_meas::var_meas_cfg::eval_triggers()
     float  Ms   = is_rsrp(report_cfg.trigger_quant.value) ? serv_cell->get_rsrp() : serv_cell->get_rsrq();
 
     if (!std::isnormal(Ms)) {
-      log_h->warning("MEAS:  Serving cell Ms=%f invalid when evaluating triggers\n", Ms);
+      log_h->debug("MEAS:  Serving cell Ms=%f invalid when evaluating triggers\n", Ms);
       return;
     }
 
@@ -814,7 +837,7 @@ void rrc::rrc_meas::var_meas_cfg::measObject_addmod(const meas_obj_to_add_mod_li
                 log_h->debug("MEAS:       cell idx=%d, pci=%d, q_offset=%d\n",
                              c.cell_idx,
                              c.pci,
-                             c.cell_individual_offset.value);
+                             c.cell_individual_offset.to_number());
               }
             }
           }
@@ -883,8 +906,10 @@ void rrc::rrc_meas::var_meas_cfg::measObject_addmod(const meas_obj_to_add_mod_li
                   local_obj.black_cells_to_add_mod_list.size());
       if (log_h->get_level() == LOG_LEVEL_DEBUG) {
         for (auto& c : local_obj.cells_to_add_mod_list) {
-          log_h->debug(
-              "MEAS:       cell idx=%d, pci=%d, q_offset=%d\n", c.cell_idx, c.pci, c.cell_individual_offset.value);
+          log_h->debug("MEAS:       cell idx=%d, pci=%d, q_offset=%d\n",
+                       c.cell_idx,
+                       c.pci,
+                       c.cell_individual_offset.to_number());
         }
         for (auto& b : local_obj.black_cells_to_add_mod_list) {
           log_h->debug("MEAS:       black-listed cell idx=%d\n", b.cell_idx);
@@ -1098,7 +1123,7 @@ bool rrc::rrc_meas::var_meas_cfg::parse_meas_config(const meas_cfg_s* cfg, bool 
   // According to 5.5.6.1, if the new configuration after a HO/Reest does not configure the target frequency, we need to
   // swap frequencies with source
   if (is_ho_reest) {
-    cell_t* serv_cell = rrc_ptr->get_serving_cell();
+    meas_cell* serv_cell = rrc_ptr->get_serving_cell();
     if (serv_cell) {
       // Check if the target frequency is configured
       uint32_t target_earfcn = serv_cell->get_earfcn();

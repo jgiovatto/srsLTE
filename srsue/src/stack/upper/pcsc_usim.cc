@@ -31,7 +31,7 @@ using namespace srslte;
 
 namespace srsue {
 
-pcsc_usim::pcsc_usim(srslte::log* log_) : log(log_)
+pcsc_usim::pcsc_usim(srslte::log* log_) : usim_base(log_)
 {
   bzero(ck, CK_LEN);
   bzero(ik, IK_LEN);
@@ -73,7 +73,7 @@ int pcsc_usim::init(usim_args_t* args)
     }
   } else {
     log->error("Invalid length for IMSI: %zu should be %d\n", imsi_str.length(), 15);
-    log->console("Invalid length for IMSI: %zu should be %d\n", imsi_str.length(), 15);
+    srslte::console("Invalid length for IMSI: %zu should be %d\n", imsi_str.length(), 15);
     return ret;
   }
 
@@ -87,13 +87,9 @@ int pcsc_usim::init(usim_args_t* args)
     }
   } else {
     log->error("Invalid length for IMEI: %zu should be %d\n", args->imei.length(), 15);
-    log->console("Invalid length for IMEI: %zu should be %d\n", args->imei.length(), 15);
+    srslte::console("Invalid length for IMEI: %zu should be %d\n", args->imei.length(), 15);
     return ret;
   }
-
-  // Get MNC length
-  mnc_length = sc.get_mnc_len();
-  log->debug("MNC length %d\n", mnc_length);
 
   initiated = true;
   ret       = SRSLTE_SUCCESS;
@@ -106,87 +102,6 @@ void pcsc_usim::stop() {}
 /*******************************************************************************
   NAS interface
 *******************************************************************************/
-
-std::string pcsc_usim::get_imsi_str()
-{
-  return imsi_str;
-}
-std::string pcsc_usim::get_imei_str()
-{
-  return imei_str;
-}
-
-bool pcsc_usim::get_imsi_vec(uint8_t* imsi_, uint32_t n)
-{
-  if (!initiated) {
-    ERROR("USIM not initiated!\n");
-    return false;
-  }
-
-  if (NULL == imsi_ || n < 15) {
-    log->error("Invalid parameters to get_imsi_vec");
-    return false;
-  }
-
-  uint64_t temp = imsi;
-  for (int i = 14; i >= 0; i--) {
-    imsi_[i] = temp % 10;
-    temp /= 10;
-  }
-  return true;
-}
-
-bool pcsc_usim::get_imei_vec(uint8_t* imei_, uint32_t n)
-{
-  if (!initiated) {
-    ERROR("USIM not initiated!\n");
-    return false;
-  }
-
-  if (NULL == imei_ || n < 15) {
-    log->error("Invalid parameters to get_imei_vec");
-    return false;
-  }
-
-  uint64 temp = imei;
-  for (int i = 14; i >= 0; i--) {
-    imei_[i] = temp % 10;
-    temp /= 10;
-  }
-  return true;
-}
-
-bool pcsc_usim::get_home_plmn_id(srslte::plmn_id_t* home_plmn_id)
-{
-  if (!initiated) {
-    ERROR("USIM not initiated!\n");
-    return false;
-  }
-
-  uint8_t imsi_vec[15];
-  get_imsi_vec(imsi_vec, 15);
-
-  std::ostringstream plmn_str;
-
-  int mcc_len = 3;
-  for (int i = 0; i < mcc_len; i++) {
-    plmn_str << (int)imsi_vec[i];
-  }
-
-  int mnc_len = sc.get_mnc_len();
-  for (int i = mcc_len; i < mcc_len + mnc_len; i++) {
-    plmn_str << (int)imsi_vec[i];
-  }
-
-  if (home_plmn_id->from_string(plmn_str.str())) {
-    log->error("Error reading home PLMN from SIM.\n");
-    return false;
-  }
-
-  log->info("Read Home PLMN Id=%s\n", home_plmn_id->to_string().c_str());
-
-  return true;
-}
 
 auth_result_t pcsc_usim::generate_authentication_response(uint8_t* rand,
                                                           uint8_t* autn_enb,
@@ -244,99 +159,18 @@ auth_result_t pcsc_usim::generate_authentication_response(uint8_t* rand,
   return ret;
 }
 
-void pcsc_usim::generate_nas_keys(uint8_t*                    k_asme,
-                                  uint8_t*                    k_nas_enc,
-                                  uint8_t*                    k_nas_int,
-                                  CIPHERING_ALGORITHM_ID_ENUM cipher_algo,
-                                  INTEGRITY_ALGORITHM_ID_ENUM integ_algo)
+std::string pcsc_usim::get_mnc_str(const uint8_t* imsi_vec, std::string mcc_str)
 {
-  if (!initiated) {
-    ERROR("USIM not initiated!\n");
-    return;
+  uint32_t           mcc_len = 3;
+  uint32_t           mnc_len = sc.get_mnc_len();
+  std::ostringstream mnc_oss;
+
+  for (uint32_t i = mcc_len; i < mcc_len + mnc_len; i++) {
+    mnc_oss << (int)imsi_vec[i];
   }
 
-  // Generate K_nas_enc and K_nas_int
-  security_generate_k_nas(k_asme, cipher_algo, integ_algo, k_nas_enc, k_nas_int);
+  return mnc_oss.str();
 }
-
-/*******************************************************************************
-  RRC interface
-*******************************************************************************/
-
-void pcsc_usim::generate_as_keys(uint8_t*                      k_asme,
-                                 uint32_t                      count_ul,
-                                 srslte::as_security_config_t* sec_cfg)
-{
-  if (!initiated) {
-    ERROR("USIM not initiated!\n");
-    return;
-  }
-
-  // Generate K_enb
-  security_generate_k_enb(k_asme, count_ul, k_enb);
-
-  memcpy(this->k_asme, k_asme, 32);
-
-  // Generate K_rrc_enc and K_rrc_int
-  security_generate_k_rrc(
-      k_enb, sec_cfg->cipher_algo, sec_cfg->integ_algo, sec_cfg->k_rrc_enc.data(), sec_cfg->k_rrc_int.data());
-
-  // Generate K_up_enc and K_up_int
-  security_generate_k_up(
-      k_enb, sec_cfg->cipher_algo, sec_cfg->integ_algo, sec_cfg->k_up_enc.data(), sec_cfg->k_up_int.data());
-
-  current_ncc = 0;
-}
-
-void pcsc_usim::generate_as_keys_ho(uint32_t pci, uint32_t earfcn, int ncc, srslte::as_security_config_t* sec_cfg)
-{
-  if (!initiated) {
-    ERROR("USIM not initiated!\n");
-    return;
-  }
-
-  uint8_t* enb_star_key = k_enb;
-
-  if (ncc < 0) {
-    ncc = current_ncc;
-  }
-
-  // Generate successive NH
-  while (current_ncc != (uint32_t)ncc) {
-    uint8_t* sync = NULL;
-    if (current_ncc) {
-      sync = nh;
-    } else {
-      sync = k_enb;
-    }
-    // Generate NH
-    security_generate_nh(k_asme, sync, nh);
-
-    current_ncc++;
-    if (current_ncc == 7) {
-      current_ncc = 0;
-    }
-    enb_star_key = nh;
-  }
-
-  // Generate K_enb
-  security_generate_k_enb_star(enb_star_key, pci, earfcn, k_enb_star);
-
-  // K_enb becomes K_enb*
-  memcpy(k_enb, k_enb_star, 32);
-
-  // Generate K_rrc_enc and K_rrc_int
-  security_generate_k_rrc(
-      k_enb, sec_cfg->cipher_algo, sec_cfg->integ_algo, sec_cfg->k_rrc_enc.data(), sec_cfg->k_rrc_int.data());
-
-  // Generate K_up_enc and K_up_int
-  security_generate_k_up(
-      k_enb, sec_cfg->cipher_algo, sec_cfg->integ_algo, sec_cfg->k_up_enc.data(), sec_cfg->k_up_int.data());
-}
-
-/*******************************************************************************
-  Helpers
-*******************************************************************************/
 
 /*********************************
  * PC/SC class
@@ -1224,7 +1058,9 @@ int pcsc_usim::scard::umts_auth(const unsigned char* _rand,
     // Authentication error, application specific
     log->warning("SCARD: UMTS auth failed - MAC != XMAC\n");
     return -1;
-  } else if (len != 2 || resp[0] != 0x61) {
+  }
+
+  if (len != 2 || resp[0] != 0x61) {
     log->warning(
         "SCARD: unexpected response for UMTS auth request (len=%ld resp=%02x %02x)\n", (long)len, resp[0], resp[1]);
     return -1;
@@ -1243,7 +1079,9 @@ int pcsc_usim::scard::umts_auth(const unsigned char* _rand,
     log->debug_hex(auts, AKA_AUTS_LEN, "SCARD: AUTS\n");
     *res_len = AKA_AUTS_LEN;
     return -2;
-  } else if (len >= 6 + IK_LEN + CK_LEN && buf[0] == 0xdb) {
+  }
+
+  if (len >= 6 + IK_LEN + CK_LEN && buf[0] == 0xdb) {
     pos = buf + 1;
     end = buf + len;
 

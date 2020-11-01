@@ -28,6 +28,7 @@
 #include "srslte/common/interfaces_common.h"
 #include "srslte/common/log.h"
 #include "srslte/common/security.h"
+#include "srslte/common/task_scheduler.h"
 #include "srslte/common/threads.h"
 #include "srslte/interfaces/ue_interfaces.h"
 #include <map>
@@ -38,24 +39,25 @@ namespace srslte {
  * NR PDCP Entity
  * PDCP entity for 5G NR
  ***************************************************************************/
-class pdcp_entity_nr : public pdcp_entity_base
+class pdcp_entity_nr final : public pdcp_entity_base
 {
 public:
-  pdcp_entity_nr(srsue::rlc_interface_pdcp*      rlc_,
-                 srsue::rrc_interface_pdcp*      rrc_,
-                 srsue::gw_interface_pdcp*       gw_,
-                 srslte::task_handler_interface* task_executor_,
-                 srslte::log_ref                 log_);
-  ~pdcp_entity_nr();
-  void init(uint32_t lcid_, pdcp_config_t cfg_);
-  void reset();
-  void reestablish();
+  pdcp_entity_nr(srsue::rlc_interface_pdcp* rlc_,
+                 srsue::rrc_interface_pdcp* rrc_,
+                 srsue::gw_interface_pdcp*  gw_,
+                 srslte::task_sched_handle  task_sched_,
+                 srslte::log_ref            log_,
+                 uint32_t                   lcid,
+                 pdcp_config_t              cfg_);
+  ~pdcp_entity_nr() final;
+  void reset() final;
+  void reestablish() final;
 
   // RRC interface
-  void write_sdu(unique_byte_buffer_t sdu, bool blocking);
+  void write_sdu(unique_byte_buffer_t sdu) final;
 
   // RLC interface
-  void write_pdu(unique_byte_buffer_t pdu);
+  void write_pdu(unique_byte_buffer_t pdu) final;
 
   // State variable setters (should be used only for testing)
   void set_tx_next(uint32_t tx_next_) { tx_next = tx_next_; }
@@ -63,12 +65,13 @@ public:
   void set_rx_deliv(uint32_t rx_deliv_) { rx_deliv = rx_deliv_; }
   void set_rx_reord(uint32_t rx_reord_) { rx_reord = rx_reord_; }
 
+  void get_bearer_state(pdcp_lte_state_t* state) override;
+  void set_bearer_state(const pdcp_lte_state_t& state) override;
+
   // State variable getters (useful for testing)
   uint32_t nof_discard_timers() { return discard_timers_map.size(); }
 
 private:
-  bool initialized = false;
-
   srsue::rlc_interface_pdcp* rlc = nullptr;
   srsue::rrc_interface_pdcp* rrc = nullptr;
   srsue::gw_interface_pdcp*  gw  = nullptr;

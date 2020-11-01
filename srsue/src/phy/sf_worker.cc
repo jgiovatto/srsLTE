@@ -55,16 +55,11 @@ static int plot_worker_id = -1;
 
 namespace srsue {
 
-sf_worker::sf_worker(uint32_t            max_prb,
-                     phy_common*         phy_,
-                     srslte::log*        log_h_,
-                     srslte::log*        log_phy_lib_h_,
-                     chest_feedback_itf* chest_loop_)
+sf_worker::sf_worker(uint32_t max_prb, phy_common* phy_, srslte::log* log_h_, srslte::log* log_phy_lib_h_)
 {
   phy           = phy_;
   log_h         = log_h_;
   log_phy_lib_h = log_phy_lib_h_;
-  chest_loop    = chest_loop_;
 
   // ue_sync in phy.cc requires a buffer for 3 subframes
   for (uint32_t r = 0; r < phy->args->nof_carriers; r++) {
@@ -79,21 +74,15 @@ sf_worker::~sf_worker()
   }
 }
 
-void sf_worker::reset()
+void sf_worker::reset_cell_unlocked(uint32_t cc_idx)
 {
-  std::lock_guard<std::mutex> lock(mutex);
-  rssi_read_cnt = 0;
-  for (auto& cc_worker : cc_workers) {
-    cc_worker->reset();
-  }
+  cc_workers[cc_idx]->reset_cell_unlocked();
 }
 
-bool sf_worker::set_cell(uint32_t cc_idx, srslte_cell_t cell_)
+bool sf_worker::set_cell_unlocked(uint32_t cc_idx, srslte_cell_t cell_)
 {
-  std::lock_guard<std::mutex> lock(mutex);
-
   if (cc_idx < cc_workers.size()) {
-    if (!cc_workers[cc_idx]->set_cell(cell_)) {
+    if (!cc_workers[cc_idx]->set_cell_unlocked(cell_)) {
       Error("Setting cell for cc=%d\n", cc_idx);
       return false;
     }
@@ -102,6 +91,7 @@ bool sf_worker::set_cell(uint32_t cc_idx, srslte_cell_t cell_)
   }
 
   if (cc_idx == 0) {
+    std::lock_guard<std::mutex> lock(cell_mutex);
     cell           = cell_;
     cell_initiated = true;
     cell_init_cond.notify_one();
@@ -138,9 +128,9 @@ void sf_worker::set_tti(uint32_t tti_)
   }
 }
 
-void sf_worker::set_tx_time(srslte_timestamp_t tx_time_)
+void sf_worker::set_tx_time(const srslte::rf_timestamp_t& tx_time_)
 {
-  tx_time     = tx_time_;
+  tx_time.copy(tx_time_);
 }
 
 void sf_worker::set_prach(cf_t* prach_ptr_, float prach_power_)
@@ -149,46 +139,40 @@ void sf_worker::set_prach(cf_t* prach_ptr_, float prach_power_)
   prach_power = prach_power_;
 }
 
-void sf_worker::set_cfo(const uint32_t& cc_idx, float cfo)
+void sf_worker::set_cfo_unlocked(const uint32_t& cc_idx, float cfo)
 {
-  cc_workers[cc_idx]->set_cfo(cfo);
+  cc_workers[cc_idx]->set_cfo_unlocked(cfo);
 }
 
-void sf_worker::set_crnti(uint16_t rnti)
+void sf_worker::set_crnti_unlocked(uint16_t rnti)
 {
-  std::lock_guard<std::mutex> lock(mutex);
   for (auto& cc_worker : cc_workers) {
-    cc_worker->set_crnti(rnti);
+    cc_worker->set_crnti_unlocked(rnti);
   }
 }
 
-void sf_worker::set_tdd_config(srslte_tdd_config_t config)
+void sf_worker::set_tdd_config_unlocked(srslte_tdd_config_t config)
 {
-  std::lock_guard<std::mutex> lock(mutex);
   for (auto& cc_worker : cc_workers) {
-    cc_worker->set_tdd_config(config);
+    cc_worker->set_tdd_config_unlocked(config);
   }
   tdd_config = config;
 }
 
-void sf_worker::enable_pregen_signals(bool enabled)
+void sf_worker::enable_pregen_signals_unlocked(bool enabled)
 {
-  std::lock_guard<std::mutex> lock(mutex);
   for (auto& cc_worker : cc_workers) {
-    cc_worker->enable_pregen_signals(enabled);
+    cc_worker->enable_pregen_signals_unlocked(enabled);
   }
 }
 
-void sf_worker::set_config(uint32_t cc_idx, srslte::phy_cfg_t& phy_cfg)
+void sf_worker::set_config_unlocked(uint32_t cc_idx, srslte::phy_cfg_t phy_cfg)
 {
-  std::lock_guard<std::mutex> lock(mutex);
   if (cc_idx < cc_workers.size()) {
-    Info("Setting configuration for cc_worker=%d, cc=%d\n", get_id(), cc_idx);
-    cc_workers[cc_idx]->set_config(phy_cfg);
+    cc_workers[cc_idx]->set_config_unlocked(phy_cfg);
     if (cc_idx > 0) {
       // Update DCI config for PCell
-      srslte_dci_cfg_t dci_cfg = phy_cfg.dl_cfg.dci;
-      cc_workers[0]->upd_config_dci(dci_cfg);
+      cc_workers[0]->upd_config_dci_unlocked(phy_cfg.dl_cfg.dci);
     }
   } else {
     Error("Setting config for cc=%d; Invalid cc_idx\n", cc_idx);
@@ -198,59 +182,71 @@ void sf_worker::set_config(uint32_t cc_idx, srslte::phy_cfg_t& phy_cfg)
 void sf_worker::work_imp()
 {
 
-  srslte::rf_buffer_t         tx_signal_ptr = {};
+  srslte::rf_buffer_t tx_signal_ptr = {};
   if (!cell_initiated) {
-    phy->worker_end(this, false, tx_signal_ptr, 0, tx_time);
+    phy->worker_end(this, false, tx_signal_ptr, tx_time);
+    return;
   }
 
   bool     rx_signal_ok    = false;
   bool     tx_signal_ready = false;
   uint32_t nof_samples     = SRSLTE_SF_LEN_PRB(cell.nof_prb);
 
-  {
-    std::lock_guard<std::mutex> lock(mutex);
+  /***** Downlink Processing *******/
 
-    /***** Downlink Processing *******/
+  // Loop through all carriers. carrier_idx=0 is PCell
+  for (uint32_t carrier_idx = 0; carrier_idx < cc_workers.size(); carrier_idx++) {
 
-    // Loop through all carriers. carrier_idx=0 is PCell
-    for (uint32_t carrier_idx = 0; carrier_idx < cc_workers.size(); carrier_idx++) {
+    // Process all DL and special subframes
+    if (srslte_sfidx_tdd_type(tdd_config, tti % 10) != SRSLTE_TDD_SF_U || cell.frame_type == SRSLTE_FDD) {
+      srslte_mbsfn_cfg_t mbsfn_cfg;
+      ZERO_OBJECT(mbsfn_cfg);
 
-      // Process all DL and special subframes
-      if (srslte_sfidx_tdd_type(tdd_config, tti % 10) != SRSLTE_TDD_SF_U || cell.frame_type == SRSLTE_FDD) {
-        srslte_mbsfn_cfg_t mbsfn_cfg;
-        ZERO_OBJECT(mbsfn_cfg);
-
-        if (carrier_idx == 0 && phy->is_mbsfn_sf(&mbsfn_cfg, tti)) {
-          cc_workers[0]->work_dl_mbsfn(mbsfn_cfg); // Don't do chest_ok in mbsfn since it trigger measurements
-        } else {
-          if ((carrier_idx == 0) || phy->scell_cfg[carrier_idx].enabled) {
-            rx_signal_ok = cc_workers[carrier_idx]->work_dl_regular();
-          }
-        }
-      }
-    }
-
-    /***** Uplink Generation + Transmission *******/
-
-    /* If TTI+4 is an uplink subframe (TODO: Support short PRACH and SRS in UpPts special subframes) */
-    if ((srslte_sfidx_tdd_type(tdd_config, TTI_TX(tti) % 10) == SRSLTE_TDD_SF_U) || cell.frame_type == SRSLTE_FDD) {
-      // Generate Uplink signal if no PRACH pending
-      if (!prach_ptr) {
-
-        // Common UCI data object for all carriers
-        srslte_uci_data_t uci_data;
-        reset_uci(&uci_data);
-
-        // Loop through all carriers. Do in reverse order since control information from SCells is transmitted in PCell
-        for (int carrier_idx = phy->args->nof_carriers - 1; carrier_idx >= 0; carrier_idx--) {
-          tx_signal_ready |= cc_workers[carrier_idx]->work_ul(&uci_data);
-
-          // Set signal pointer based on offset
-          tx_signal_ptr.set((uint32_t)carrier_idx, 0, phy->args->nof_rx_ant, cc_workers[carrier_idx]->get_tx_buffer(0));
+      if (carrier_idx == 0 && phy->is_mbsfn_sf(&mbsfn_cfg, tti)) {
+        cc_workers[0]->work_dl_mbsfn(mbsfn_cfg); // Don't do chest_ok in mbsfn since it trigger measurements
+      } else {
+        if ((carrier_idx == 0) || (phy->scell_cfg[carrier_idx].enabled && phy->scell_cfg[carrier_idx].configured)) {
+          rx_signal_ok = cc_workers[carrier_idx]->work_dl_regular();
         }
       }
     }
   }
+
+  /***** Uplink Generation + Transmission *******/
+
+  /* If TTI+4 is an uplink subframe (TODO: Support short PRACH and SRS in UpPts special subframes) */
+  if ((srslte_sfidx_tdd_type(tdd_config, TTI_TX(tti) % 10) == SRSLTE_TDD_SF_U) || cell.frame_type == SRSLTE_FDD) {
+    // Generate Uplink signal if no PRACH pending
+    if (!prach_ptr) {
+
+      // Common UCI data object for all carriers
+      srslte_uci_data_t uci_data;
+      reset_uci(&uci_data);
+
+      uint32_t uci_cc_idx = phy->get_ul_uci_cc(TTI_TX(tti));
+
+      // Fill periodic CQI data; In case of periodic CSI report collision, lower carrier index have preference, so
+      // stop as soon as either CQI data is enabled or RI is carried
+      for (uint32_t carrier_idx = 0;
+           carrier_idx < phy->args->nof_carriers and not uci_data.cfg.cqi.data_enable and uci_data.cfg.cqi.ri_len == 0;
+           carrier_idx++) {
+        if (carrier_idx == 0 or phy->scell_cfg[carrier_idx].configured) {
+          cc_workers[carrier_idx]->set_uci_periodic_cqi(&uci_data);
+        }
+      }
+
+      // Loop through all carriers
+      for (uint32_t carrier_idx = 0; carrier_idx < phy->args->nof_carriers; carrier_idx++) {
+        if ((carrier_idx == 0) || (phy->scell_cfg[carrier_idx].enabled && phy->scell_cfg[carrier_idx].configured)) {
+          tx_signal_ready |= cc_workers[carrier_idx]->work_ul(uci_cc_idx == carrier_idx ? &uci_data : nullptr);
+
+          // Set signal pointer based on offset
+          tx_signal_ptr.set(carrier_idx, 0, phy->args->nof_rx_ant, cc_workers[carrier_idx]->get_tx_buffer(0));
+        }
+      }
+    }
+  }
+  tx_signal_ptr.set_nof_samples(nof_samples);
 
   // Set PRACH buffer signal pointer
   if (prach_ptr) {
@@ -260,15 +256,10 @@ void sf_worker::work_imp()
   }
 
   // Call worker_end to transmit the signal
-  phy->worker_end(this, tx_signal_ready, tx_signal_ptr, nof_samples, tx_time);
+  phy->worker_end(this, tx_signal_ready, tx_signal_ptr, tx_time);
 
   if (rx_signal_ok) {
     update_measurements();
-  }
-
-  // Call feedback loop for chest
-  if (chest_loop && ((1U << (tti % 10U)) & phy->args->cfo_ref_mask)) {
-    chest_loop->set_cfo(cc_workers[0]->get_ref_cfo());
   }
 
   /* Tell the plotting thread to draw the plots */
@@ -290,66 +281,18 @@ void sf_worker::reset_uci(srslte_uci_data_t* uci_data)
 
 void sf_worker::update_measurements()
 {
-  /* Only worker 0 reads the RSSI sensor every ~1-nof_cores s */
-  if (get_id() == 0) {
-
-    // Average RSSI over all symbols in antenna port 0 (make sure SF length is non-zero)
-    float rssi_dbm = SRSLTE_SF_LEN_PRB(cell.nof_prb) > 0
-                         ? (srslte_convert_power_to_dB(srslte_vec_avg_power_cf(cc_workers[0]->get_rx_buffer(0),
-                                                                               SRSLTE_SF_LEN_PRB(cell.nof_prb))) +
-                            30)
-                         : 0;
-    if (std::isnormal(rssi_dbm)) {
-      phy->avg_rssi_dbm[0] = SRSLTE_VEC_EMA(rssi_dbm, phy->avg_rssi_dbm[0], phy->args->snr_ema_coeff);
-    }
-
-    if (!rssi_read_cnt) {
-      phy->rx_gain_offset = phy->get_radio()->get_rx_gain() + phy->args->rx_gain_offset;
-    }
-    rssi_read_cnt++;
-    if (rssi_read_cnt == 1000) {
-      rssi_read_cnt = 0;
-    }
-  }
-
-  // Run measurements in all carriers
   std::vector<rrc_interface_phy_lte::phy_meas_t> serving_cells = {};
   for (uint32_t cc_idx = 0; cc_idx < cc_workers.size(); cc_idx++) {
-    bool active = (cc_idx == 0 || phy->scell_cfg[cc_idx].configured);
-
-    // Update measurement of the Component Carrier
-    cc_workers[cc_idx]->update_measurements();
-
-    // Send measurements for serving cells
-    if (active && ((tti % phy->pcell_report_period) == phy->pcell_report_period - 1)) {
-      rrc_interface_phy_lte::phy_meas_t meas = {};
-      meas.rsrp                              = phy->avg_rsrp_dbm[cc_idx];
-      meas.rsrq                              = phy->avg_rsrq_db[cc_idx];
-      meas.cfo_hz                            = phy->avg_cfo_hz[cc_idx];
-      // Save EARFCN and PCI for secondary cells, primary cell has earfcn=0
-      if (cc_idx > 0) {
-        meas.earfcn = phy->scell_cfg[cc_idx].earfcn;
-        meas.pci    = phy->scell_cfg[cc_idx].pci;
-      }
-      serving_cells.push_back(meas);
+    cf_t* rssi_power_buffer = nullptr;
+    // Setting rssi_power_buffer to nullptr disables RSSI update. Do it only by worker 0
+    if (cc_idx == 0 && get_id() == 0) {
+      rssi_power_buffer = cc_workers[0]->get_rx_buffer(0);
     }
+    cc_workers[cc_idx]->update_measurements(serving_cells, rssi_power_buffer);
   }
   // Send report to stack
   if (not serving_cells.empty()) {
     phy->stack->new_cell_meas(serving_cells);
-  }
-
-  // Check in-sync / out-sync conditions
-  if (phy->avg_rsrp_dbm[0] > phy->args->in_sync_rsrp_dbm_th && phy->avg_snr_db_cqi[0] > phy->args->in_sync_snr_db_th) {
-    log_h->debug("SNR=%.1f dB, RSRP=%.1f dBm sync=in-sync from channel estimator\n",
-                 phy->avg_snr_db_cqi[0],
-                 phy->avg_rsrp_dbm[0]);
-    chest_loop->in_sync();
-  } else {
-    log_h->warning("SNR=%.1f dB RSRP=%.1f dBm, sync=out-of-sync from channel estimator\n",
-                   phy->avg_snr_db_cqi[0],
-                   phy->avg_rsrp_dbm[0]);
-    chest_loop->out_of_sync();
   }
 }
 
@@ -364,13 +307,13 @@ void sf_worker::start_plot()
 #ifdef ENABLE_GUI
   if (plot_worker_id == -1) {
     plot_worker_id = get_id();
-    log_h->console("Starting plot for worker_id=%d\n", plot_worker_id);
+    srslte::console("Starting plot for worker_id=%d\n", plot_worker_id);
     init_plots(this);
   } else {
-    log_h->console("Trying to start a plot but already started by worker_id=%d\n", plot_worker_id);
+    srslte::console("Trying to start a plot but already started by worker_id=%d\n", plot_worker_id);
   }
 #else
-  log_h->console("Trying to start a plot but plots are disabled (ENABLE_GUI constant in sf_worker.cc)\n");
+  srslte::console("Trying to start a plot but plots are disabled (ENABLE_GUI constant in sf_worker.cc)\n");
 #endif
 }
 
@@ -382,12 +325,6 @@ int sf_worker::read_ce_abs(float* ce_abs, uint32_t tx_antenna, uint32_t rx_anten
 int sf_worker::read_pdsch_d(cf_t* pdsch_d)
 {
   return cc_workers[0]->read_pdsch_d(pdsch_d);
-}
-float sf_worker::get_sync_error()
-{
-  dl_metrics_t dl_metrics[SRSLTE_MAX_CARRIERS] = {};
-  phy->get_dl_metrics(dl_metrics);
-  return dl_metrics->sync_err;
 }
 
 float sf_worker::get_cfo()

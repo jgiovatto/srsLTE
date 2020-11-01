@@ -52,15 +52,18 @@ public:
   void rem_user(uint16_t rnti);
   void add_bearer(uint16_t rnti, uint32_t lcid, srslte::rlc_config_t cnfg);
   void add_bearer_mrb(uint16_t rnti, uint32_t lcid);
+  void del_bearer(uint16_t rnti, uint32_t lcid);
   bool has_bearer(uint16_t rnti, uint32_t lcid);
   bool suspend_bearer(uint16_t rnti, uint32_t lcid);
   bool resume_bearer(uint16_t rnti, uint32_t lcid);
+  void reestablish(uint16_t rnti) final;
 
   // rlc_interface_pdcp
   void        write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu);
   void        discard_sdu(uint16_t rnti, uint32_t lcid, uint32_t discard_sn);
   bool        rb_is_um(uint16_t rnti, uint32_t lcid);
   std::string get_rb_name(uint32_t lcid);
+  bool        sdu_queue_is_full(uint16_t rnti, uint32_t lcid);
 
   // rlc_interface_mac
   int  read_pdu(uint16_t rnti, uint32_t lcid, uint8_t* payload, uint32_t nof_bytes);
@@ -85,6 +88,8 @@ private:
     std::unique_ptr<srslte::rlc> rlc;
     srsenb::rlc*                 parent;
   };
+
+  void update_bsr(uint32_t rnti, uint32_t lcid, uint32_t tx_queue, uint32_t retx_queue);
 
   pthread_rwlock_t rwlock;
 

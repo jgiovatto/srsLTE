@@ -21,6 +21,7 @@
 
 #include "scheduler_test_common.h"
 #include "srsenb/hdr/stack/mac/scheduler.h"
+#include "srsenb/hdr/stack/upper/common_enb.h"
 #include "srslte/mac/pdu.h"
 
 #include "srslte/common/test_common.h"
@@ -63,20 +64,16 @@ int output_sched_tester::test_pusch_collisions(const tti_params_t&              
   ul_allocs.resize(nof_prb);
   ul_allocs.reset();
 
-  auto try_ul_fill = [&](srsenb::ul_harq_proc::ul_alloc_t alloc, const char* ch_str, bool strict = true) {
-    CONDERROR((alloc.RB_start + alloc.L) > nof_prb,
-              "Allocated RBs (%d,%d) out-of-bounds\n",
-              alloc.RB_start,
-              alloc.RB_start + alloc.L);
-    CONDERROR(alloc.L == 0, "Allocations must have at least one PRB\n");
-    if (strict and ul_allocs.any(alloc.RB_start, alloc.RB_start + alloc.L)) {
-      TESTERROR("Collision Detected of %s alloc=(%d,%d) and cumulative_mask=0x%s\n",
+  auto try_ul_fill = [&](prb_interval alloc, const char* ch_str, bool strict = true) {
+    CONDERROR(alloc.stop() > nof_prb, "Allocated RBs %s out-of-bounds\n", alloc.to_string().c_str());
+    CONDERROR(alloc.empty(), "Allocations must have at least one PRB\n");
+    if (strict and ul_allocs.any(alloc.start(), alloc.stop())) {
+      TESTERROR("Collision Detected of %s alloc=%s and cumulative_mask=0x%s\n",
                 ch_str,
-                alloc.RB_start,
-                alloc.RB_start + alloc.L,
+                alloc.to_string().c_str(),
                 ul_allocs.to_hex().c_str());
     }
-    ul_allocs.fill(alloc.RB_start, alloc.RB_start + alloc.L, true);
+    ul_allocs.fill(alloc.start(), alloc.stop(), true);
     return SRSLTE_SUCCESS;
   };
 
@@ -84,21 +81,22 @@ int output_sched_tester::test_pusch_collisions(const tti_params_t&              
   bool is_prach_tti_tx_ul =
       srslte_prach_tti_opportunity_config_fdd(cell_params.cfg.prach_config, tti_params.tti_tx_ul, -1);
   if (is_prach_tti_tx_ul) {
-    try_ul_fill({cell_params.cfg.prach_freq_offset, 6}, "PRACH");
+    try_ul_fill({cell_params.cfg.prach_freq_offset, cell_params.cfg.prach_freq_offset + 6}, "PRACH");
   }
 
   /* TEST: check collisions in PUCCH */
   bool strict = nof_prb != 6 or (not is_prach_tti_tx_ul); // and not tti_data.ul_pending_msg3_present);
   try_ul_fill({0, (uint32_t)cell_params.cfg.nrb_pucch}, "PUCCH", strict);
-  try_ul_fill(
-      {cell_params.cfg.cell.nof_prb - cell_params.cfg.nrb_pucch, (uint32_t)cell_params.cfg.nrb_pucch}, "PUCCH", strict);
+  try_ul_fill({cell_params.cfg.cell.nof_prb - cell_params.cfg.nrb_pucch, (uint32_t)cell_params.cfg.cell.nof_prb},
+              "PUCCH",
+              strict);
 
   /* TEST: check collisions in the UL PUSCH */
   for (uint32_t i = 0; i < ul_result.nof_dci_elems; ++i) {
     uint32_t L, RBstart;
     srslte_ra_type2_from_riv(ul_result.pusch[i].dci.type2_alloc.riv, &L, &RBstart, nof_prb, nof_prb);
     strict = ul_result.pusch[i].needs_pdcch or nof_prb != 6; // Msg3 may collide with PUCCH at PRB==6
-    try_ul_fill({RBstart, L}, "PUSCH", strict);
+    try_ul_fill({RBstart, RBstart + L}, "PUSCH", strict);
     //    ue_stats[ul_result.pusch[i].dci.rnti].nof_ul_rbs += L;
   }
 
@@ -249,7 +247,7 @@ int output_sched_tester::test_dci_values_consistency(const sched_interface::dl_s
 {
   for (uint32_t i = 0; i < ul_result.nof_dci_elems; ++i) {
     const auto& pusch = ul_result.pusch[i];
-    CONDERROR(pusch.tbs == 0, "Allocated RAR process with invalid TBS=%d\n", pusch.tbs);
+    CONDERROR(pusch.tbs == 0, "Allocated PUSCH with invalid TBS=%d\n", pusch.tbs);
     //    CONDERROR(ue_db.count(pusch.dci.rnti) == 0, "The allocated rnti=0x%x does not exist\n", pusch.dci.rnti);
     if (not pusch.needs_pdcch) {
       // In case of non-adaptive retx or Msg3
@@ -377,7 +375,7 @@ int ue_ctxt_test::fwd_pending_acks(sched* sched_ptr)
     }
     auto& h = active_ccs[p.ue_cc_idx].dl_harqs[p.pid];
     CONDERROR(not h.active, "The ACKed DL Harq pid=%d is not active\n", h.pid);
-    CONDERROR(h.tti_tx + FDD_HARQ_DELAY_UL_MS != p.tti_ack, "dl ack hasn't arrived when expected\n");
+    CONDERROR(h.tti_tx + FDD_HARQ_DELAY_DL_MS != p.tti_ack, "dl ack hasn't arrived when expected\n");
     CONDERROR(sched_ptr->dl_ack_info(current_tti_rx.to_uint(), rnti, p.cc_idx, p.tb, p.ack) <= 0,
               "The ACKed DL Harq pid=%d does not exist.\n",
               p.pid);
@@ -609,7 +607,7 @@ int ue_ctxt_test::test_harqs(cc_result result)
       CONDERROR(h.ndi != data.dci.tb[0].ndi, "Invalid ndi for retx\n");
       CONDERROR(not h.active, "retx for inactive dl harq pid=%d\n", h.pid);
       CONDERROR(h.tti_tx > current_tti_rx, "harq pid=%d reused too soon\n", h.pid);
-      CONDERROR(h.nof_retxs + 1 >= sim_cfg.ue_cfg.maxharq_tx,
+      CONDERROR(h.nof_retxs + 1 > sim_cfg.ue_cfg.maxharq_tx,
                 "The number of retx=%d exceeded its max=%d\n",
                 h.nof_retxs + 1,
                 sim_cfg.ue_cfg.maxharq_tx);
@@ -645,7 +643,9 @@ int ue_ctxt_test::test_harqs(cc_result result)
         // non-adaptive retx
         CONDERROR(pusch.dci.type2_alloc.riv != h.riv, "Non-adaptive retx must keep the same riv\n");
       }
-      CONDERROR(sched_utils::get_rvidx(h.nof_retxs + 1) != (uint32_t)pusch.dci.tb.rv, "Invalid rv index for retx\n");
+      if (pusch.tbs > 0) {
+        CONDERROR(sched_utils::get_rvidx(h.nof_retxs + 1) != (uint32_t)pusch.dci.tb.rv, "Invalid rv index for retx\n");
+      }
       CONDERROR(h.ndi != pusch.dci.tb.ndi, "Invalid ndi for retx\n");
       CONDERROR(not h.active, "retx for inactive UL harq pid=%d\n", h.pid);
       CONDERROR(h.tti_tx > current_tti_rx, "UL harq pid=%d was reused too soon\n", h.pid);
@@ -875,6 +875,7 @@ int common_sched_tester::sim_cfg(sim_sched_args args)
   sim_args0 = std::move(args);
 
   sched::cell_cfg(sim_args0.cell_cfg); // call parent cfg
+  sched::set_sched_cfg(&sim_args0.sched_args);
 
   ue_tester.reset(new user_state_sched_tester{sim_args0.cell_cfg});
   output_tester.clear();
@@ -891,7 +892,9 @@ int common_sched_tester::sim_cfg(sim_sched_args args)
 
 int common_sched_tester::add_user(uint16_t rnti, const ue_ctxt_test_cfg& ue_cfg_)
 {
-  CONDERROR(ue_cfg(rnti, ue_cfg_.ue_cfg) != SRSLTE_SUCCESS, "Configuring new user rnti=0x%x to sched\n", rnti);
+  CONDERROR(ue_cfg(rnti, generate_rach_ue_cfg(ue_cfg_.ue_cfg)) != SRSLTE_SUCCESS,
+            "Configuring new user rnti=0x%x to sched\n",
+            rnti);
   //        CONDERROR(!srslte_prach_tti_opportunity_config_fdd(
   //            sched_cell_params[CARRIER_IDX].cfg.prach_config, tti_info.tti_params.tti_rx, -1),
   //                  "New user added in a non-PRACH TTI\n");
@@ -907,6 +910,14 @@ int common_sched_tester::add_user(uint16_t rnti, const ue_ctxt_test_cfg& ue_cfg_
   ue_tester->add_user(rnti, rar_info.preamble_idx, ue_cfg_);
 
   tester_log->info("Adding user rnti=0x%x\n", rnti);
+  return SRSLTE_SUCCESS;
+}
+
+int common_sched_tester::reconf_user(uint16_t rnti, const sched_interface::ue_cfg_t& ue_cfg_)
+{
+  CONDERROR(not ue_tester->user_exists(rnti), "User must already exist to be configured\n");
+  CONDERROR(ue_cfg(rnti, ue_cfg_) != SRSLTE_SUCCESS, "Configuring new user rnti=0x%x to sched\n", rnti);
+  ue_tester->user_reconf(rnti, ue_cfg_);
   return SRSLTE_SUCCESS;
 }
 
@@ -957,8 +968,7 @@ int common_sched_tester::process_tti_events(const tti_ev& tti_ev)
         TESTASSERT(add_user(ue_ev.rnti, *ue_ev.ue_sim_cfg) == SRSLTE_SUCCESS);
       } else {
         // reconfiguration
-        TESTASSERT(ue_cfg(ue_ev.rnti, ue_ev.ue_sim_cfg->ue_cfg) == SRSLTE_SUCCESS);
-        ue_tester->user_reconf(ue_ev.rnti, ue_ev.ue_sim_cfg->ue_cfg);
+        TESTASSERT(reconf_user(ue_ev.rnti, ue_ev.ue_sim_cfg->ue_cfg) == SRSLTE_SUCCESS);
       }
     }
 
@@ -974,13 +984,17 @@ int common_sched_tester::process_tti_events(const tti_ev& tti_ev)
       bearer_ue_cfg(ue_ev.rnti, 0, ue_ev.bearer_cfg.get());
     }
 
-    auto* user = ue_tester->get_user_ctxt(ue_ev.rnti);
+    const ue_ctxt_test* user = ue_tester->get_user_ctxt(ue_ev.rnti);
 
     if (user != nullptr and not user->msg4_tti.is_valid() and user->msg3_tti.is_valid() and user->msg3_tti <= tic) {
       // Msg3 has been received but Msg4 has not been yet transmitted
+      // Setup default UE config
+      reconf_user(user->rnti, generate_setup_ue_cfg(sim_args0.default_ue_sim_cfg.ue_cfg));
+
+      // Schedule RRC Setup and ConRes CE
       uint32_t pending_dl_new_data = ue_db[ue_ev.rnti].get_pending_dl_new_data();
       if (pending_dl_new_data == 0) {
-        uint32_t lcid = 0; // Use SRB0 to schedule Msg4
+        uint32_t lcid = RB_ID_SRB0; // Use SRB0 to schedule Msg4
         dl_rlc_buffer_state(ue_ev.rnti, lcid, 50, 0);
         dl_mac_buffer_state(ue_ev.rnti, (uint32_t)srslte::dl_sch_lcid::CON_RES_ID);
       } else {
@@ -993,16 +1007,18 @@ int common_sched_tester::process_tti_events(const tti_ev& tti_ev)
       CONDERROR(user == nullptr, "TESTER ERROR: Trying to schedule data for user that does not exist\n");
       if (ue_ev.buffer_ev->dl_data > 0 and user->msg4_tti.is_valid()) {
         // If Msg4 has already been tx and there DL data to transmit
-        uint32_t lcid                = 2;
+        uint32_t lcid                = RB_ID_DRB1;
         uint32_t pending_dl_new_data = ue_db[ue_ev.rnti].get_pending_dl_new_data();
         if (user->drb_cfg_flag or pending_dl_new_data == 0) {
           // If RRCSetup finished
           if (not user->drb_cfg_flag) {
-            // setup lcid==2 bearer
+            reconf_user(user->rnti, sim_args0.default_ue_sim_cfg.ue_cfg);
+            // setup lcid==drb1 bearer
             sched::ue_bearer_cfg_t cfg = {};
             cfg.direction              = ue_bearer_cfg_t::BOTH;
-            ue_tester->bearer_cfg(ue_ev.rnti, 2, cfg);
-            bearer_ue_cfg(ue_ev.rnti, 2, &cfg);
+            cfg.group                  = 1;
+            ue_tester->bearer_cfg(ue_ev.rnti, lcid, cfg);
+            bearer_ue_cfg(ue_ev.rnti, lcid, &cfg);
           }
           // DRB is set. Update DL buffer
           uint32_t tot_dl_data = pending_dl_new_data + ue_ev.buffer_ev->dl_data; // TODO: derive pending based on rx
@@ -1014,9 +1030,9 @@ int common_sched_tester::process_tti_events(const tti_ev& tti_ev)
 
       if (ue_ev.buffer_ev->sr_data > 0 and user->drb_cfg_flag) {
         uint32_t tot_ul_data =
-            ue_db[ue_ev.rnti].get_pending_ul_new_data(tti_info.tti_params.tti_tx_ul) + ue_ev.buffer_ev->sr_data;
-        uint32_t lcid = 2;
-        ul_bsr(ue_ev.rnti, lcid, tot_ul_data, true);
+            ue_db[ue_ev.rnti].get_pending_ul_new_data(tti_info.tti_params.tti_tx_ul, -1) + ue_ev.buffer_ev->sr_data;
+        uint32_t lcg = 1;
+        ul_bsr(ue_ev.rnti, lcg, tot_ul_data);
       }
     }
   }

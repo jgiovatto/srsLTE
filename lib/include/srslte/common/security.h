@@ -62,6 +62,13 @@ typedef enum {
 static const char security_direction_text[INTEGRITY_ALGORITHM_ID_N_ITEMS][20] = {"Uplink", "Downlink"};
 
 using as_key_t = std::array<uint8_t, 32>;
+struct k_enb_context_t {
+  as_key_t k_enb;
+  as_key_t nh;
+  bool     is_first_ncc;
+  uint32_t ncc;
+};
+
 struct as_security_config_t {
   as_key_t                    k_rrc_int;
   as_key_t                    k_rrc_enc;
@@ -109,29 +116,29 @@ uint8_t security_generate_k_up(uint8_t*                    k_enb,
 /******************************************************************************
  * Integrity Protection
  *****************************************************************************/
-uint8_t security_128_eia1(uint8_t* key,
-                          uint32_t count,
-                          uint32_t bearer,
-                          uint8_t  direction,
-                          uint8_t* msg,
-                          uint32_t msg_len,
-                          uint8_t* mac);
+uint8_t security_128_eia1(const uint8_t* key,
+                          uint32_t       count,
+                          uint32_t       bearer,
+                          uint8_t        direction,
+                          uint8_t*       msg,
+                          uint32_t       msg_len,
+                          uint8_t*       mac);
 
-uint8_t security_128_eia2(uint8_t* key,
-                          uint32_t count,
-                          uint32_t bearer,
-                          uint8_t  direction,
-                          uint8_t* msg,
-                          uint32_t msg_len,
-                          uint8_t* mac);
+uint8_t security_128_eia2(const uint8_t* key,
+                          uint32_t       count,
+                          uint32_t       bearer,
+                          uint8_t        direction,
+                          uint8_t*       msg,
+                          uint32_t       msg_len,
+                          uint8_t*       mac);
 
-uint8_t security_128_eia3(uint8_t* key,
-                          uint32_t count,
-                          uint32_t bearer,
-                          uint8_t  direction,
-                          uint8_t* msg,
-                          uint32_t msg_len,
-                          uint8_t* mac);
+uint8_t security_128_eia3(const uint8_t* key,
+                          uint32_t       count,
+                          uint32_t       bearer,
+                          uint8_t        direction,
+                          uint8_t*       msg,
+                          uint32_t       msg_len,
+                          uint8_t*       mac);
 
 uint8_t security_md5(const uint8_t* input, size_t len, uint8_t* output);
 

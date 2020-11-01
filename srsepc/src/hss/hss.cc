@@ -70,7 +70,7 @@ int hss::init(hss_args_t* hss_args, srslte::log_filter* hss_log)
 
   /*Read user information from DB*/
   if (read_db_file(hss_args->db_file) == false) {
-    m_hss_log->console("Error reading user database file %s\n", hss_args->db_file.c_str());
+    srslte::console("Error reading user database file %s\n", hss_args->db_file.c_str());
     return -1;
   }
 
@@ -80,7 +80,7 @@ int hss::init(hss_args_t* hss_args, srslte::log_filter* hss_log)
   db_file = hss_args->db_file;
 
   m_hss_log->info("HSS Initialized. DB file %s, MCC: %d, MNC: %d\n", hss_args->db_file.c_str(), mcc, mnc);
-  m_hss_log->console("HSS Initialized.\n");
+  srslte::console("HSS Initialized.\n");
   return 0;
 }
 
@@ -109,9 +109,9 @@ bool hss::read_db_file(std::string db_filename)
         m_hss_log->error("Error parsing UE database. Wrong number of columns in .csv\n");
         m_hss_log->error("Columns: %zd, Expected %d.\n", split.size(), column_size);
 
-        m_hss_log->console("\nError parsing UE database. Wrong number of columns in user database CSV.\n");
-        m_hss_log->console("Perhaps you are using an old user_db.csv?\n");
-        m_hss_log->console("See 'srsepc/user_db.csv.example' for an example.\n\n");
+        srslte::console("\nError parsing UE database. Wrong number of columns in user database CSV.\n");
+        srslte::console("Perhaps you are using an old user_db.csv?\n");
+        srslte::console("See 'srsepc/user_db.csv.example' for an example.\n\n");
         return false;
       }
       std::unique_ptr<hss_ue_ctx_t> ue_ctx = std::unique_ptr<hss_ue_ctx_t>(new hss_ue_ctx_t);
@@ -198,12 +198,12 @@ bool hss::write_db_file(std::string db_filename)
   // Write comment info
   m_db_file << "#                                                                                           \n"
             << "# .csv to store UE's information in HSS                                                     \n"
-            << "# Kept in the following format: \"Name,Auth,IMSI,Key,OP_Type,OP,AMF,SQN,QCI,IP_alloc\"      \n"
+            << "# Kept in the following format: \"Name,Auth,IMSI,Key,OP_Type,OP/OPc,AMF,SQN,QCI,IP_alloc\"  \n"
             << "#                                                                                           \n"
             << "# Name:     Human readable name to help distinguish UE's. Ignored by the HSS                \n"
-            << "# IMSI:     UE's IMSI value                                                                 \n"
             << "# Auth:     Authentication algorithm used by the UE. Valid algorithms are XOR               \n"
             << "#           (xor) and MILENAGE (mil)                                                        \n"
+            << "# IMSI:     UE's IMSI value                                                                 \n"
             << "# Key:      UE's key, where other keys are derived from. Stored in hexadecimal              \n"
             << "# OP_Type:  Operator's code type, either OP or OPc                                          \n"
             << "# OP/OPc:   Operator Code/Cyphered Operator Code, stored in hexadecimal                     \n"
@@ -260,7 +260,7 @@ bool hss::gen_auth_info_answer(uint64_t imsi, uint8_t* k_asme, uint8_t* autn, ui
   m_hss_log->debug("Generating AUTH info answer\n");
   hss_ue_ctx_t* ue_ctx = get_ue_ctx(imsi);
   if (ue_ctx == nullptr) {
-    m_hss_log->console("User not found at HSS. IMSI: %015" PRIu64 "\n", imsi);
+    srslte::console("User not found at HSS. IMSI: %015" PRIu64 "\n", imsi);
     m_hss_log->error("User not found at HSS. IMSI: %015" PRIu64 "\n", imsi);
     return false;
   }
@@ -435,7 +435,7 @@ bool hss::gen_update_loc_answer(uint64_t imsi, uint8_t* qci)
   std::map<uint64_t, std::unique_ptr<hss_ue_ctx_t> >::iterator ue_ctx_it = m_imsi_to_ue_ctx.find(imsi);
   if (ue_ctx_it == m_imsi_to_ue_ctx.end()) {
     m_hss_log->info("User not found. IMSI: %015" PRIu64 "\n", imsi);
-    m_hss_log->console("User not found at HSS. IMSI: %015" PRIu64 "\n", imsi);
+    srslte::console("User not found at HSS. IMSI: %015" PRIu64 "\n", imsi);
     return false;
   }
   const std::unique_ptr<hss_ue_ctx_t>& ue_ctx = ue_ctx_it->second;
@@ -449,7 +449,7 @@ bool hss::resync_sqn(uint64_t imsi, uint8_t* auts)
   m_hss_log->debug("Re-syncing SQN\n");
   hss_ue_ctx_t* ue_ctx = get_ue_ctx(imsi);
   if (ue_ctx == nullptr) {
-    m_hss_log->console("User not found at HSS. IMSI: %015" PRIu64 "\n", imsi);
+    srslte::console("User not found at HSS. IMSI: %015" PRIu64 "\n", imsi);
     m_hss_log->error("User not found at HSS. IMSI: %015" PRIu64 "\n", imsi);
     return false;
   }
@@ -470,7 +470,7 @@ bool hss::resync_sqn(uint64_t imsi, uint8_t* auts)
 void hss::resync_sqn_xor(hss_ue_ctx_t* ue_ctx, uint8_t* auts)
 {
   m_hss_log->error("XOR SQN synchronization not supported yet\n");
-  m_hss_log->console("XOR SQNs synchronization not supported yet\n");
+  srslte::console("XOR SQNs synchronization not supported yet\n");
   return;
 }
 

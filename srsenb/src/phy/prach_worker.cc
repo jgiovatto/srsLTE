@@ -54,17 +54,30 @@ int prach_worker::init(const srslte_cell_t&      cell_,
   initiated = true;
 
   sf_cnt = 0;
+
+#if defined(ENABLE_GUI) and ENABLE_PRACH_GUI
+  char title[32] = {};
+  snprintf(title, sizeof(title), "PRACH buffer %d", cc_idx);
+
+  sdrgui_init();
+  plot_real_init(&plot_real);
+  plot_real_setTitle(&plot_real, title);
+  plot_real_setXAxisAutoScale(&plot_real, true);
+  plot_real_setYAxisAutoScale(&plot_real, true);
+  plot_real_addToWindowGrid(&plot_real, (char*)"PRACH", 0, cc_idx);
+#endif // defined(ENABLE_GUI) and ENABLE_PRACH_GUI
+
   return 0;
 }
 
 void prach_worker::stop()
 {
-  srslte_prach_free(&prach);
-
   running      = false;
   sf_buffer* s = nullptr;
   pending_buffers.push(s);
   wait_thread_finish();
+
+  srslte_prach_free(&prach);
 }
 
 void prach_worker::set_max_prach_offset_us(float delay_us)
@@ -136,7 +149,16 @@ int prach_worker::run_tti(sf_buffer* b)
                     max_prach_offset_us);
 
         if (prach_offsets[i] * 1e6 < max_prach_offset_us) {
-          stack->rach_detected(b->tti, cc_idx, prach_indices[i], (uint32_t)(prach_offsets[i] * 1e6));
+          // Convert time offset to Time Alignment command
+          uint32_t n_ta = (uint32_t)(prach_offsets[i] / (16 * SRSLTE_LTE_TS));
+
+          stack->rach_detected(b->tti, cc_idx, prach_indices[i], n_ta);
+
+#if defined(ENABLE_GUI) and ENABLE_PRACH_GUI
+          uint32_t nof_samples = SRSLTE_MIN(nof_sf * SRSLTE_SF_LEN_PRB(cell.nof_prb), 3 * SRSLTE_SF_LEN_MAX);
+          srslte_vec_abs_cf(b->samples, plot_buffer.data(), nof_samples);
+          plot_real_setNewData(&plot_real, plot_buffer.data(), nof_samples);
+#endif // defined(ENABLE_GUI) and ENABLE_PRACH_GUI
         }
       }
     }

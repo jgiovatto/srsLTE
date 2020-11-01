@@ -93,13 +93,16 @@ void srslte_cell_fprint(FILE* stream, srslte_cell_t* cell, uint32_t sfn)
 #define U SRSLTE_TDD_SF_U
 #define S SRSLTE_TDD_SF_S
 
-static srslte_tdd_sf_t tdd_sf[7][10] = {{D, S, U, U, U, D, S, U, U, U},
-                                        {D, S, U, U, D, D, S, U, U, D},
-                                        {D, S, U, D, D, D, S, U, D, D},
-                                        {D, S, U, U, U, D, D, D, D, D},
-                                        {D, S, U, U, D, D, D, D, D, D},
-                                        {D, S, U, D, D, D, D, D, D, D},
-                                        {D, S, U, U, U, D, S, U, U, D}};
+// TDD uplink-downlink configurations.
+// TS 36.211 v8.9.0 Table 4.2-2.
+static const srslte_tdd_sf_t tdd_sf[SRSLTE_MAX_TDD_SF_CONFIGS][SRSLTE_NOF_SF_X_FRAME] =
+  {{D, S, U, U, U, D, S, U, U, U},
+   {D, S, U, U, D, D, S, U, U, D},
+   {D, S, U, D, D, D, S, U, D, D},
+   {D, S, U, U, U, D, D, D, D, D},
+   {D, S, U, U, D, D, D, D, D, D},
+   {D, S, U, D, D, D, D, D, D, D},
+   {D, S, U, U, U, D, S, U, U, D}};
 
 #undef D
 #undef U
@@ -107,11 +110,11 @@ static srslte_tdd_sf_t tdd_sf[7][10] = {{D, S, U, U, U, D, S, U, U, U},
 
 srslte_tdd_sf_t srslte_sfidx_tdd_type(srslte_tdd_config_t tdd_config, uint32_t sf_idx)
 {
-  if (tdd_config.sf_config < 7 && sf_idx < 10 && tdd_config.configured) {
+  if (tdd_config.sf_config < SRSLTE_MAX_TDD_SF_CONFIGS && sf_idx < SRSLTE_NOF_SF_X_FRAME && tdd_config.configured) {
     return tdd_sf[tdd_config.sf_config][sf_idx];
-  } else {
-    return SRSLTE_TDD_SF_D;
   }
+
+  return SRSLTE_TDD_SF_D;
 }
 
 uint32_t srslte_sfidx_tdd_nof_dw_slot(srslte_tdd_config_t tdd_config, uint32_t slot, srslte_cp_t cp)
@@ -132,49 +135,51 @@ uint32_t srslte_sfidx_tdd_nof_dw_slot(srslte_tdd_config_t tdd_config, uint32_t s
   }
 }
 
-static uint32_t tdd_nof_sf_symbols[10][3] = {{3, 10, 1},
-                                             {9, 4, 1},
-                                             {10, 3, 1},
-                                             {11, 2, 1},
-                                             {12, 1, 1},
-                                             {3, 9, 2},
-                                             {9, 3, 2},
-                                             {10, 2, 2},
-                                             {11, 1, 1},
-                                             {6, 6, 2}};
+// Number of DwPTS / GP / UpPTS symbols per subframe.
+// TS 36.211 v13.13.0 Table 4.2-2.
+static const uint32_t tdd_nof_sf_symbols[SRSLTE_MAX_TDD_SS_CONFIGS][3] =
+  {{3, 10, 1},
+   {9, 4, 1},
+   {10, 3, 1},
+   {11, 2, 1},
+   {12, 1, 1},
+   {3, 9, 2},
+   {9, 3, 2},
+   {10, 2, 2},
+   {11, 1, 1},
+   {6, 6, 2}};
 
 uint32_t srslte_sfidx_tdd_nof_dw(srslte_tdd_config_t tdd_config)
 {
-  if (tdd_config.ss_config < 10) {
+  if (tdd_config.ss_config < SRSLTE_MAX_TDD_SS_CONFIGS) {
     return tdd_nof_sf_symbols[tdd_config.ss_config][0];
-  } else {
-    return 0;
   }
+
+  return 0;
 }
 
 uint32_t srslte_sfidx_tdd_nof_gp(srslte_tdd_config_t tdd_config)
 {
-  if (tdd_config.ss_config < 10) {
+  if (tdd_config.ss_config < SRSLTE_MAX_TDD_SS_CONFIGS) {
     return tdd_nof_sf_symbols[tdd_config.ss_config][1];
-  } else {
-    return 0;
   }
-}
 
-const static uint32_t tdd_nof_harq[7] = {7, 4, 2, 3, 2, 1, 6};
-
-uint32_t srslte_tdd_nof_harq(srslte_tdd_config_t tdd_config)
-{
-  return tdd_nof_harq[tdd_config.sf_config];
+  return 0;
 }
 
 uint32_t srslte_sfidx_tdd_nof_up(srslte_tdd_config_t tdd_config)
 {
-  if (tdd_config.ss_config < 10) {
+  if (tdd_config.ss_config < SRSLTE_MAX_TDD_SS_CONFIGS) {
     return tdd_nof_sf_symbols[tdd_config.ss_config][2];
-  } else {
-    return 0;
   }
+
+  return 0;
+}
+
+uint32_t srslte_tdd_nof_harq(srslte_tdd_config_t tdd_config)
+{
+  static const uint32_t tdd_nof_harq[7] = {7, 4, 2, 3, 2, 1, 6};
+  return tdd_nof_harq[tdd_config.sf_config];
 }
 
 bool srslte_sfidx_isvalid(uint32_t sf_idx)
@@ -298,7 +303,7 @@ uint32_t srslte_N_ta_new(uint32_t N_ta_old, uint32_t ta)
 
 float srslte_coderate(uint32_t tbs, uint32_t nof_re)
 {
-  return (float)(tbs + 24) / (nof_re);
+  return (float)(24 + tbs) / nof_re;
 }
 
 /* Returns the new time advance as indicated by the random access response
@@ -567,7 +572,7 @@ struct lte_band lte_bands[SRSLTE_NOF_LTE_BANDS] = {
     {50, 1432, 58240, 0, 0, SRSLTE_BAND_GEO_AREA_ALL},
     {51, 1427, 59090, 0, 0, SRSLTE_BAND_GEO_AREA_ALL},
     {52, 3300, 59140, 0, 0, SRSLTE_BAND_GEO_AREA_ALL},
-    {64, 0, 60139, 27809, 0, SRSLTE_BAND_GEO_AREA_ALL},
+    {64, 0, 60140, 27810, 0, SRSLTE_BAND_GEO_AREA_ALL}, // <- Placeholder band, not defined by 3GPP
     {65, 2110, 65536, 131072, 190, SRSLTE_BAND_GEO_AREA_ALL},
     {66, 2110, 66436, 131972, 400, SRSLTE_BAND_GEO_AREA_NAR},
     {67, 738, 67336, 0, 0, SRSLTE_BAND_GEO_AREA_EMEA},

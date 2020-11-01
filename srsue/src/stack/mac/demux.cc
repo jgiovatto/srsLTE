@@ -83,7 +83,7 @@ uint8_t* demux::request_buffer(uint32_t len)
 /* Demultiplexing of MAC PDU associated with a Temporal C-RNTI. The PDU will
  * remain in buffer until demultiplex_pending_pdu() is called.
  * This features is provided to enable the Random Access Procedure to decide
- * wether the PDU shall pass to upper layers or not, which depends on the
+ * whether the PDU shall pass to upper layers or not, which depends on the
  * Contention Resolution result.
  *
  * Warning: this function does some processing here assuming ACK deadline is not an
@@ -167,6 +167,7 @@ void demux::process_pdu(uint8_t* mac_pdu, uint32_t nof_bytes, srslte::pdu_queue:
       // Unpack DLSCH MAC PDU
       mac_msg.init_rx(nof_bytes);
       mac_msg.parse_packet(mac_pdu);
+      Info("%s\n", mac_msg.to_string().c_str());
       process_sch_pdu(&mac_msg);
       pdus.deallocate(mac_pdu);
       break;
@@ -220,9 +221,9 @@ void demux::process_sch_pdu(srslte::sch_pdu* pdu_msg)
       }
       // Route logical channel
       if (route_pdu) {
-        Info("Delivering PDU for lcid=%d, %d bytes\n",
-             pdu_msg->get()->get_sdu_lcid(),
-             pdu_msg->get()->get_payload_size());
+        Debug("Delivering PDU for lcid=%d, %d bytes\n",
+              pdu_msg->get()->get_sdu_lcid(),
+              pdu_msg->get()->get_payload_size());
         if (pdu_msg->get()->get_payload_size() < MAX_PDU_LEN) {
           rlc->write_pdu(
               pdu_msg->get()->get_sdu_lcid(), pdu_msg->get()->get_sdu_ptr(), pdu_msg->get()->get_payload_size());
@@ -279,7 +280,6 @@ void demux::mch_start_rx(uint32_t lcid)
 
 bool demux::process_ce(srslte::sch_subh* subh)
 {
-  uint32_t cc_idx = 0;
   switch (subh->dl_sch_ce_type()) {
     case srslte::dl_sch_lcid::CON_RES_ID:
       // Do nothing
@@ -287,11 +287,13 @@ bool demux::process_ce(srslte::sch_subh* subh)
     case srslte::dl_sch_lcid::TA_CMD:
       parse_ta_cmd(subh);
       break;
-    case srslte::dl_sch_lcid::SCELL_ACTIVATION:
-      cc_idx = (uint32_t)subh->get_activation_deactivation_cmd();
-      phy_h->set_activation_deactivation_scell(cc_idx);
-      mac->reset_harq(cc_idx);
+    case srslte::dl_sch_lcid::SCELL_ACTIVATION: {
+      uint32_t cmd = (uint32_t)subh->get_activation_deactivation_cmd();
+      srslte::console("SCELL Activation / Deactivation CMD: %x\n", cmd);
+      log_h->info("SCELL Activation / Deactivation CMD: %x\n", cmd);
+      phy_h->set_activation_deactivation_scell(cmd);
       break;
+    }
     case srslte::dl_sch_lcid::PADDING:
       break;
     default:

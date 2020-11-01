@@ -22,6 +22,7 @@
 #ifndef SRSLTE_TYPE_UTILS_H
 #define SRSLTE_TYPE_UTILS_H
 
+#include "srslte/adt/expected.h"
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -29,21 +30,6 @@
 #include <type_traits>
 
 namespace srslte {
-
-#if defined(__cpp_exceptions) && (1 == __cpp_exceptions)
-class bad_type_access : public std::runtime_error
-{
-public:
-  explicit bad_type_access(const std::string& what_arg) : runtime_error(what_arg) {}
-  explicit bad_type_access(const char* what_arg) : runtime_error(what_arg) {}
-};
-
-#define THROW_BAD_ACCESS(msg) throw bad_type_access{msg};
-#else
-#define THROW_BAD_ACCESS(msg)                                                                                          \
-  fprintf(stderr, "ERROR: exception thrown at %s", msg);                                                               \
-  std::abort()
-#endif
 
 /************************************
  *       get_type_name methods
@@ -58,15 +44,14 @@ public:
 template <typename T>
 std::string get_type_name()
 {
-  static const char*       funcname = __PRETTY_FUNCTION__;
-  static const std::string s        = []() {
+  static const std::string s = [](const char* funcname) {
     static const char* pos1 = strchr(funcname, '=') + 2;
     static const char* pos2 = strchr(pos1, ';');
     std::string        s2{pos1, pos2};
     size_t             colon_pos = s2.rfind(':');
     std::string        s3        = colon_pos == std::string::npos ? s2 : s2.substr(colon_pos + 1, s2.size());
     return s3.find('>') == std::string::npos ? s3 : s2;
-  }();
+  }(__PRETTY_FUNCTION__);
   return s;
 }
 

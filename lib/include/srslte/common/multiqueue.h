@@ -28,7 +28,7 @@
 #ifndef SRSLTE_MULTIQUEUE_H
 #define SRSLTE_MULTIQUEUE_H
 
-#include "move_callback.h"
+#include "srslte/adt/move_callback.h"
 #include <algorithm>
 #include <condition_variable>
 #include <functional>
@@ -37,6 +37,8 @@
 #include <vector>
 
 namespace srslte {
+
+#define MULTIQUEUE_DEFAULT_CAPACITY (8192) // Default per-queue capacity
 
 template <typename myobj>
 class multiqueue_handler
@@ -88,11 +90,11 @@ class multiqueue_handler
   };
 
 public:
-  class queue_handler
+  class queue_handle
   {
   public:
-    queue_handler() = default;
-    queue_handler(multiqueue_handler<myobj>* parent_, int id) : parent(parent_), queue_id(id) {}
+    queue_handle() = default;
+    queue_handle(multiqueue_handler<myobj>* parent_, int id) : parent(parent_), queue_id(id) {}
     template <typename FwdRef>
     void push(FwdRef&& value)
     {
@@ -100,13 +102,14 @@ public:
     }
     bool                   try_push(const myobj& value) { return parent->try_push(queue_id, value); }
     std::pair<bool, myobj> try_push(myobj&& value) { return parent->try_push(queue_id, std::move(value)); }
+    size_t                 size() { return parent->size(queue_id); }
 
   private:
     multiqueue_handler<myobj>* parent   = nullptr;
     int                        queue_id = -1;
   };
 
-  explicit multiqueue_handler(uint32_t capacity_ = 8192) : capacity(capacity_) {}
+  explicit multiqueue_handler(uint32_t capacity_ = MULTIQUEUE_DEFAULT_CAPACITY) : capacity(capacity_) {}
   ~multiqueue_handler() { reset(); }
 
   void reset()
@@ -115,19 +118,22 @@ public:
     running = false;
     while (nof_threads_waiting > 0) {
       uint32_t size = queues.size();
-      lock.unlock();
       cv_empty.notify_one();
       for (uint32_t i = 0; i < size; ++i) {
         queues[i].cv_full.notify_all();
       }
-      lock.lock();
       // wait for all threads to unblock
       cv_exit.wait(lock);
     }
     queues.clear();
   }
 
-  int add_queue()
+  /**
+   * Adds a new queue with fixed capacity
+   * @param capacity_ The capacity of the queue.
+   * @return The index of the newly created (or reused) queue within the vector of queues.
+   */
+  int add_queue(uint32_t capacity_)
   {
     uint32_t                    qidx = 0;
     std::lock_guard<std::mutex> lock(mutex);
@@ -136,14 +142,23 @@ public:
     }
     for (; qidx < queues.size() and queues[qidx].active; ++qidx)
       ;
-    if (qidx == queues.size()) {
+
+    // check if there is a free queue of the required size
+    if (qidx == queues.size() || queues[qidx].capacity() != capacity_) {
       // create new queue
-      queues.emplace_back(capacity);
+      queues.emplace_back(capacity_);
+      qidx = queues.size() - 1; // update qidx to the last element
     } else {
       queues[qidx].active = true;
     }
     return (int)qidx;
   }
+
+  /**
+   * Add queue using the default capacity of the underlying multiqueue
+   * @return The queue index
+   */
+  int add_queue() { return add_queue(capacity); }
 
   int nof_queues()
   {
@@ -249,6 +264,12 @@ public:
     return queues[qidx].size();
   }
 
+  size_t max_size(int qidx)
+  {
+    std::lock_guard<std::mutex> lck(mutex);
+    return queues[qidx].capacity();
+  }
+
   const myobj& front(int qidx)
   {
     std::lock_guard<std::mutex> lck(mutex);
@@ -272,7 +293,8 @@ public:
     return is_queue_active_(qidx);
   }
 
-  queue_handler get_queue_handler() { return {this, add_queue()}; }
+  queue_handle get_queue_handler() { return {this, add_queue()}; }
+  queue_handle get_queue_handler(uint32_t size) { return {this, add_queue(size)}; }
 
 private:
   bool is_queue_active_(int qidx) const { return running and queues[qidx].active; }
@@ -303,7 +325,8 @@ private:
 };
 
 //! Specialization for tasks
-using task_multiqueue = multiqueue_handler<move_task_t>;
+using task_multiqueue   = multiqueue_handler<move_task_t>;
+using task_queue_handle = task_multiqueue::queue_handle;
 
 } // namespace srslte
 

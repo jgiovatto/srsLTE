@@ -56,6 +56,37 @@ public:
   virtual void**   to_void()                                                                                      = 0;
   virtual cf_t**   to_cf_t()                                                                                      = 0;
   virtual uint32_t size()                                                                                         = 0;
+  virtual void     set_nof_samples(uint32_t n)                                                                    = 0;
+  virtual uint32_t get_nof_samples() const                                                                        = 0;
+};
+
+/**
+ * Class used to pass RF devices timestamps to the radio instance
+ *
+ * The class provides an abstraction to store a number of timestamps underlying RF devices.
+ */
+class rf_timestamp_interface
+{
+public:
+  virtual const srslte_timestamp_t& get(uint32_t idx) const = 0;
+  virtual srslte_timestamp_t*       get_ptr(uint32_t idx)   = 0;
+  virtual void                      add(double secs)        = 0;
+  virtual void                      sub(double secs)        = 0;
+
+  void copy(const rf_timestamp_interface& other)
+  {
+    // Nothing to copy
+    if (this == &other) {
+      return;
+    }
+
+    // Copy timestamps
+    for (uint32_t i = 0; i < SRSLTE_MAX_CHANNELS; i++) {
+      *this->get_ptr(i) = other.get(i);
+    }
+  }
+
+  srslte_timestamp_t& operator[](uint32_t idx) { return *this->get_ptr(idx); }
 };
 
 /**
@@ -90,22 +121,20 @@ public:
    * the buffer object.
    *
    * @param buffer Is the object that contains the pointers to all RF channels
-   * @param nof_samples Number of samples to transmit on all carriers and antennas
    * @param tx_time Time to transmit all signals
    * @return it returns true if the transmission was successful, otherwise it returns false
    */
-  virtual bool tx(rf_buffer_interface& buffer, const uint32_t& nof_samples, const srslte_timestamp_t& tx_time) = 0;
+  virtual bool tx(rf_buffer_interface& buffer, const rf_timestamp_interface& tx_time) = 0;
 
   /**
    * Indicates the radio to receive from all antennas and carriers synchronously and store the samples
    * in the buffer object
    *
    * @param buffer Is the object where the samples will be stored
-   * @param nof_samples Number of samples to receive from all carriers and antennas
    * @param tx_time Time at which the samples were received. Note the time is the same for all carriers
    * @return
    */
-  virtual bool rx_now(rf_buffer_interface& buffer, const uint32_t& nof_samples, srslte_timestamp_t* rxd_time) = 0;
+  virtual bool rx_now(rf_buffer_interface& buffer, rf_timestamp_interface& rxd_time) = 0;
 
   /**
    * Sets the TX frequency for all antennas in the provided carrier index
@@ -156,6 +185,14 @@ public:
    * @param srate Sampling rate in Hz
    */
   virtual void set_rx_srate(const double& srate) = 0;
+
+  /**
+   * Sets relative offset between receiver channels. It does not guarantee that the offset is corrected by the radio
+   * implementation.
+   * @param ch logical channel index
+   * @param offset_samples Offset in samples, it can be negative
+   */
+  virtual void set_channel_rx_offset(uint32_t ch, int32_t offset_samples) = 0;
 
   // getter
   virtual double            get_freq_offset()       = 0;

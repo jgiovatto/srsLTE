@@ -35,22 +35,17 @@
 
 namespace srsue {
 
-mac::mac(const char* logname) :
+mac::mac(const char* logname, ext_task_sched_handle task_sched_) :
   log_h(srslte::logmap::get(logname)),
   mch_msg(10, log_h),
   mux_unit(log_h),
   demux_unit(log_h),
-  pcap(nullptr)
+  pcap(nullptr),
+  task_sched(task_sched_)
 {
   // Create PCell HARQ entities
-  auto ul = ul_harq_entity_ptr(new ul_harq_entity(PCELL_CC_IDX));
-  auto dl = dl_harq_entity_ptr(new dl_harq_entity(PCELL_CC_IDX));
-
-  ul_harq.clear();
-  dl_harq.clear();
-
-  ul_harq.push_back(std::move(ul));
-  dl_harq.push_back(std::move(dl));
+  ul_harq.at(PCELL_CC_IDX) = ul_harq_entity_ptr(new ul_harq_entity(PCELL_CC_IDX));
+  dl_harq.at(PCELL_CC_IDX) = dl_harq_entity_ptr(new dl_harq_entity(PCELL_CC_IDX));
 
   srslte_softbuffer_rx_init(&pch_softbuffer, 100);
   srslte_softbuffer_rx_init(&mch_softbuffer, 100);
@@ -70,31 +65,27 @@ mac::~mac()
   srslte_softbuffer_rx_free(&mch_softbuffer);
 }
 
-bool mac::init(phy_interface_mac_lte*  phy,
-               rlc_interface_mac*      rlc,
-               rrc_interface_mac*      rrc,
-               task_handler_interface* stack_)
+bool mac::init(phy_interface_mac_lte* phy, rlc_interface_mac* rlc, rrc_interface_mac* rrc)
 {
-  phy_h   = phy;
-  rlc_h   = rlc;
-  rrc_h   = rrc;
-  stack_h = stack_;
+  phy_h = phy;
+  rlc_h = rlc;
+  rrc_h = rrc;
 
-  timer_alignment = stack_h->get_unique_timer();
+  timer_alignment = task_sched.get_unique_timer();
 
   // Create Stack task dispatch queue
-  stack_task_dispatch_queue = stack_h->make_task_queue();
+  stack_task_dispatch_queue = task_sched.make_task_queue();
 
-  bsr_procedure.init(rlc_h, log_h, stack_h);
-  phr_procedure.init(phy_h, log_h, stack_h);
+  bsr_procedure.init(&sr_procedure, rlc_h, log_h, &task_sched);
+  phr_procedure.init(phy_h, log_h, &task_sched);
   mux_unit.init(rlc_h, &bsr_procedure, &phr_procedure);
   demux_unit.init(phy_h, rlc_h, this, &timer_alignment);
-  ra_procedure.init(phy_h, rrc, log_h, &uernti, &timer_alignment, &mux_unit, stack_h);
-  sr_procedure.init(phy_h, rrc, log_h);
+  ra_procedure.init(phy_h, rrc, log_h, &uernti, &timer_alignment, &mux_unit, &task_sched);
+  sr_procedure.init(&ra_procedure, phy_h, rrc, log_h);
 
   // Create UL/DL unique HARQ pointers
-  ul_harq.at(0)->init(log_h, &uernti, &ra_procedure, &mux_unit);
-  dl_harq.at(0)->init(log_h, &uernti, &demux_unit);
+  ul_harq.at(PCELL_CC_IDX)->init(log_h, &uernti, &ra_procedure, &mux_unit);
+  dl_harq.at(PCELL_CC_IDX)->init(log_h, &uernti, &demux_unit);
 
   reset();
 
@@ -119,10 +110,14 @@ void mac::start_pcap(srslte::mac_pcap* pcap_)
 {
   pcap = pcap_;
   for (auto& r : dl_harq) {
-    r->start_pcap(pcap);
+    if (r != nullptr) {
+      r->start_pcap(pcap);
+    }
   }
   for (auto& r : ul_harq) {
-    r->start_pcap(pcap);
+    if (r != nullptr) {
+      r->start_pcap(pcap);
+    }
   }
   ra_procedure.start_pcap(pcap);
 }
@@ -132,33 +127,28 @@ void mac::start_pcap(srslte::mac_pcap* pcap_)
 void mac::reconfiguration(const uint32_t& cc_idx, const bool& enable)
 {
   if (cc_idx < SRSLTE_MAX_CARRIERS) {
-    // Create as many HARQ entities as carriers required
-    while (ul_harq.size() < cc_idx + 1) {
-      auto ul = ul_harq_entity_ptr(new ul_harq_entity(cc_idx));
+    if (enable and ul_harq.at(cc_idx) == nullptr) {
+      ul_harq_entity_ptr ul = ul_harq_entity_ptr(new ul_harq_entity(cc_idx));
       ul->init(log_h, &uernti, &ra_procedure, &mux_unit);
       ul->set_config(ul_harq_cfg);
-      ul_harq.push_back(std::move(ul));
+
+      if (pcap != nullptr) {
+        ul->start_pcap(pcap);
+      }
+
+      ul_harq.at(cc_idx) = std::move(ul);
     }
-    while (dl_harq.size() < cc_idx + 1) {
-      auto dl = dl_harq_entity_ptr(new dl_harq_entity(cc_idx));
+
+    if (enable and dl_harq.at(cc_idx) == nullptr) {
+      dl_harq_entity_ptr dl = dl_harq_entity_ptr(new dl_harq_entity(cc_idx));
       dl->init(log_h, &uernti, &demux_unit);
 
-      if (pcap) {
+      if (pcap != nullptr) {
         dl->start_pcap(pcap);
       }
 
-      dl_harq.push_back(std::move(dl));
+      dl_harq.at(cc_idx) = std::move(dl);
     }
-  }
-}
-
-void mac::wait_uplink()
-{
-  int cnt = 0;
-  Info("Waiting to uplink...\n");
-  while (mux_unit.is_pending_any_sdu() && cnt < 20) {
-    usleep(1000);
-    cnt++;
   }
 }
 
@@ -171,14 +161,8 @@ void mac::reset()
 
   timer_alignment.stop();
 
+  // Releases UL resources and Resets HARQ processes
   timer_alignment_expire();
-
-  for (auto& r : dl_harq) {
-    r->reset();
-  }
-  for (auto& r : ul_harq) {
-    r->reset();
-  }
 
   mux_unit.msg3_flush();
   mux_unit.reset();
@@ -214,28 +198,12 @@ void mac::run_tti(const uint32_t tti)
 
   /* Warning: Here order of invocation of procedures is important!! */
 
-  // Step all procedures
+  // Step all procedures (must follow this order)
   Debug("Running MAC tti=%d\n", tti);
   mux_unit.step();
   bsr_procedure.step(tti);
-  phr_procedure.step();
-
-  // Check if BSR procedure need to start SR
-  if (bsr_procedure.need_to_send_sr(tti)) {
-    Debug("Starting SR procedure by BSR request, PHY TTI=%d\n", tti);
-    sr_procedure.start();
-  }
-  if (bsr_procedure.need_to_reset_sr()) {
-    Debug("Resetting SR procedure by BSR request\n");
-    sr_procedure.reset();
-  }
   sr_procedure.step(tti);
-
-  // Check SR if we need to start RA
-  if (sr_procedure.need_random_access()) {
-    ra_procedure.start_mac_order();
-  }
-
+  phr_procedure.step();
   ra_procedure.step(tti);
   ra_procedure.update_rar_window(ra_window_start, ra_window_length);
 
@@ -449,6 +417,12 @@ void mac::tb_decoded(uint32_t cc_idx, mac_grant_dl_t grant, bool ack[SRSLTE_MAX_
     }
   } else {
 
+    // Assert DL HARQ entity
+    if (dl_harq.at(cc_idx) == nullptr) {
+      Error("HARQ entity %d has not been created\n", cc_idx);
+      return;
+    }
+
     dl_harq.at(cc_idx)->tb_decoded(grant, ack);
     process_pdus();
 
@@ -489,6 +463,12 @@ void mac::new_grant_dl(uint32_t                               cc_idx,
     if (grant.rnti == uernti.crnti && ra_procedure.is_contention_resolution()) {
       ra_procedure.pdcch_to_crnti(false);
     }
+    // Assert DL HARQ entity
+    if (dl_harq.at(cc_idx) == nullptr) {
+      Error("HARQ entity %d has not been created\n", cc_idx);
+      return;
+    }
+
     dl_harq.at(cc_idx)->new_grant_dl(grant, action);
   } else {
     /* Discard */
@@ -517,9 +497,12 @@ uint32_t mac::get_current_tti()
 
 void mac::reset_harq(uint32_t cc_idx)
 {
-  if (cc_idx < dl_harq.size()) {
-    dl_harq.at(cc_idx)->reset();
+  if (ul_harq.at(cc_idx) != nullptr) {
     ul_harq.at(cc_idx)->reset();
+  }
+
+  if (dl_harq.at(cc_idx) != nullptr) {
+    dl_harq.at(cc_idx)->reset();
   }
 }
 
@@ -532,11 +515,18 @@ void mac::new_grant_ul(uint32_t                               cc_idx,
                        mac_interface_phy_lte::mac_grant_ul_t  grant,
                        mac_interface_phy_lte::tb_action_ul_t* action)
 {
-  /* Start PHR Periodic timer on first UL dci */
+  // Start PHR Periodic timer on first UL DCI (See TS 36.321 Sec 5.4.6)
   if (is_first_ul_grant) {
     is_first_ul_grant = false;
-    phr_procedure.start_timer();
+    phr_procedure.start_periodic_timer();
   }
+
+  // Assert UL HARQ entity
+  if (ul_harq.at(cc_idx) == nullptr) {
+    Error("HARQ entity %d has not been created\n", cc_idx);
+    return;
+  }
+
   ul_harq.at(cc_idx)->new_grant_ul(grant, action);
   metrics[cc_idx].tx_pkts++;
 
@@ -585,10 +575,14 @@ void mac::timer_alignment_expire()
 {
   rrc_h->release_pucch_srs();
   for (auto& r : dl_harq) {
-    r->reset();
+    if (r != nullptr) {
+      r->reset();
+    }
   }
   for (auto& r : ul_harq) {
-    r->reset();
+    if (r != nullptr) {
+      r->reset();
+    }
   }
 }
 
@@ -597,14 +591,9 @@ void mac::set_contention_id(uint64_t uecri)
   uernti.contention_id = uecri;
 }
 
-void mac::start_noncont_ho(uint32_t preamble_index, uint32_t prach_mask)
+void mac::set_rach_ded_cfg(uint32_t preamble_index, uint32_t prach_mask)
 {
-  ra_procedure.start_noncont(preamble_index, prach_mask);
-}
-
-void mac::start_cont_ho()
-{
-  ra_procedure.start_mac_order(56, true);
+  ra_procedure.set_config_ded(preamble_index, prach_mask);
 }
 
 void mac::set_mbsfn_config(uint32_t nof_mbsfn_services)
@@ -613,8 +602,16 @@ void mac::set_mbsfn_config(uint32_t nof_mbsfn_services)
   phy_mbsfn_cfg.nof_mbsfn_services = nof_mbsfn_services;
 }
 
+// Only reset SR config
+void mac::set_config(sr_cfg_t& sr_cfg)
+{
+  Info("Setting SR configuration\n");
+  sr_procedure.set_config(sr_cfg);
+}
+
 void mac::set_config(mac_cfg_t& mac_cfg)
 {
+  Info("Setting configuration\n");
   // Set configuration for each module in MAC
   bsr_procedure.set_config(mac_cfg.bsr_cfg);
   phr_procedure.set_config(mac_cfg.phr_cfg);
@@ -694,9 +691,9 @@ void mac::get_metrics(mac_metrics_t m[SRSLTE_MAX_CARRIERS])
        rx_pkts ? ((float)100 * rx_errors / rx_pkts) : 0.0f,
        dl_avg_ret,
        tx_pkts ? ((float)100 * tx_errors / tx_pkts) : 0.0f,
-       ul_harq.at(0)->get_average_retx());
+       ul_harq.at(PCELL_CC_IDX)->get_average_retx());
 
-  metrics[0].ul_buffer = (int)bsr_procedure.get_buffer_state();
+  metrics[PCELL_CC_IDX].ul_buffer = (int)bsr_procedure.get_buffer_state();
   memcpy(m, metrics, sizeof(mac_metrics_t) * SRSLTE_MAX_CARRIERS);
   m = metrics;
   bzero(&metrics, sizeof(mac_metrics_t) * SRSLTE_MAX_CARRIERS);

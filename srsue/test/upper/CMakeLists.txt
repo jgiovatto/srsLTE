@@ -43,6 +43,14 @@ add_executable(tft_test tft_test.cc)
 target_link_libraries(tft_test srsue_upper srslte_upper srslte_phy)
 add_test(tft_test tft_test)
 
+add_executable(rrc_phy_ctrl_test rrc_phy_ctrl_test.cc)
+target_link_libraries(rrc_phy_ctrl_test srslte_common srsue_rrc)
+add_test(rrc_phy_ctrl_test rrc_phy_ctrl_test)
+
+add_executable(rrc_cell_test rrc_cell_test.cc)
+target_link_libraries(rrc_cell_test srsue_rrc srsue_upper srslte_upper srslte_phy rrc_asn1)
+add_test(rrc_cell_test rrc_cell_test)
+
 ########################################################################
 # Option to run command after build (useful for remote builds)
 ########################################################################

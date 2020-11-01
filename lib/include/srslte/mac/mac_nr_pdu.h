@@ -23,6 +23,7 @@
 #define SRSLTE_MAC_NR_PDU_H
 
 #include "srslte/common/common.h"
+#include "srslte/common/logmap.h"
 #include <memory>
 #include <stdint.h>
 #include <vector>
@@ -87,6 +88,7 @@ private:
   uint8_t* sdu           = nullptr;
 
   mac_nr_sch_pdu* parent = nullptr;
+  srslte::log_ref log_h;
 };
 
 class mac_nr_sch_pdu
@@ -101,6 +103,7 @@ public:
   bool                     is_ulsch();
 
   void init_tx(byte_buffer_t* buffer_, uint32_t pdu_len_, bool is_ulsch_ = false);
+  void init_rx(bool ulsch_ = false);
 
   uint32_t add_sdu(const uint32_t lcid_, const uint8_t* payload_, const uint32_t len_);
 

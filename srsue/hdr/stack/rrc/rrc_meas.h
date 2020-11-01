@@ -35,7 +35,7 @@ namespace srsue {
 
 using namespace asn1::rrc;
 
-typedef std::vector<phy_interface_rrc_lte::phy_cell_t> cell_triggered_t;
+typedef std::vector<phy_cell_t> cell_triggered_t;
 
 // RRC Measurements class
 class rrc::rrc_meas
@@ -45,6 +45,7 @@ public:
   void init(rrc* rrc_ptr);
   void reset();
   bool parse_meas_config(const rrc_conn_recfg_r8_ies_s* meas_config, bool is_ho_reest = false, uint32_t src_earfcn = 0);
+  void  ho_reest_actions(const uint32_t src_earfcn, const uint32_t dst_earfcn);
   void run_tti();
   void update_phy();
   float rsrp_filter(const float new_value, const float avg_value);
@@ -137,7 +138,7 @@ private:
     std::map<uint32_t, meas_obj_eutra_s>     measObjectsList;  // Uses MeasObjectId as key
     std::map<uint32_t, report_cfg_eutra_s>   reportConfigList; // Uses ReportConfigId as key
 
-    phy_quant_t filter_a        = {};
+    phy_quant_t filter_a = {1.0, 1.0}; // disable filtering until quantityConfig is received (see Sec. 5.5.3.2 Note 2)
     float       s_measure_value = 0.0;
 
     // trigger counters. First key is measId, second key is cell id (pci)

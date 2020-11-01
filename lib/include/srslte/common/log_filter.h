@@ -35,7 +35,7 @@
 
 #include "srslte/common/log.h"
 #include "srslte/common/logger.h"
-#include "srslte/common/logger_stdout.h"
+#include "srslte/common/logger_srslog_wrapper.h"
 #include "srslte/phy/common/timestamp.h"
 
 namespace srslte {
@@ -51,7 +51,6 @@ public:
 
   void init(std::string layer, logger* logger_, bool tti = false);
 
-  void console(const char* message, ...) __attribute__((format(printf, 2, 3)));
   void error(const char* message, ...) __attribute__((format(printf, 2, 3)));
   void warning(const char* message, ...) __attribute__((format(printf, 2, 3)));
   void info(const char* message, ...) __attribute__((format(printf, 2, 3)));
@@ -64,8 +63,6 @@ public:
   void info_hex(const uint8_t* hex, int size, const char* message, ...) __attribute__((format(printf, 4, 5)));
   void debug_hex(const uint8_t* hex, int size, const char* message, ...) __attribute__((format(printf, 4, 5)));
 
-  srslte::LOG_LEVEL_ENUM get_level(std::string l);
-
   class time_itf
   {
   public:
@@ -77,19 +74,18 @@ public:
   void set_time_src(time_itf* source, time_format_t format);
 
 protected:
-  logger* logger_h;
-  bool    do_tti;
+  std::unique_ptr<logger> default_logger;
+  logger*                 logger_h;
+  bool                    do_tti;
 
   static const int char_buff_size = logger::preallocated_log_str_size - 64 * 3;
 
   time_itf*     time_src;
   time_format_t time_format;
 
-  logger_stdout def_logger_stdout;
-
   void        all_log(srslte::LOG_LEVEL_ENUM level,
                       uint32_t               tti,
-                      const char*            msg,
+                      char*                  msg,
                       const uint8_t*         hex      = nullptr,
                       int                    size     = 0,
                       bool                   long_msg = false);

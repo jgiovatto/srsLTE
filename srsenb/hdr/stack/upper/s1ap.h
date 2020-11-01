@@ -35,6 +35,7 @@
 #include "s1ap_metrics.h"
 #include "srslte/common/network_utils.h"
 #include "srslte/common/stack_procedure.h"
+#include "srslte/common/task_scheduler.h"
 #include <unordered_map>
 
 namespace srsenb {
@@ -55,11 +56,8 @@ public:
   static const uint32_t ts1_reloc_prep_timeout_ms    = 10000;
   static const uint32_t ts1_reloc_overall_timeout_ms = 10000;
 
-  s1ap();
-  int  init(s1ap_args_t                       args_,
-            rrc_interface_s1ap*               rrc_,
-            srslte::timer_handler*            timers_,
-            srsenb::stack_interface_s1ap_lte* stack_);
+  s1ap(srslte::task_sched_handle task_sched_);
+  int  init(s1ap_args_t args_, rrc_interface_s1ap* rrc_, srsenb::stack_interface_s1ap_lte* stack_);
   void stop();
   void get_metrics(s1ap_metrics_t& m);
 
@@ -73,6 +71,7 @@ public:
                   uint8_t                               mmec) override;
   void write_pdu(uint16_t rnti, srslte::unique_byte_buffer_t pdu) override;
   bool user_exists(uint16_t rnti) override;
+  void user_mod(uint16_t old_rnti, uint16_t new_rnti) override;
   bool user_release(uint16_t rnti, asn1::s1ap::cause_radio_network_e cause_radio) override;
   void ue_ctxt_setup_complete(uint16_t rnti, const asn1::s1ap::init_context_setup_resp_s& res) override;
   void ue_erab_setup_complete(uint16_t rnti, const asn1::s1ap::erab_setup_resp_s& res) override;
@@ -82,6 +81,13 @@ public:
                         srslte::plmn_id_t            target_plmn,
                         srslte::unique_byte_buffer_t rrc_container) override;
   bool send_enb_status_transfer_proc(uint16_t rnti, std::vector<bearer_status_info>& bearer_status_list) override;
+  bool send_ho_failure(uint32_t mme_ue_s1ap_id);
+  bool send_ho_req_ack(const asn1::s1ap::ho_request_s&               msg,
+                       uint16_t                                      rnti,
+                       srslte::unique_byte_buffer_t                  ho_cmd,
+                       srslte::span<asn1::fixed_octstring<4, true> > admitted_bearers) override;
+  void send_ho_notify(uint16_t rnti, uint64_t target_eci) override;
+  void send_ho_cancel(uint16_t rnti) override;
   // void ue_capabilities(uint16_t rnti, LIBLTE_RRC_UE_EUTRA_CAPABILITY_STRUCT *caps);
 
   // Stack interface
@@ -103,14 +109,15 @@ private:
   srslte::log_ref                   s1ap_log;
   srslte::byte_buffer_pool*         pool  = nullptr;
   srsenb::stack_interface_s1ap_lte* stack = nullptr;
+  srslte::task_sched_handle         task_sched;
 
-  srslte::socket_handler_t            s1ap_socket;
-  struct sockaddr_in                  mme_addr            = {}; // MME address
-  bool                                mme_connected       = false;
-  bool                                running             = false;
-  uint32_t                            next_enb_ue_s1ap_id = 1; // Next ENB-side UE identifier
-  uint16_t                            next_ue_stream_id   = 1; // Next UE SCTP stream identifier
-  srslte::timer_handler::unique_timer mme_connect_timer, s1setup_timeout;
+  srslte::socket_handler_t s1ap_socket;
+  struct sockaddr_in       mme_addr            = {}; // MME address
+  bool                     mme_connected       = false;
+  bool                     running             = false;
+  uint32_t                 next_enb_ue_s1ap_id = 1; // Next ENB-side UE identifier
+  uint16_t                 next_ue_stream_id   = 1; // Next UE SCTP stream identifier
+  srslte::unique_timer     mme_connect_timer, s1setup_timeout;
 
   // Protocol IEs sent with every UL S1AP message
   asn1::s1ap::tai_s        tai;
@@ -145,6 +152,8 @@ private:
   // handover
   bool handle_hopreparationfailure(const asn1::s1ap::ho_prep_fail_s& msg);
   bool handle_s1hocommand(const asn1::s1ap::ho_cmd_s& msg);
+  bool handle_ho_request(const asn1::s1ap::ho_request_s& msg);
+  bool handle_mme_status_transfer(const asn1::s1ap::mme_status_transfer_s& msg);
 
   // UE-specific data and procedures
   struct ue {
@@ -152,8 +161,7 @@ private:
     class ho_prep_proc_t
     {
     public:
-      struct ts1_reloc_prep_expired {
-      };
+      struct ts1_reloc_prep_expired {};
       ho_prep_proc_t(s1ap::ue* ue_);
       srslte::proc_outcome_t
                              init(uint32_t target_eci_, srslte::plmn_id_t target_plmn_, srslte::unique_byte_buffer_t rrc_container);
@@ -194,9 +202,6 @@ private:
     ue_ctxt_t ctxt      = {};
     uint16_t  stream_id = 1;
 
-    // user procedures
-    srslte::proc_t<ho_prep_proc_t> ho_prep_proc;
-
   private:
     bool
     send_ho_required(uint32_t target_eci_, srslte::plmn_id_t target_plmn_, srslte::unique_byte_buffer_t rrc_container);
@@ -207,9 +212,13 @@ private:
     srslte::log_ref s1ap_log;
 
     // state
-    bool                                release_requested = false;
-    srslte::timer_handler::unique_timer ts1_reloc_prep;    ///< TS1_{RELOCprep} - max time for HO preparation
-    srslte::timer_handler::unique_timer ts1_reloc_overall; ///< TS1_{RELOCOverall}
+    bool                 release_requested = false;
+    srslte::unique_timer ts1_reloc_prep;    ///< TS1_{RELOCprep} - max time for HO preparation
+    srslte::unique_timer ts1_reloc_overall; ///< TS1_{RELOCOverall}
+
+  public:
+    // user procedures
+    srslte::proc_t<ho_prep_proc_t> ho_prep_proc;
   };
 
   class user_list
@@ -235,9 +244,6 @@ private:
     std::unordered_map<uint32_t, std::unique_ptr<ue> > users; // maps ENB_S1AP_ID to user
   };
   user_list users;
-
-  // timers
-  srslte::timer_handler* timers = nullptr;
 
   // procedures
   class s1_setup_proc_t

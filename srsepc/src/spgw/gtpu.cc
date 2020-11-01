@@ -66,19 +66,19 @@ int spgw::gtpu::init(spgw_args_t* args, spgw* spgw, gtpc_interface_gtpu* gtpc, s
   // Init SGi interface
   err = init_sgi(args);
   if (err != SRSLTE_SUCCESS) {
-    m_gtpu_log->console("Could not initialize the SGi interface.\n");
+    srslte::console("Could not initialize the SGi interface.\n");
     return err;
   }
 
   // Init S1-U
   err = init_s1u(args);
   if (err != SRSLTE_SUCCESS) {
-    m_gtpu_log->console("Could not initialize the S1-U interface.\n");
+    srslte::console("Could not initialize the S1-U interface.\n");
     return err;
   }
 
   m_gtpu_log->info("SPGW GTP-U Initialized.\n");
-  m_gtpu_log->console("SPGW GTP-U Initialized.\n");
+  srslte::console("SPGW GTP-U Initialized.\n");
   return SRSLTE_SUCCESS;
 }
 
@@ -197,12 +197,9 @@ int spgw::gtpu::init_s1u(spgw_args_t* args)
 
 void spgw::gtpu::handle_sgi_pdu(srslte::byte_buffer_t* msg)
 {
-  uint8_t  version = 0;
-  uint32_t dest_ip;
-  bool     usr_found = false;
-  bool     ctr_found = false;
+  bool usr_found = false;
+  bool ctr_found = false;
 
-  struct in_addr                                       dest_addr;
   std::map<uint32_t, srslte::gtpc_f_teid_ie>::iterator gtpu_fteid_it;
   std::map<in_addr_t, uint32_t>::iterator              gtpc_teid_it;
   srslte::gtpc_f_teid_ie                               enb_fteid;

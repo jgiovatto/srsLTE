@@ -30,14 +30,14 @@ int test_erab_setup(bool qci_exists)
 {
   printf("\n===== TEST: test_erab_setup()  =====\n");
   srslte::scoped_log<srslte::test_log_filter> rrc_log("RRC ");
-  srslte::timer_handler                       timers;
+  srslte::task_scheduler                      task_sched;
   srslte::unique_byte_buffer_t                pdu;
 
   srsenb::all_args_t args;
   rrc_cfg_t          cfg;
   TESTASSERT(test_helpers::parse_default_cfg(&cfg, args) == SRSLTE_SUCCESS);
 
-  srsenb::rrc                       rrc;
+  srsenb::rrc                       rrc{&task_sched};
   mac_dummy                         mac;
   rlc_dummy                         rlc;
   test_dummies::pdcp_mobility_dummy pdcp;
@@ -46,12 +46,7 @@ int test_erab_setup(bool qci_exists)
   gtpu_dummy                        gtpu;
   rrc_log->set_level(srslte::LOG_LEVEL_INFO);
   rrc_log->set_hex_limit(1024);
-  rrc.init(cfg, &phy, &mac, &rlc, &pdcp, &s1ap, &gtpu, &timers);
-
-  auto tic = [&timers, &rrc] {
-    timers.step_all();
-    rrc.tti_clock();
-  };
+  rrc.init(cfg, &phy, &mac, &rlc, &pdcp, &s1ap, &gtpu);
 
   uint16_t                  rnti = 0x46;
   sched_interface::ue_cfg_t ue_cfg;
@@ -63,7 +58,7 @@ int test_erab_setup(bool qci_exists)
   rrc_log->set_level(srslte::LOG_LEVEL_NONE); // mute all the startup log
 
   // Do all the handshaking until the first RRC Connection Reconf
-  test_helpers::bring_rrc_to_reconf_state(rrc, timers, rnti);
+  test_helpers::bring_rrc_to_reconf_state(rrc, *task_sched.get_timer_handler(), rnti);
 
   rrc_log->set_level(srslte::LOG_LEVEL_DEBUG);
   rrc_log->set_hex_limit(1024);
@@ -102,9 +97,12 @@ int test_erab_setup(bool qci_exists)
   rrc.setup_ue_erabs(rnti, s1ap_pdu.init_msg().value.erab_setup_request());
 
   if (qci_exists) {
+    // NOTE: It does not add DRB1/ERAB-ID=5 bc that bearer already existed
+    TESTASSERT(s1ap.added_erab_ids.size() == 1);
     TESTASSERT(rrc_log->error_counter == 0);
   } else {
-    TESTASSERT(rrc_log->error_counter == 2);
+    TESTASSERT(s1ap.added_erab_ids.empty());
+    TESTASSERT(rrc_log->error_counter > 0);
   }
 
   return SRSLTE_SUCCESS;
@@ -123,8 +121,6 @@ int main(int argc, char** argv)
   TESTASSERT(test_erab_setup(false) == SRSLTE_SUCCESS);
 
   printf("\nSuccess\n");
-
-  srslte::byte_buffer_pool::get_instance()->cleanup();
 
   return SRSLTE_SUCCESS;
 }

@@ -25,6 +25,7 @@
 #include "phy_interfaces.h"
 #include <map>
 #include <mutex>
+#include <srslte/adt/circular_array.h>
 #include <srslte/interfaces/enb_interfaces.h>
 #include <srslte/srslte.h>
 
@@ -84,17 +85,19 @@ private:
     cell_state_t                                     state      = cell_state_none; ///< Configuration state
     uint32_t                                         enb_cc_idx = 0;  ///< Corresponding eNb cell/carrier index
     uint8_t                                          last_ri    = 0;  ///< Last reported rank indicator
-    std::array<srslte_ra_tb_t, SRSLTE_MAX_HARQ_PROC> last_tb    = {}; ///< Stores last PUSCH Resource allocation
+    srslte::circular_array<srslte_ra_tb_t, SRSLTE_MAX_HARQ_PROC> last_tb =
+        {};                                                           ///< Stores last PUSCH Resource allocation
     srslte::phy_cfg_t                                phy_cfg;         ///< Configuration, it has a default constructor
+    srslte::circular_array<bool, TTIMOD_SZ> is_grant_available;       ///< Indicates whether there is an available grant
   } cell_info_t;
 
   /**
    * UE object stored in the PHY common database
    */
   struct common_ue {
-    std::array<srslte_pdsch_ack_t, TTIMOD_SZ>    pdsch_ack       = {}; ///< Pending acknowledgements for this Cell
-    std::array<cell_info_t, SRSLTE_MAX_CARRIERS> cell_info       = {}; ///< Cell information, indexed by ue_cell_idx
-    srslte::phy_cfg_t                            pcell_cfg_stash = {}; ///< Stashed Cell information
+    srslte::circular_array<srslte_pdsch_ack_t, TTIMOD_SZ> pdsch_ack = {}; ///< Pending acknowledgements for this Cell
+    std::array<cell_info_t, SRSLTE_MAX_CARRIERS>          cell_info = {}; ///< Cell information, indexed by ue_cell_idx
+    srslte::phy_cfg_t                                     pcell_cfg_stash = {}; ///< Stashed Cell information
   };
 
   /**
@@ -157,6 +160,18 @@ private:
   inline uint32_t _get_ue_cc_idx(uint16_t rnti, uint32_t enb_cc_idx) const;
 
   /**
+   * Gets the eNb Cell/Carrier index in which the UCI shall be carried. This corresponds to the serving cell with lowest
+   * index that has an UL grant available.
+   *
+   * If no grant is available in the indicated TTI, it returns the number of the eNb Cells/Carriers.
+   *
+   * @param tti The UL processing TTI
+   * @param rnti Temporal UE ID
+   * @return the eNb Cell/Carrier with lowest serving cell index that has an UL grant
+   */
+  uint32_t _get_uci_enb_cc_idx(uint32_t tti, uint16_t rnti) const;
+
+  /**
    * Checks if a given RNTI exists in the database
    * @param rnti provides UE identifier
    * @return SRSLTE_SUCCESS if the indicated RNTI exists, otherwise it returns SRSLTE_ERROR
@@ -185,15 +200,7 @@ private:
    * @param ue_cc_idx UE cell/carrier index that is asserted
    * @return SRSLTE_SUCCESS if the indicated cell/carrier index is valid, otherwise it returns SRSLTE_ERROR
    */
-  inline int _assert_ue_cc(uint16_t rnti, uint32_t ue_cc_idx);
-
-  /**
-   * Checks if an RNTI is configured to use an specified UE cell/carrier as PCell or SCell and it is active
-   * @param rnti provides UE identifier
-   * @param ue_cc_idx UE cell/carrier index that is asserted
-   * @return SRSLTE_SUCCESS if the indicated cell/carrier is active, otherwise it returns SRSLTE_ERROR
-   */
-  inline int _assert_active_ue_cc(uint16_t rnti, uint32_t ue_cc_idx);
+  inline int _assert_ue_cc(uint16_t rnti, uint32_t ue_cc_idx) const;
 
   /**
    * Checks if an RNTI is configured to use an specified eNb cell/carrier as PCell or SCell and it is active
@@ -239,9 +246,9 @@ public:
    * first element of the list must be the PCell and the rest will be SCell in the order
    *
    * @param rnti identifier of the user
-   * @param phy_rrc_dedicated_list List of the eNb physical layer configuration coming for the RRC
+   * @param phy_cfg_list List of the eNb physical layer configuration coming for the RRC
    */
-  void addmod_rnti(uint16_t rnti, const phy_interface_rrc_lte::phy_rrc_dedicated_list_t& phy_rrc_dedicated_list);
+  void addmod_rnti(uint16_t rnti, const phy_interface_rrc_lte::phy_rrc_cfg_list_t& phy_cfg_list);
 
   /**
    * Removes a whole UE entry from the UE database
@@ -266,6 +273,14 @@ public:
    * @param activate
    */
   void activate_deactivate_scell(uint16_t rnti, uint32_t ue_cc_idx, bool activate);
+
+  /**
+   * Asserts a given eNb cell is PCell of the given RNTI
+   * @param rnti identifier of the UE
+   * @param enb_cc_idx eNb cell/carrier index
+   * @return It returns true if it is the primmary cell, othwerwise it returns false
+   */
+  bool is_pcell(uint16_t rnti, uint32_t enb_cc_idx) const;
 
   /**
    * Get the current down-link physical layer configuration for an RNTI and an eNb cell/carrier
@@ -350,7 +365,7 @@ public:
    * identifier.
    *
    * @param rnti the UE temporal ID
-   * @param cc_idx the cell/carrier origin of the transmission
+   * @param enb_cc_idx the cell/carrier origin of the transmission
    * @param pid HARQ process identifier
    * @param tb the Resource Allocation for the PUSCH transport block
    */
@@ -367,6 +382,14 @@ public:
    * @return the Resource Allocation for the PUSCH transport block
    */
   srslte_ra_tb_t get_last_ul_tb(uint16_t rnti, uint32_t enb_cc_idx, uint32_t pid) const;
+
+  /**
+   * Flags to true the UL grant available for a given TTI, RNTI and eNb cell/carrier index
+   * @param tti the current TTI
+   * @param rnti
+   * @param enb_cc_idx
+   */
+  void set_ul_grant_available(uint32_t tti, const stack_interface_phy_lte::ul_sched_list_t& ul_sched_list);
 };
 
 } // namespace srsenb

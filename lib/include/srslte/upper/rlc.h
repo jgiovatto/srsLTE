@@ -46,19 +46,24 @@ public:
             srsue::rrc_interface_rlc*  rrc_,
             srslte::timer_handler*     timers_,
             uint32_t                   lcid_);
+  void init(srsue::pdcp_interface_rlc* pdcp_,
+            srsue::rrc_interface_rlc*  rrc_,
+            srslte::timer_handler*     timers_,
+            uint32_t                   lcid_,
+            bsr_callback_t             bsr_callback_);
   void stop();
 
   void get_metrics(rlc_metrics_t& m);
 
   // PDCP interface
-  void write_sdu(uint32_t lcid, unique_byte_buffer_t sdu, bool blocking = true);
+  void write_sdu(uint32_t lcid, unique_byte_buffer_t sdu);
   void write_sdu_mch(uint32_t lcid, unique_byte_buffer_t sdu);
   bool rb_is_um(uint32_t lcid);
   void discard_sdu(uint32_t lcid, uint32_t discard_sn);
+  bool sdu_queue_is_full(uint32_t lcid);
 
   // MAC interface
-  bool     has_data(const uint32_t lcid);
-  bool     is_suspended(const uint32_t lcid);
+  bool     has_data_locked(const uint32_t lcid);
   uint32_t get_buffer_state(const uint32_t lcid);
   uint32_t get_total_mch_buffer_state(uint32_t lcid);
   int      read_pdu(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes);
@@ -71,6 +76,8 @@ public:
   void     write_pdu_mch(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes);
 
   // RRC interface
+  bool is_suspended(const uint32_t lcid);
+  bool has_data(const uint32_t lcid);
   void reestablish();
   void reestablish(uint32_t lcid);
   void reset();
@@ -101,12 +108,19 @@ private:
 
   uint32_t default_lcid = 0;
 
+  bsr_callback_t bsr_callback = nullptr;
+
   // Timer needed for metrics calculation
   struct timeval metrics_time[3] = {};
 
   bool valid_lcid(uint32_t lcid);
   bool valid_lcid_mrb(uint32_t lcid);
+
+  void update_bsr(uint32_t lcid);
+  void update_bsr_mch(uint32_t lcid);
 };
+
+void rlc_bearer_metrics_print(const rlc_bearer_metrics_t& metrics);
 
 } // namespace srslte
 

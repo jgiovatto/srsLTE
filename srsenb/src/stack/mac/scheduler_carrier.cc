@@ -26,6 +26,8 @@
 
 namespace srsenb {
 
+using srslte::tti_point;
+
 /*******************************************************
  *        Broadcast (SIB+Paging) scheduling
  *******************************************************/
@@ -154,16 +156,20 @@ void ra_sched::dl_sched(sf_sched* tti_sched)
     uint32_t                 prach_tti = rar.prach_tti;
 
     // Discard all RARs out of the window. The first one inside the window is scheduled, if we can't we exit
-    if (not sched_utils::is_in_tti_interval(tti_tx_dl, prach_tti + 3, prach_tti + 3 + cc_cfg->cfg.prach_rar_window)) {
-      if (tti_tx_dl >= prach_tti + 3 + cc_cfg->cfg.prach_rar_window) {
-        log_h->console("SCHED: Could not transmit RAR within the window (RA TTI=%d, Window=%d, Now=%d)\n",
-                       prach_tti,
-                       cc_cfg->cfg.prach_rar_window,
-                       tti_tx_dl);
-        log_h->error("SCHED: Could not transmit RAR within the window (RA TTI=%d, Window=%d, Now=%d)\n",
-                     prach_tti,
-                     cc_cfg->cfg.prach_rar_window,
-                     tti_tx_dl);
+    if (not sched_utils::is_in_tti_interval(
+            tti_tx_dl, prach_tti + PRACH_RAR_OFFSET, prach_tti + PRACH_RAR_OFFSET + cc_cfg->cfg.prach_rar_window)) {
+      if (tti_tx_dl >= prach_tti + PRACH_RAR_OFFSET + cc_cfg->cfg.prach_rar_window) {
+        char error_msg[128];
+        int  len       = snprintf(error_msg,
+                           sizeof(error_msg),
+                           "SCHED: Could not transmit RAR within the window (RA=%d, Window=[%d..%d], RAR=%d)\n",
+                           prach_tti,
+                           prach_tti + PRACH_RAR_OFFSET,
+                           prach_tti + PRACH_RAR_OFFSET + cc_cfg->cfg.prach_rar_window,
+                           tti_tx_dl);
+        error_msg[len] = '\0';
+        srslte::console("%s", error_msg);
+        log_h->error("%s", error_msg);
         // Remove from pending queue and get next one if window has passed already
         pending_rars.pop_front();
         continue;
@@ -259,11 +265,13 @@ void ra_sched::reset()
 
 sched::carrier_sched::carrier_sched(rrc_interface_mac*            rrc_,
                                     std::map<uint16_t, sched_ue>* ue_db_,
-                                    uint32_t                      enb_cc_idx_) :
+                                    uint32_t                      enb_cc_idx_,
+                                    sched_result_list*            sched_results_) :
   rrc(rrc_),
   ue_db(ue_db_),
   log_h(srslte::logmap::get("MAC ")),
-  enb_cc_idx(enb_cc_idx_)
+  enb_cc_idx(enb_cc_idx_),
+  prev_sched_results(sched_results_)
 {
   sf_dl_mask.resize(1, 0);
 }
@@ -291,15 +299,6 @@ void sched::carrier_sched::carrier_cfg(const sched_cell_params_t& cell_params_)
   ul_metric.reset(new srsenb::ul_metric_rr{});
   ul_metric->set_params(*cc_cfg);
 
-  // Setup constant PUCCH/PRACH mask
-  pucch_mask.resize(cc_cfg->nof_prb());
-  if (cc_cfg->cfg.nrb_pucch > 0) {
-    pucch_mask.fill(0, (uint32_t)cc_cfg->cfg.nrb_pucch);
-    pucch_mask.fill(cc_cfg->nof_prb() - cc_cfg->cfg.nrb_pucch, cc_cfg->nof_prb());
-  }
-  prach_mask.resize(cc_cfg->nof_prb());
-  prach_mask.fill(cc_cfg->cfg.prach_freq_offset, cc_cfg->cfg.prach_freq_offset + 6);
-
   // Initiate the tti_scheduler for each TTI
   for (sf_sched& tti_sched : sf_scheds) {
     tti_sched.init(*cc_cfg);
@@ -311,57 +310,53 @@ void sched::carrier_sched::set_dl_tti_mask(uint8_t* tti_mask, uint32_t nof_sfs)
   sf_dl_mask.assign(tti_mask, tti_mask + nof_sfs);
 }
 
-const sf_sched_result& sched::carrier_sched::generate_tti_result(uint32_t tti_rx)
+const cc_sched_result& sched::carrier_sched::generate_tti_result(tti_point tti_rx)
 {
-  sf_sched_result* sf_result = get_next_sf_result(tti_rx);
+  sf_sched*        tti_sched = get_sf_sched(tti_rx);
+  sf_sched_result* sf_result = prev_sched_results->get_sf(tti_rx);
+  cc_sched_result* cc_result = sf_result->new_cc(enb_cc_idx);
 
-  // if it is the first time tti is run, reset vars
-  if (tti_rx != sf_result->tti_params.tti_rx) {
-    sf_sched* tti_sched = get_sf_sched(tti_rx);
-    *sf_result          = {};
+  bool dl_active = sf_dl_mask[tti_sched->get_tti_tx_dl() % sf_dl_mask.size()] == 0;
 
-    bool dl_active = sf_dl_mask[tti_sched->get_tti_tx_dl() % sf_dl_mask.size()] == 0;
-
-    /* Schedule PHICH */
-    for (auto& ue_pair : *ue_db) {
-      tti_sched->alloc_phich(&ue_pair.second, &sf_result->ul_sched_result);
-    }
-
-    /* Schedule DL control data */
-    if (dl_active) {
-      /* Schedule Broadcast data (SIB and paging) */
-      bc_sched_ptr->dl_sched(tti_sched);
-
-      /* Schedule RAR */
-      ra_sched_ptr->dl_sched(tti_sched);
-
-      /* Schedule Msg3 */
-      sf_sched* sf_msg3_sched = get_sf_sched(tti_rx + MSG3_DELAY_MS);
-      ra_sched_ptr->ul_sched(tti_sched, sf_msg3_sched);
-    }
-
-    /* Prioritize PDCCH scheduling for DL and UL data in a RoundRobin fashion */
-    if ((tti_rx % 2) == 0) {
-      alloc_ul_users(tti_sched);
-    }
-
-    /* Schedule DL user data */
-    alloc_dl_users(tti_sched);
-
-    if ((tti_rx % 2) == 1) {
-      alloc_ul_users(tti_sched);
-    }
-
-    /* Select the winner DCI allocation combination, store all the scheduling results */
-    tti_sched->generate_sched_results(sf_result);
-
-    /* Reset ue harq pending ack state, clean-up blocked pids */
-    for (auto& user : *ue_db) {
-      user.second.finish_tti(sf_result->tti_params, enb_cc_idx);
-    }
+  /* Schedule PHICH */
+  for (auto& ue_pair : *ue_db) {
+    tti_sched->alloc_phich(&ue_pair.second, &cc_result->ul_sched_result);
   }
 
-  return *sf_result;
+  /* Schedule DL control data */
+  if (dl_active) {
+    /* Schedule Broadcast data (SIB and paging) */
+    bc_sched_ptr->dl_sched(tti_sched);
+
+    /* Schedule RAR */
+    ra_sched_ptr->dl_sched(tti_sched);
+
+    /* Schedule Msg3 */
+    sf_sched* sf_msg3_sched = get_sf_sched(tti_rx + MSG3_DELAY_MS);
+    ra_sched_ptr->ul_sched(tti_sched, sf_msg3_sched);
+  }
+
+  /* Prioritize PDCCH scheduling for DL and UL data in a RoundRobin fashion */
+  if ((tti_rx.to_uint() % 2) == 0) {
+    alloc_ul_users(tti_sched);
+  }
+
+  /* Schedule DL user data */
+  alloc_dl_users(tti_sched);
+
+  if ((tti_rx.to_uint() % 2) == 1) {
+    alloc_ul_users(tti_sched);
+  }
+
+  /* Select the winner DCI allocation combination, store all the scheduling results */
+  tti_sched->generate_sched_results(*ue_db);
+
+  /* Reset ue harq pending ack state, clean-up blocked pids */
+  for (auto& user : *ue_db) {
+    user.second.finish_tti(cc_result->tti_params, enb_cc_idx);
+  }
+
+  return *cc_result;
 }
 
 void sched::carrier_sched::alloc_dl_users(sf_sched* tti_result)
@@ -384,41 +379,30 @@ void sched::carrier_sched::alloc_dl_users(sf_sched* tti_result)
 
 int sched::carrier_sched::alloc_ul_users(sf_sched* tti_sched)
 {
-  uint32_t tti_tx_ul = tti_sched->get_tti_tx_ul();
-
-  /* reserve PRBs for PRACH */
-  if (srslte_prach_tti_opportunity_config_fdd(cc_cfg->cfg.prach_config, tti_tx_ul, -1)) {
-    tti_sched->reserve_ul_prbs(prach_mask, false);
-    log_h->debug("SCHED: Allocated PRACH RBs. Mask: 0x%s\n", prach_mask.to_hex().c_str());
-  }
-
-  /* reserve PRBs for PUCCH */
-  tti_sched->reserve_ul_prbs(pucch_mask, cc_cfg->nof_prb() != 6);
-
   /* Call scheduler for UL data */
   ul_metric->sched_users(*ue_db, tti_sched);
 
   return SRSLTE_SUCCESS;
 }
 
-sf_sched* sched::carrier_sched::get_sf_sched(uint32_t tti_rx)
+sf_sched* sched::carrier_sched::get_sf_sched(tti_point tti_rx)
 {
-  sf_sched* ret = &sf_scheds[tti_rx % sf_scheds.size()];
-  if (ret->get_tti_rx() != tti_rx) {
-    // start new TTI. Bind the struct where the result is going to be stored
-    ret->new_tti(tti_rx);
+  sf_sched* ret = &sf_scheds[tti_rx.to_uint() % sf_scheds.size()];
+  if (ret->get_tti_rx() != tti_rx.to_uint()) {
+    sf_sched_result* sf_res = prev_sched_results->get_sf(srslte::tti_point{tti_rx});
+    if (sf_res == nullptr) {
+      // Reset if tti_rx has not been yet set in the sched results
+      sf_res = prev_sched_results->new_tti(srslte::tti_point{tti_rx});
+    }
+    // start new TTI for the given CC.
+    ret->new_tti(tti_rx, sf_res);
   }
   return ret;
 }
 
-sf_sched_result* sched::carrier_sched::get_next_sf_result(uint32_t tti_rx)
+const sf_sched_result* sched::carrier_sched::get_sf_result(uint32_t tti_rx) const
 {
-  return &sf_sched_results[tti_rx % sf_sched_results.size()];
-}
-
-const sf_sched_result& sched::carrier_sched::get_sf_result(uint32_t tti_rx) const
-{
-  return sf_sched_results[tti_rx % sf_sched_results.size()];
+  return prev_sched_results->get_sf(srslte::tti_point{tti_rx});
 }
 
 int sched::carrier_sched::dl_rach_info(dl_sched_rar_info_t rar_info)

@@ -104,6 +104,12 @@ struct plmn_id_t {
     }
     return from_number(mcc_num, mnc_num);
   }
+  int to_number(uint16_t* mcc_num, uint16_t* mnc_num) const
+  {
+    srslte::bytes_to_mcc(&mcc[0], mcc_num);
+    srslte::bytes_to_mnc(&mnc[0], mnc_num, nof_mnc_digits);
+    return SRSLTE_SUCCESS;
+  }
   std::string to_string() const
   {
     std::string mcc_str, mnc_str;
@@ -169,9 +175,11 @@ struct phy_cfg_t {
 
   void set_defaults()
   {
-    ul_cfg    = {};
-    dl_cfg    = {};
-    prach_cfg = {};
+    ul_cfg = {};
+    dl_cfg = {};
+
+    prach_cfg_present = false;
+    prach_cfg         = {};
 
     // CommonConfig defaults for non-zero values
     ul_cfg.pucch.delta_pucch_shift     = 1;
@@ -184,16 +192,40 @@ struct phy_cfg_t {
     set_defaults_dedicated();
   }
 
-  // 36.331 9.2.4
+  /**
+   *  @brief Sets default PUCCH and SRS configuration (release)
+   *
+   *  @remark Implemented as specified by TS 36.331 V8.21.0 5.3.13 UE actions upon PUCCH/ SRS release request
+   *  @remark Values are according to TS 36.331 V8.21.0 9.2.4 for CQI-ReportConfig, soundingRS-UL-ConfigDedicated
+   * and schedulingRequestConfig
+   *
+   * @see set_defaults_dedicated
+   * @see phy_controller::set_phy_to_default_pucch_srs
+   */
+  void set_defaults_pucch_sr()
+  {
+    dl_cfg.cqi_report.periodic_configured  = false;
+    dl_cfg.cqi_report.aperiodic_configured = false;
+
+    ul_cfg.srs.dedicated_enabled = false;
+    ul_cfg.srs.configured        = false;
+
+    ul_cfg.pucch.sr_configured = false;
+  }
+
+  /**
+   *  @brief Implements physical layer dedicated configuration default values setting
+   *
+   *  @remark Implemented as specified by TS 36.331 V8.21.0 9.2.4
+   *
+   *  @see set_defaults
+   */
   void set_defaults_dedicated()
   {
     dl_cfg.tm = SRSLTE_TM1;
 
     dl_cfg.pdsch.use_tbs_index_alt = false;
     dl_cfg.pdsch.p_a               = 0;
-
-    dl_cfg.cqi_report.periodic_configured  = false;
-    dl_cfg.cqi_report.aperiodic_configured = false;
 
     ul_cfg.pucch.tdd_ack_multiplex = false;
 
@@ -207,15 +239,14 @@ struct phy_cfg_t {
     ul_cfg.power_ctrl.p0_nominal_pucch = 0;
     ul_cfg.power_ctrl.p_srs_offset     = 7;
 
-    ul_cfg.srs.dedicated_enabled = false;
-    ul_cfg.srs.configured        = false;
-
-    ul_cfg.pucch.sr_configured = false;
+    set_defaults_pucch_sr();
   }
 
-  srslte_dl_cfg_t    dl_cfg    = {};
-  srslte_ul_cfg_t    ul_cfg    = {};
-  srslte_prach_cfg_t prach_cfg = {};
+  srslte_dl_cfg_t dl_cfg = {};
+  srslte_ul_cfg_t ul_cfg = {};
+
+  bool               prach_cfg_present = false;
+  srslte_prach_cfg_t prach_cfg         = {};
 };
 
 struct mbsfn_sf_cfg_t {
@@ -342,14 +373,14 @@ inline std::string to_string(const barring_t& b)
 /**
  * Flat UE capabilities
  */
-typedef struct {
+struct rrc_ue_capabilities_t {
   uint8_t release           = 8;
   uint8_t category          = 4;
   uint8_t category_dl       = 0;
   uint8_t category_ul       = 0;
   bool    support_dl_256qam = false;
   bool    support_ul_64qam  = false;
-} rrc_ue_capabilities_t;
+};
 
 } // namespace srslte
 

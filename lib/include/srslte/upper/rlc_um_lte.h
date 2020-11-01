@@ -26,7 +26,7 @@
 #include "srslte/common/common.h"
 #include "srslte/common/log.h"
 #include "srslte/interfaces/ue_interfaces.h"
-#include "srslte/upper/rlc_tx_queue.h"
+#include "srslte/upper/byte_buffer_queue.h"
 #include "srslte/upper/rlc_um_base.h"
 #include <map>
 #include <mutex>
@@ -61,8 +61,11 @@ private:
     bool     configure(const rlc_config_t& cfg, std::string rb_name);
     int      build_data_pdu(unique_byte_buffer_t pdu, uint8_t* payload, uint32_t nof_bytes);
     uint32_t get_buffer_state();
+    bool     sdu_queue_is_full();
 
   private:
+    void reset();
+
     /****************************************************************************
      * State variables and counters
      * Ref: 3GPP TS 36.322 v10.0.0 Section 7

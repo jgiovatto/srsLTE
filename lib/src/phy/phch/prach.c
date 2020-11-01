@@ -20,6 +20,7 @@
  */
 
 #include "srslte/srslte.h"
+#include <assert.h>
 #include <math.h>
 #include <string.h>
 
@@ -34,7 +35,7 @@ float save_corr[4096];
 
 // PRACH detection threshold is PRACH_DETECT_FACTOR*average
 #define PRACH_DETECT_FACTOR 18
-
+#define SUCCESSIVE_CANCELLATION_ITS 4
 #define N_SEQS 64         // Number of prach sequences available
 #define N_RB_SC 12        // Number of subcarriers per resource block
 #define DELTA_F 15000     // Normal subcarrier spacing
@@ -43,17 +44,13 @@ float save_corr[4096];
 #define PHI 7             // PRACH phi parameter
 #define PHI_4 2           // PRACH phi parameter for format 4
 #define MAX_ROOTS 838     // Max number of root sequences
-
+//#define PRACH_CANCELLATION_HARD
 #define PRACH_AMP 1.0
 
 int srslte_prach_set_cell_(srslte_prach_t*      p,
                            uint32_t             N_ifft_ul,
-                           uint32_t             config_idx,
-                           uint32_t             root_seq_index,
-                           bool                 high_speed_flag,
-                           uint32_t             zero_corr_zone_config,
-                           srslte_tdd_config_t* tdd_config,
-                           uint32_t             num_ra_preambles);
+                           srslte_prach_cfg_t*  cfg,
+                           srslte_tdd_config_t* tdd_config);
 
 uint32_t srslte_prach_get_preamble_format(uint32_t config_idx)
 {
@@ -226,6 +223,20 @@ void print(void* d, uint32_t size, uint32_t len, char* file_str)
   fclose(f);
 }
 
+/// Calculates the FFT of the specified sequence index if not previously done and returns a pointer to the result.
+static cf_t* get_precoded_dft(srslte_prach_t* p, uint32_t idx)
+{
+  assert(idx < 64 && "Invalid idx value");
+  // Generate FFT for this sequence if it does not exist yet.
+  uint64_t gen_mask = (uint64_t)1 << idx;
+  if (!(p->dft_gen_bitmap & gen_mask)) {
+    srslte_dft_run(&p->zc_fft, p->seqs[idx], p->dft_seqs[idx]);
+    p->dft_gen_bitmap |= gen_mask;
+  }
+
+  return p->dft_seqs[idx];
+}
+
 int srslte_prach_gen_seqs(srslte_prach_t* p)
 {
   uint32_t u           = 0;
@@ -329,14 +340,7 @@ int srslte_prach_gen_seqs(srslte_prach_t* p)
 
 int srslte_prach_set_cfg(srslte_prach_t* p, srslte_prach_cfg_t* cfg, uint32_t nof_prb)
 {
-  return srslte_prach_set_cell_(p,
-                                srslte_symbol_sz(nof_prb),
-                                cfg->config_idx,
-                                cfg->root_seq_idx,
-                                cfg->hs_flag,
-                                cfg->zero_corr_zone,
-                                &cfg->tdd_config,
-                                cfg->num_ra_preambles);
+  return srslte_prach_set_cell_(p, srslte_symbol_sz(nof_prb), cfg, &cfg->tdd_config);
 }
 
 int srslte_prach_init(srslte_prach_t* p, uint32_t max_N_ifft_ul)
@@ -351,6 +355,8 @@ int srslte_prach_init(srslte_prach_t* p, uint32_t max_N_ifft_ul)
     p->prach_bins = srslte_vec_cf_malloc(MAX_N_zc);
     p->corr_spec  = srslte_vec_cf_malloc(MAX_N_zc);
     p->corr       = srslte_vec_f_malloc(MAX_N_zc);
+    p->cross      = srslte_vec_cf_malloc(MAX_N_zc);
+    p->corr_freq  = srslte_vec_cf_malloc(MAX_N_zc);
 
     // Set up ZC FFTS
     if (srslte_dft_plan(&p->zc_fft, MAX_N_zc, SRSLTE_DFT_FORWARD, SRSLTE_DFT_COMPLEX)) {
@@ -388,7 +394,7 @@ int srslte_prach_init(srslte_prach_t* p, uint32_t max_N_ifft_ul)
     }
 
     srslte_dft_plan_set_mirror(&p->fft, true);
-    srslte_dft_plan_set_norm(&p->fft, false);
+    srslte_dft_plan_set_norm(&p->fft, true);
 
     ret = SRSLTE_SUCCESS;
   } else {
@@ -400,28 +406,31 @@ int srslte_prach_init(srslte_prach_t* p, uint32_t max_N_ifft_ul)
 
 int srslte_prach_set_cell_(srslte_prach_t*      p,
                            uint32_t             N_ifft_ul,
-                           uint32_t             config_idx,
-                           uint32_t             root_seq_index,
-                           bool                 high_speed_flag,
-                           uint32_t             zero_corr_zone_config,
-                           srslte_tdd_config_t* tdd_config,
-                           uint32_t             num_ra_preambles)
+                           srslte_prach_cfg_t*  cfg,
+                           srslte_tdd_config_t* tdd_config)
 {
   int ret = SRSLTE_ERROR;
-  if (p != NULL && N_ifft_ul < 2049 && config_idx < 64 && root_seq_index < MAX_ROOTS) {
+  if (p != NULL && N_ifft_ul < 2049 && cfg->config_idx < 64 && cfg->root_seq_idx < MAX_ROOTS) {
     if (N_ifft_ul > p->max_N_ifft_ul) {
       ERROR("PRACH: Error in set_cell(): N_ifft_ul must be lower or equal max_N_ifft_ul in init()\n");
       return -1;
     }
 
-    uint32_t preamble_format = srslte_prach_get_preamble_format(config_idx);
-    p->config_idx            = config_idx;
-    p->f                     = preamble_format;
-    p->rsi                   = root_seq_index;
-    p->hs                    = high_speed_flag;
-    p->zczc                  = zero_corr_zone_config;
-    p->detect_factor         = PRACH_DETECT_FACTOR;
-    p->num_ra_preambles      = num_ra_preambles;
+    uint32_t preamble_format   = srslte_prach_get_preamble_format(cfg->config_idx);
+    p->config_idx              = cfg->config_idx;
+    p->f                       = preamble_format;
+    p->rsi                     = cfg->root_seq_idx;
+    p->hs                      = cfg->hs_flag;
+    p->zczc                    = cfg->zero_corr_zone;
+    p->detect_factor           = PRACH_DETECT_FACTOR;
+    p->num_ra_preambles        = cfg->num_ra_preambles;
+    p->successive_cancellation = cfg->enable_successive_cancellation;
+    p->dft_gen_bitmap          = 0;
+    if (p->successive_cancellation && cfg->zero_corr_zone != 0) {
+      printf("successive cancellation only currently supported with zero_correlation_zone_config of 0 - disabling\n");
+      p->successive_cancellation = false;
+    }
+    p->freq_domain_offset_calc = cfg->enable_freq_domain_offset_calc;
     if (tdd_config) {
       p->tdd_config = *tdd_config;
     }
@@ -471,10 +480,6 @@ int srslte_prach_set_cell_(srslte_prach_t*      p,
     if (p->num_ra_preambles < 4 || p->num_ra_preambles > p->N_roots) {
       p->num_ra_preambles = p->N_roots;
     }
-    // Generate sequence FFTs
-    for (int i = 0; i < N_SEQS; i++) {
-      srslte_dft_run(&p->zc_fft, p->seqs[i], p->dft_seqs[i]);
-    }
 
     // Create our FFT objects and buffers
     p->N_ifft_ul = N_ifft_ul;
@@ -508,6 +513,13 @@ int srslte_prach_set_cell_(srslte_prach_t*      p,
     p->T_seq = prach_Tseq[p->f] * SRSLTE_LTE_TS;
     p->T_tot = (prach_Tseq[p->f] + prach_Tcp[p->f]) * SRSLTE_LTE_TS;
 
+    if (p->successive_cancellation) {
+      for (int i = 0; i < 64; i++) {
+        if (!p->td_signals[i]) {
+          p->td_signals[i] = srslte_vec_malloc(sizeof(cf_t) * (p->N_seq + p->N_cp));
+        }
+      }
+    }
     ret = SRSLTE_SUCCESS;
   } else {
     ERROR("Invalid parameters\n");
@@ -540,7 +552,7 @@ int srslte_prach_gen(srslte_prach_t* p, uint32_t seq_index, uint32_t freq_offset
 
     // Map dft-precoded sequence to ifft bins
     memset(p->ifft_in, 0, begin * sizeof(cf_t));
-    memcpy(&p->ifft_in[begin], p->dft_seqs[seq_index], p->N_zc * sizeof(cf_t));
+    memcpy(&p->ifft_in[begin], get_precoded_dft(p, seq_index), p->N_zc * sizeof(cf_t));
     memset(&p->ifft_in[begin + p->N_zc], 0, (p->N_ifft_prach - begin - p->N_zc) * sizeof(cf_t));
 
     srslte_dft_run(&p->ifft, p->ifft_in, p->ifft_out);
@@ -552,7 +564,9 @@ int srslte_prach_gen(srslte_prach_t* p, uint32_t seq_index, uint32_t freq_offset
     for (int i = 0; i < p->N_seq; i++) {
       signal[p->N_cp + i] = p->ifft_out[i % p->N_ifft_prach];
     }
-
+    if (p->td_signals[seq_index]) {
+      memcpy(p->td_signals[seq_index], signal, (p->N_seq + p->N_cp) * sizeof(cf_t));
+    }
     ret = SRSLTE_SUCCESS;
   }
 
@@ -574,6 +588,165 @@ int srslte_prach_detect(srslte_prach_t* p,
   return srslte_prach_detect_offset(p, freq_offset, signal, sig_len, indices, NULL, NULL, n_indices);
 }
 
+/// this function subtracts the detected prach preamble from the signal so as to allow for lower power prach signals to
+/// be detected more easily in the subsequent searches
+void srslte_prach_cancellation(srslte_prach_t* p)
+{
+  srslte_vec_cf_zero(p->sub, p->N_zc * 2);
+  srslte_vec_cf_copy(p->sub, get_precoded_dft(p, p->root_seqs_idx[p->prach_cancel.idx]), p->N_zc);
+
+  srslte_vec_prod_ccc(p->sub, p->prach_cancel.phase_array, p->sub, p->N_zc);
+#ifdef PRACH_CANCELLATION_HARD
+  srslte_vec_prod_conj_ccc(p->prach_bins, p->sub, p->corr_spec, p->N_zc);
+  srslte_dft_run(&p->zc_ifft, p->corr_spec, p->corr_spec);
+  srslte_vec_abs_square_cf(p->corr_spec, p->corr, p->N_zc);
+  prach_cancel->factor = sqrt(p->corr[0] / (p->N_zc * p->N_zc));
+#endif
+  srslte_vec_sc_prod_cfc(p->sub, p->prach_cancel.factor, p->sub, p->N_zc);
+  srslte_vec_sub_ccc(p->prach_bins, p->sub, p->prach_bins, p->N_zc);
+}
+
+// this function checks if we have already detected and stored this particular PRACH index and if so, doesnt store it
+// again in the detected prachs array
+bool srslte_prach_have_stored(int current_idx, uint32_t* indices, uint32_t n_indices)
+{
+  for (int i = 0; i < n_indices; i++) {
+    if (indices[i] == current_idx) {
+      return true;
+    }
+  }
+  return false;
+}
+// set the offset based on the time domain time offset estimation
+float srslte_prach_get_offset_secs(srslte_prach_t* p, int n_win)
+{
+  // takes the offset in samples and converts to time in seconds
+  return (float)p->peak_offsets[n_win] / (float)(DELTA_F_RA * p->N_zc);
+}
+
+// calculates the timing offset of the incoming PRACH by calculating the phase in frequency - alternative to time domain
+// approach
+float srslte_prach_calculate_time_offset_secs(srslte_prach_t* p, cf_t* cross)
+{
+  // calculate the phase of the cross correlation
+  float freq_domain_phase = cargf(srslte_vec_acc_cc(cross, p->N_zc));
+  float ratio             = (float)(p->N_ifft_ul * DELTA_F) / (float)(MAX_N_zc * DELTA_F_RA);
+  // converting from phase to number of samples
+  float num_samples = roundf((ratio * freq_domain_phase * p->N_zc) / (2 * M_PI));
+
+  // converting to time in seconds
+  return num_samples / ((float)p->N_ifft_ul * DELTA_F);
+}
+// calculates the aggregate phase offset of the incomming PRACH signal so it can be applied to the reference signal
+// before it is subtracted from the input
+void srslte_prach_calculate_correction_array(srslte_prach_t* p, cf_t* corr_freq)
+{
+  srslte_vec_arg_deg_cf(corr_freq, 0, p->phase, p->N_zc);
+  for (int i = 0; i < p->N_zc; i++) {
+    p->prach_cancel.phase_array[i] = cexpf(_Complex_I * (p->phase[i] / (180.0f / M_PI)));
+  }
+}
+
+// This function carries out the main processing on the incomming PRACH signal
+int srslte_prach_process(srslte_prach_t* p,
+                         cf_t*           signal,
+                         uint32_t*       indices,
+                         float*          t_offsets,
+                         float*          peak_to_avg,
+                         uint32_t*       n_indices,
+                         int             cancellation_idx,
+                         uint32_t        begin,
+                         uint32_t        sig_len)
+{
+  float max_to_cancel = 0;
+  cancellation_idx    = -1;
+  int max_idx         = 0;
+  srslte_vec_cf_zero(p->cross, p->N_zc);
+  srslte_vec_cf_zero(p->corr_freq, p->N_zc);
+  for (int i = 0; i < p->num_ra_preambles; i++) {
+    cf_t* root_spec = get_precoded_dft(p, p->root_seqs_idx[i]);
+
+    srslte_vec_prod_conj_ccc(p->prach_bins, root_spec, p->corr_spec, p->N_zc);
+
+    srslte_vec_prod_conj_ccc(p->corr_spec, &p->corr_spec[1], p->cross, p->N_zc - 1);
+    if (p->successive_cancellation) {
+      srslte_vec_cf_copy(p->corr_freq, p->corr_spec, p->N_zc);
+    }
+    srslte_dft_run(&p->zc_ifft, p->corr_spec, p->corr_spec);
+
+    srslte_vec_abs_square_cf(p->corr_spec, p->corr, p->N_zc);
+
+    float corr_ave = srslte_vec_acc_ff(p->corr, p->N_zc) / p->N_zc;
+
+    uint32_t winsize = 0;
+    if (p->N_cs != 0) {
+      winsize = p->N_cs;
+    } else {
+      winsize = p->N_zc;
+    }
+    uint32_t n_wins = p->N_zc / winsize;
+
+    float max_peak = 0;
+    for (int j = 0; j < n_wins; j++) {
+      uint32_t start = (p->N_zc - (j * p->N_cs)) % p->N_zc;
+      uint32_t end   = start + winsize;
+      if (end > p->deadzone) {
+        end -= p->deadzone;
+      }
+      start += p->deadzone;
+      p->peak_values[j] = 0;
+      for (int k = start; k < end; k++) {
+        if (p->corr[k] > p->peak_values[j]) {
+          p->peak_values[j]  = p->corr[k];
+          p->peak_offsets[j] = k - start;
+          if (p->peak_values[j] > max_peak) {
+            max_peak = p->peak_values[j];
+            max_idx  = k;
+          }
+        }
+      }
+    }
+    if (max_peak > (p->detect_factor * corr_ave)) {
+      for (int j = 0; j < n_wins; j++) {
+        if (p->peak_values[j] > p->detect_factor * corr_ave) {
+          if (indices) {
+            if (p->successive_cancellation) {
+              if (max_peak > max_to_cancel) {
+                cancellation_idx       = (i * n_wins) + j;
+                max_to_cancel          = max_peak;
+                p->prach_cancel.idx    = cancellation_idx;
+                p->prach_cancel.factor = (sqrt(max_peak / (p->N_zc * p->N_zc)));
+                srslte_prach_calculate_correction_array(p, p->corr_freq);
+              }
+              if (srslte_prach_have_stored(((i * n_wins) + j), indices, *n_indices)) {
+                break;
+              }
+            }
+            indices[*n_indices] = (i * n_wins) + j;
+          }
+          if (peak_to_avg) {
+            peak_to_avg[*n_indices] = p->peak_values[j] / corr_ave;
+          }
+          if (t_offsets) {
+            // saves the PRACH offset in seconds to t_offsets, time domain or freq domain base calc
+            t_offsets[*n_indices] = (p->freq_domain_offset_calc)
+                                        ? (srslte_prach_calculate_time_offset_secs(p, p->cross))
+                                        : (srslte_prach_get_offset_secs(p, j));
+          }
+          (*n_indices)++;
+        }
+      }
+    }
+  }
+  if (cancellation_idx != -1) {
+    // if a peak has been found, this applies cancellation, if many found, subtracts strongest
+    srslte_prach_cancellation(p);
+  } else {
+    return 1;
+  }
+  return 0;
+}
+
 int srslte_prach_detect_offset(srslte_prach_t* p,
                                uint32_t        freq_offset,
                                cf_t*           signal,
@@ -590,6 +763,8 @@ int srslte_prach_detect_offset(srslte_prach_t* p,
       ERROR("srslte_prach_detect: Signal length is %d and should be %d\n", sig_len, p->N_ifft_prach);
       return SRSLTE_ERROR_INVALID_INPUTS;
     }
+    int cancellation_idx = -2;
+    bzero(&p->prach_cancel, sizeof(srslte_prach_cancellation_t));
 
     // FFT incoming signal
     srslte_dft_run(&p->fft, signal, p->signal_fft);
@@ -603,70 +778,13 @@ int srslte_prach_detect_offset(srslte_prach_t* p,
     uint32_t begin   = PHI + (K * k_0) + (K / 2);
 
     memcpy(p->prach_bins, &p->signal_fft[begin], p->N_zc * sizeof(cf_t));
-
-    for (int i = 0; i < p->num_ra_preambles; i++) {
-      cf_t* root_spec = p->dft_seqs[p->root_seqs_idx[i]];
-
-      srslte_vec_prod_conj_ccc(p->prach_bins, root_spec, p->corr_spec, p->N_zc);
-
-      srslte_dft_run(&p->zc_ifft, p->corr_spec, p->corr_spec);
-
-      srslte_vec_abs_square_cf(p->corr_spec, p->corr, p->N_zc);
-
-      float corr_ave = srslte_vec_acc_ff(p->corr, p->N_zc) / p->N_zc;
-
-      uint32_t winsize = 0;
-      if (p->N_cs != 0) {
-        winsize = p->N_cs;
-      } else {
-        winsize = p->N_zc;
-      }
-      uint32_t n_wins = p->N_zc / winsize;
-
-      float max_peak = 0;
-      for (int j = 0; j < n_wins; j++) {
-        uint32_t start = (p->N_zc - (j * p->N_cs)) % p->N_zc;
-        uint32_t end   = start + winsize;
-        if (end > p->deadzone) {
-          end -= p->deadzone;
-        }
-        start += p->deadzone;
-        p->peak_values[j] = 0;
-        for (int k = start; k < end; k++) {
-          if (p->corr[k] > p->peak_values[j]) {
-            p->peak_values[j]  = p->corr[k];
-            p->peak_offsets[j] = k - start;
-            if (p->peak_values[j] > max_peak) {
-              max_peak = p->peak_values[j];
-            }
-          }
-        }
-      }
-      if (max_peak > p->detect_factor * corr_ave) {
-        for (int j = 0; j < n_wins; j++) {
-          if (p->peak_values[j] > p->detect_factor * corr_ave) {
-            // printf("saving prach correlation\n");
-            // memcpy(save_corr, p->corr, p->N_zc*sizeof(float));
-            if (indices) {
-              indices[*n_indices] = (i * n_wins) + j;
-            }
-            if (peak_to_avg) {
-              peak_to_avg[*n_indices] = p->peak_values[j] / corr_ave;
-            }
-            if (t_offsets) {
-              float corr = 1.8;
-              if (p->peak_offsets[j] > 30) {
-                corr = 1.9;
-              }
-              if (p->peak_offsets[j] > 250) {
-                corr = 1.91;
-              }
-
-              t_offsets[*n_indices] = corr * p->peak_offsets[j] / (DELTA_F_RA * p->N_zc);
-            }
-            (*n_indices)++;
-          }
-        }
+    int loops = (p->successive_cancellation) ? SUCCESSIVE_CANCELLATION_ITS : 1;
+    // if successive cancellation is enabled, we perform the entire search process p->num_ra_preambles times, removing
+    // the highest power PRACH preamble each time.
+    for (int l = 0; l < loops; l++) {
+      if (srslte_prach_process(
+              p, signal, indices, t_offsets, peak_to_avg, n_indices, cancellation_idx, begin, sig_len)) {
+        break;
       }
     }
 
@@ -683,12 +801,18 @@ int srslte_prach_free(srslte_prach_t* p)
   srslte_dft_plan_free(&p->ifft);
   free(p->ifft_in);
   free(p->ifft_out);
+  free(p->cross);
+  free(p->corr_freq);
   srslte_dft_plan_free(&p->fft);
   srslte_dft_plan_free(&p->zc_fft);
   srslte_dft_plan_free(&p->zc_ifft);
 
   if (p->signal_fft) {
     free(p->signal_fft);
+  }
+
+  for (unsigned int i = 0; i < 64; i++) {
+    free(p->td_signals[i]);
   }
 
   bzero(p, sizeof(srslte_prach_t));

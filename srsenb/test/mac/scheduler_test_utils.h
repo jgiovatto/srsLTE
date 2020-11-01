@@ -23,6 +23,7 @@
 #define SRSLTE_SCHEDULER_TEST_UTILS_H
 
 #include "srsenb/hdr/stack/mac/scheduler.h"
+#include "srsenb/hdr/stack/upper/common_enb.h"
 #include "srslte/common/test_common.h"
 #include "srslte/interfaces/sched_interface.h"
 #include <algorithm>
@@ -64,15 +65,65 @@ inline srsenb::sched_interface::ue_cfg_t generate_default_ue_cfg()
 {
   srsenb::sched_interface::ue_cfg_t ue_cfg = {};
 
-  ue_cfg.aperiodic_cqi_period = 40;
-  ue_cfg.maxharq_tx           = 5;
-  ue_cfg.dl_cfg.tm            = SRSLTE_TM1;
+  ue_cfg.maxharq_tx = 5;
   ue_cfg.supported_cc_list.resize(1);
-  ue_cfg.supported_cc_list[0].enb_cc_idx = 0;
-  ue_cfg.supported_cc_list[0].active     = true;
-  ue_cfg.ue_bearers[0].direction         = srsenb::sched_interface::ue_bearer_cfg_t::BOTH;
+  ue_cfg.supported_cc_list[0].aperiodic_cqi_period = 40;
+  ue_cfg.supported_cc_list[0].enb_cc_idx           = 0;
+  ue_cfg.supported_cc_list[0].active               = true;
+  ue_cfg.supported_cc_list[0].dl_cfg.tm            = SRSLTE_TM1;
+  ue_cfg.ue_bearers[0].direction                   = srsenb::sched_interface::ue_bearer_cfg_t::BOTH;
 
   return ue_cfg;
+}
+
+inline srsenb::sched_interface::ue_cfg_t generate_default_ue_cfg2()
+{
+  srsenb::sched_interface::ue_cfg_t ue_cfg = generate_default_ue_cfg();
+
+  ue_cfg.ue_bearers[srsenb::RB_ID_SRB1].direction = srsenb::sched_interface::ue_bearer_cfg_t::BOTH;
+  ue_cfg.ue_bearers[srsenb::RB_ID_SRB2].direction = srsenb::sched_interface::ue_bearer_cfg_t::BOTH;
+  ue_cfg.ue_bearers[srsenb::RB_ID_DRB1].direction = srsenb::sched_interface::ue_bearer_cfg_t::BOTH;
+  ue_cfg.ue_bearers[srsenb::RB_ID_DRB1].group     = 1;
+
+  return ue_cfg;
+}
+
+inline srsenb::sched_interface::ue_cfg_t generate_rach_ue_cfg(const srsenb::sched_interface::ue_cfg_t& final_cfg)
+{
+  srsenb::sched_interface::ue_cfg_t cfg        = {};
+  cfg.ue_bearers[srsenb::RB_ID_SRB0].direction = srsenb::sched_interface::ue_bearer_cfg_t::BOTH;
+  cfg.supported_cc_list.resize(1);
+  cfg.supported_cc_list[0].enb_cc_idx = final_cfg.supported_cc_list[0].enb_cc_idx;
+  cfg.supported_cc_list[0].active     = true;
+  return cfg;
+}
+
+inline srsenb::sched_interface::ue_cfg_t generate_setup_ue_cfg(const srsenb::sched_interface::ue_cfg_t& final_cfg)
+{
+  srsenb::sched_interface::ue_cfg_t cfg = generate_rach_ue_cfg(final_cfg);
+
+  cfg.maxharq_tx                               = final_cfg.maxharq_tx;
+  cfg.ue_bearers[srsenb::RB_ID_SRB1].direction = srsenb::sched_interface::ue_bearer_cfg_t::BOTH;
+  cfg.supported_cc_list[0].dl_cfg.tm           = SRSLTE_TM1;
+  cfg.continuous_pusch                         = final_cfg.continuous_pusch;
+
+  cfg.supported_cc_list[0].dl_cfg.cqi_report    = final_cfg.supported_cc_list[0].dl_cfg.cqi_report;
+  cfg.pucch_cfg                                 = final_cfg.pucch_cfg;
+  cfg.supported_cc_list[0].aperiodic_cqi_period = final_cfg.supported_cc_list[0].aperiodic_cqi_period;
+
+  return cfg;
+}
+
+inline srsenb::sched_interface::ue_cfg_t generate_reconf_ue_cfg(const srsenb::sched_interface::ue_cfg_t& final_cfg)
+{
+  srsenb::sched_interface::ue_cfg_t cfg = generate_setup_ue_cfg(final_cfg);
+
+  cfg.supported_cc_list.resize(1);
+  cfg.ue_bearers                     = {};
+  cfg.ue_bearers[srsenb::RB_ID_SRB0] = final_cfg.ue_bearers[srsenb::RB_ID_SRB0];
+  cfg.ue_bearers[srsenb::RB_ID_SRB1] = final_cfg.ue_bearers[srsenb::RB_ID_SRB1];
+
+  return cfg;
 }
 
 /*****************************
@@ -109,6 +160,7 @@ struct sim_sched_args {
   std::vector<srsenb::sched_interface::cell_cfg_t> cell_cfg;
   srslte::log*                                     sim_log = nullptr;
   ue_ctxt_test_cfg                                 default_ue_sim_cfg{};
+  srsenb::sched_interface::sched_args_t            sched_args = {};
 };
 
 // generate all events up front
@@ -157,7 +209,7 @@ struct sched_sim_event_generator {
     return jump;
   }
 
-  tti_ev::user_cfg_ev* add_new_default_user(uint32_t duration)
+  tti_ev::user_cfg_ev* add_new_default_user(uint32_t duration, const srsenb::sched_interface::ue_cfg_t& ue_cfg)
   {
     std::vector<tti_ev::user_cfg_ev>& user_updates = tti_events[tti_counter].user_updates;
     user_updates.emplace_back();
@@ -165,10 +217,11 @@ struct sched_sim_event_generator {
     user.rnti  = next_rnti++;
     // creates a user with one supported CC (PRACH stage)
     user.ue_sim_cfg.reset(new ue_ctxt_test_cfg{});
-    auto& u        = current_users[user.rnti];
-    u.rnti         = user.rnti;
-    u.tti_start    = tti_counter;
-    u.tti_duration = duration;
+    auto& u                 = current_users[user.rnti];
+    u.rnti                  = user.rnti;
+    u.tti_start             = tti_counter;
+    u.tti_duration          = duration;
+    user.ue_sim_cfg->ue_cfg = ue_cfg;
     return &user;
   }
 
@@ -204,7 +257,9 @@ struct sched_sim_event_generator {
     ue_sim_cfg.ue_cfg = generate_default_ue_cfg();
     user->ue_sim_cfg.reset(new ue_ctxt_test_cfg{ue_sim_cfg});
     // it should by now have a DRB1. Add other DRBs manually
-    user->ue_sim_cfg->ue_cfg.ue_bearers[2].direction = srsenb::sched_interface::ue_bearer_cfg_t::BOTH;
+    user->ue_sim_cfg->ue_cfg.ue_bearers[srsenb::RB_ID_SRB2].direction = srsenb::sched_interface::ue_bearer_cfg_t::BOTH;
+    user->ue_sim_cfg->ue_cfg.ue_bearers[srsenb::RB_ID_DRB1].direction = srsenb::sched_interface::ue_bearer_cfg_t::BOTH;
+    user->ue_sim_cfg->ue_cfg.ue_bearers[srsenb::RB_ID_DRB1].group     = 1;
     return user;
   }
 

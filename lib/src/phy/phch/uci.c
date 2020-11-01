@@ -344,6 +344,16 @@ static uint32_t Q_prime_cqi(srslte_pusch_cfg_t* cfg, uint32_t O, float beta, uin
   return Q_prime;
 }
 
+uint32_t srslte_qprime_cqi_ext(uint32_t L_prb, uint32_t nof_symbols, uint32_t tbs, float beta)
+{
+  srslte_pusch_cfg_t cfg = {};
+  cfg.grant.L_prb        = L_prb;
+  cfg.grant.nof_symb     = nof_symbols;
+  cfg.K_segm             = tbs;
+  // O is the number of CQI + CRC len (8). See 5.2.2.6
+  return Q_prime_cqi(&cfg, SRSLTE_UCI_CQI_CODED_PUCCH_B + 8, beta, 0);
+}
+
 /* Encode UCI CQI/PMI for payloads equal or lower to 11 bits (Sec 5.2.2.6.4)
  */
 int encode_cqi_short(srslte_uci_cqi_pusch_t* q, uint8_t* data, uint32_t nof_bits, uint8_t* q_bits, uint32_t Q)
@@ -620,6 +630,15 @@ static uint32_t Q_prime_ri_ack(srslte_pusch_cfg_t* cfg, uint32_t O, uint32_t O_c
   return Q_prime;
 }
 
+uint32_t srslte_qprime_ack_ext(uint32_t L_prb, uint32_t nof_symbols, uint32_t tbs, uint32_t nof_ack, float beta)
+{
+  srslte_pusch_cfg_t cfg = {};
+  cfg.grant.L_prb        = L_prb;
+  cfg.grant.nof_symb     = nof_symbols;
+  cfg.K_segm             = tbs;
+  return Q_prime_ri_ack(&cfg, nof_ack, 0, beta);
+}
+
 static uint32_t encode_ri_ack(const uint8_t data[2], uint32_t O_ack, uint8_t Qm, srslte_uci_bit_t* q_encoded_bits)
 {
   uint32_t i = 0;
@@ -672,14 +691,18 @@ encode_ack_long(const uint8_t* data, uint32_t O_ack, uint8_t Q_m, uint32_t Q_pri
   return Q_ack;
 }
 
-static void decode_ri_ack_1bit(const int16_t* q_bits, const uint8_t* c_seq, uint8_t data[1])
+static int32_t decode_ri_ack_1bit(const int16_t* q_bits, const uint8_t* c_seq, uint8_t data[1])
 {
+  int32_t sum = (int32_t)(q_bits[0] + q_bits[1]);
+
   if (data) {
-    data[0] = ((q_bits[0] + q_bits[1]) > 0) ? 1 : 0;
+    data[0] = (sum > 0) ? 1 : 0;
   }
+
+  return abs(sum);
 }
 
-static bool decode_ri_ack_2bits(const int16_t* llr, uint32_t Qm, uint8_t data[2])
+static int32_t decode_ri_ack_2bits(const int16_t* llr, uint32_t Qm, uint8_t data[2])
 {
   uint32_t p0 = Qm * 0 + 0;
   uint32_t p1 = Qm * 0 + 1;
@@ -688,11 +711,17 @@ static bool decode_ri_ack_2bits(const int16_t* llr, uint32_t Qm, uint8_t data[2]
   uint32_t p4 = Qm * 2 + 0;
   uint32_t p5 = Qm * 2 + 1;
 
-  data[0] = ((llr[p0] + llr[p3]) > 0) ? 1 : 0;
-  data[1] = ((llr[p1] + llr[p4]) > 0) ? 1 : 0;
+  int16_t sum1 = llr[p0] + llr[p3];
+  int16_t sum2 = llr[p1] + llr[p4];
+  int16_t sum3 = llr[p2] + llr[p5];
 
-  // Return parity check
-  return ((llr[p2] + llr[p5]) > 0) == ((data[0] ^ data[1]) == 1);
+  data[0] = (sum1 > 0) ? 1 : 0;
+  data[1] = (sum2 > 0) ? 1 : 0;
+
+  bool parity_check = (sum3 > 0) == (data[0] ^ data[1]);
+
+  // Return 0 if parity check is not valid
+  return (parity_check ? (abs(sum1) + abs(sum2) + abs(sum3)) : 0);
 }
 
 // Table 5.2.2.6-A
@@ -795,6 +824,7 @@ int srslte_uci_decode_ack_ri(srslte_pusch_cfg_t* cfg,
                              uint32_t            O_cqi,
                              srslte_uci_bit_t*   ack_ri_bits,
                              uint8_t*            data,
+                             bool*               valid,
                              uint32_t            nof_bits,
                              bool                is_ri)
 {
@@ -843,16 +873,22 @@ int srslte_uci_decode_ack_ri(srslte_pusch_cfg_t* cfg,
   }
 
   /// Decode UCI HARQ/ACK bits as described in 5.2.2.6 of 36.212
+  int32_t thr  = count_acc * ((Qm < 4) ? 100 : (Qm < 6) ? 200 : (Qm < 8) ? 700 : 1000) / 2;
+  int32_t corr = 0;
   switch (nof_bits) {
     case 1:
-      decode_ri_ack_1bit(llr_acc, c_seq, data);
+      corr = decode_ri_ack_1bit(llr_acc, c_seq, data);
       break;
     case 2:
-      decode_ri_ack_2bits(llr_acc, Qm, data);
+      corr = decode_ri_ack_2bits(llr_acc, Qm, data);
       break;
     default:
       // For more than 2 bits...
-      srslte_uci_decode_m_basis_bits(llr_acc, SRSLTE_UCI_M_BASIS_SEQ_LEN, data, nof_bits);
+      corr = srslte_uci_decode_m_basis_bits(llr_acc, SRSLTE_UCI_M_BASIS_SEQ_LEN, data, nof_bits);
+  }
+
+  if (valid) {
+    *valid = corr > thr;
   }
 
   return (int)Qprime;
@@ -886,11 +922,16 @@ int srslte_uci_data_info(srslte_uci_cfg_t* uci_cfg, srslte_uci_value_t* uci_data
   uint32_t nof_acks = srslte_uci_cfg_total_ack(uci_cfg);
   if (nof_acks) {
     n = srslte_print_check(str, str_len, n, ", ack=");
-    for (uint32_t i = 0; i < nof_acks; i++) {
-      n = srslte_print_check(str, str_len, n, "%d", uci_data->ack.ack_value[i]);
-    }
-    if (uci_cfg->ack[0].N_bundle) {
-      n = srslte_print_check(str, str_len, n, ", n_bundle=%d", uci_cfg->ack[0].N_bundle);
+    if (uci_data->ack.valid) {
+
+      for (uint32_t i = 0; i < nof_acks; i++) {
+        n = srslte_print_check(str, str_len, n, "%d", uci_data->ack.ack_value[i]);
+      }
+      if (uci_cfg->ack[0].N_bundle) {
+        n = srslte_print_check(str, str_len, n, ", n_bundle=%d", uci_cfg->ack[0].N_bundle);
+      }
+    } else {
+      n = srslte_print_check(str, str_len, n, "invalid");
     }
   }
 
@@ -898,10 +939,10 @@ int srslte_uci_data_info(srslte_uci_cfg_t* uci_cfg, srslte_uci_value_t* uci_data
     n = srslte_print_check(str, str_len, n, ", ri=%d", uci_data->ri);
   }
 
-  char cqi_str[SRSLTE_CQI_STR_MAX_CHAR] = "";
   if (uci_cfg->cqi.data_enable) {
+    char cqi_str[SRSLTE_CQI_STR_MAX_CHAR] = "";
     srslte_cqi_value_tostring(&uci_cfg->cqi, &uci_data->cqi, cqi_str, SRSLTE_CQI_STR_MAX_CHAR);
-    n = srslte_print_check(str, str_len, n, "%s", cqi_str);
+    n = srslte_print_check(str, str_len, n, "%s (cc=%d)", cqi_str, uci_cfg->cqi.scell_index);
   }
 
   return n;

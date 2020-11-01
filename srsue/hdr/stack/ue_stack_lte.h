@@ -42,6 +42,7 @@
 #include "srslte/common/buffer_pool.h"
 #include "srslte/common/log_filter.h"
 #include "srslte/common/multiqueue.h"
+#include "srslte/common/task_scheduler.h"
 #include "srslte/common/thread_pool.h"
 #include "srslte/interfaces/ue_interfaces.h"
 
@@ -72,12 +73,16 @@ public:
   void stop() final;
 
   bool get_metrics(stack_metrics_t* metrics) final;
-  bool is_rrc_connected();
+  bool is_rrc_connected() { return rrc.is_connected(); };
 
   // RRC interface for PHY
   void in_sync() final;
   void out_of_sync() final;
   void new_cell_meas(const std::vector<phy_meas_t>& meas) override { rrc.new_cell_meas(meas); }
+  void cell_search_complete(cell_search_ret_t ret, phy_cell_t found_cell) final;
+  void cell_select_complete(bool status) final;
+  void set_config_complete(bool status) final;
+  void set_scell_complete(bool status) final;
 
   // MAC Interface for PHY
   uint16_t get_dl_sched_rnti(uint32_t tti) final { return mac.get_dl_sched_rnti(tti); }
@@ -115,22 +120,14 @@ public:
   void run_tti(uint32_t tti, uint32_t tti_jump) final;
 
   // Interface for GW
-  void write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu, bool blocking) final;
+  void write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu) final;
 
   bool is_lcid_enabled(uint32_t lcid) final { return pdcp.is_lcid_enabled(lcid); }
 
   // Interface for RRC
-  void      start_cell_search() final;
-  void      start_cell_select(const phy_interface_rrc_lte::phy_cell_t* cell) final;
   tti_point get_current_tti() final { return current_tti; }
 
-  // Task Handling interface
-  srslte::timer_handler::unique_timer    get_unique_timer() final { return timers.get_unique_timer(); }
-  srslte::task_multiqueue::queue_handler make_task_queue() final { return pending_tasks.get_queue_handler(); }
-  void                                   enqueue_background_task(std::function<void(uint32_t)> f) final;
-  void                                   notify_background_task_result(srslte::move_task_t task) final;
-  void                                   defer_callback(uint32_t duration_ms, std::function<void()> func) final;
-  void                                   defer_task(srslte::move_task_t task) final;
+  srslte::ext_task_sched_handle get_task_sched() { return {&task_sched}; }
 
 private:
   void run_thread() final;
@@ -145,9 +142,6 @@ private:
   srsue::stack_args_t args;
 
   srslte::tti_point current_tti;
-
-  // timers
-  srslte::timer_handler timers;
 
   // UE stack logging
   srslte::logger* logger = nullptr;
@@ -165,12 +159,10 @@ private:
   gw_interface_stack*      gw  = nullptr;
 
   // Thread
-  static const int        STACK_MAIN_THREAD_PRIO = -1; // Use default high-priority below UHD
-  srslte::task_multiqueue pending_tasks;
-  int sync_queue_id = -1, ue_queue_id = -1, gw_queue_id = -1, stack_queue_id = -1, background_queue_id = -1;
-  srslte::task_thread_pool             background_tasks;     ///< Thread pool used for long, low-priority tasks
-  std::vector<srslte::move_task_t>     deferred_stack_tasks; ///< enqueues stack tasks from within. Avoids locking
-  srslte::block_queue<stack_metrics_t> pending_stack_metrics;
+  static const int                      STACK_MAIN_THREAD_PRIO = 4; // Next lower priority after PHY workers
+  srslte::block_queue<stack_metrics_t>  pending_stack_metrics;
+  task_scheduler                        task_sched;
+  srslte::task_multiqueue::queue_handle sync_task_queue, ue_task_queue, gw_queue_id, cfg_task_queue;
 
   // TTI stats
   srslte::tprof<srslte::sliding_window_stats_ms> tti_tprof;

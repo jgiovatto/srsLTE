@@ -21,7 +21,9 @@
 
 #include "srslte/build_info.h"
 #include "srslte/common/logmap.h"
+#include "srslte/srslog/srslog.h"
 #include "srsue/hdr/ue.h"
+#include "swappable_log.h"
 #include "ttcn3_syssim.h"
 #include <boost/program_options.hpp>
 #include <boost/program_options/parsers.hpp>
@@ -106,6 +108,8 @@ all_args_t parse_args(ttcn3_dut_args_t* args, int argc, char* argv[])
   all_args.stack.log.gw_hex_limit   = args->log_hex_level;
   all_args.stack.log.usim_hex_limit = args->log_hex_level;
 
+  all_args.stack.sync_queue_size = 1;
+
   return all_args;
 }
 
@@ -113,18 +117,44 @@ int main(int argc, char** argv)
 {
   std::cout << "Built in " << srslte_get_build_mode() << " mode using " << srslte_get_build_info() << "." << std::endl;
 
+  // we handle OS signals through epoll
+  block_signals();
+
   ttcn3_dut_args_t dut_args = {};
-  all_args_t ue_args = parse_args(&dut_args, argc, argv);
+  all_args_t       ue_args  = parse_args(&dut_args, argc, argv);
+
+  // Setup logging.
+  srslog::sink* log_file_sink = srslog::create_file_sink(dut_args.log_filename);
+  if (!log_file_sink) {
+    return SRSLTE_ERROR;
+  }
+  srslog::log_channel* file_chan = srslog::create_log_channel("file_channel", *log_file_sink);
+  if (!file_chan) {
+    return SRSLTE_ERROR;
+  }
+  srslog::sink* stdout_sink = srslog::create_stdout_sink();
+  if (!stdout_sink) {
+    return SRSLTE_ERROR;
+  }
+  srslog::log_channel* stdout_chan = srslog::create_log_channel("stdout_channel", *stdout_sink);
+  if (!stdout_chan) {
+    return SRSLTE_ERROR;
+  }
+
+  swappable_log          file_wrapper(std::unique_ptr<srslte::srslog_wrapper>(new srslte::srslog_wrapper(*file_chan)));
+  srslte::srslog_wrapper stdout_wrapper(*stdout_chan);
+
+  // Start the log backend.
+  srslog::init();
 
   // Instantiate file logger
-  srslte::logger_file logger_file;
-  srslte::logmap::set_default_logger(&logger_file);
+  srslte::logmap::set_default_logger(&file_wrapper);
 
   // Create UE object
   unique_ptr<ttcn3_ue> ue = std::unique_ptr<ttcn3_ue>(new ttcn3_ue());
 
   // create and init SYSSIM
-  ttcn3_syssim syssim(&logger_file, ue.get());
+  ttcn3_syssim syssim(file_wrapper, stdout_wrapper, ue.get());
   if (syssim.init(ue_args) != SRSLTE_SUCCESS) {
     fprintf(stderr, "Error: Couldn't initialize system simulator\n");
     return SRSLTE_ERROR;

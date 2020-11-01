@@ -66,7 +66,7 @@ option(ENABLE_SRSUE    "Build srsUE application"                  ON)
 option(ENABLE_SRSENB   "Build srsENB application"                 ON)
 option(ENABLE_SRSEPC   "Build srsEPC application"                 ON)
 option(ENABLE_5GNR     "Build with 5G-NR components"              OFF)
-option(DISABLE_SIMD    "disable simd instructions"                OFF)
+option(DISABLE_SIMD    "Disable SIMD instructions"                OFF)
 option(AUTO_DETECT_ISA "Autodetect supported ISA extensions"      ON)
 
 option(ENABLE_GUI      "Enable GUI (using srsGUI)"                ON)
@@ -92,6 +92,12 @@ option(USE_MKL         "Use MKL instead of fftw"                  OFF)
 option(ENABLE_TIMEPROF "Enable time profiling"                    ON)
 
 option(FORCE_32BIT     "Add flags to force 32 bit compilation"    OFF)
+
+# Users that want to try this feature need to make sure the lto plugin is
+# loaded by bintools (ar, nm, ...). Older versions of bintools will not do
+# it automatically so it is necessary to use the gcc wrappers of the compiler
+# (gcc-ar, gcc-nm, ...).
+option(BUILD_WITH_LTO  "Enable LTO (experimental)"                OFF)
 
 option(ENABLE_SHMEMRF   "Enable shared memory rf test device"     ON)
 
@@ -326,7 +332,7 @@ macro(ADD_C_COMPILER_FLAG_IF_AVAILABLE flag have)
 endmacro(ADD_C_COMPILER_FLAG_IF_AVAILABLE)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-comment -Wno-reorder -Wno-unused-variable -Wtype-limits -std=c++11")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-comment -Wno-reorder -Wno-unused-variable -Wtype-limits -std=c++11 -fno-strict-aliasing")
 
   ADD_C_COMPILER_FLAG_IF_AVAILABLE("-Wno-unused-but-set-variable" HAVE_WNO_UNUSED_BUT_SET_VARIABLE)
   ADD_CXX_COMPILER_FLAG_IF_AVAILABLE("-Wno-unused-but-set-variable" HAVE_WNO_UNUSED_BUT_SET_VARIABLE)
@@ -360,7 +366,7 @@ endif(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clan
 ADD_C_COMPILER_FLAG_IF_AVAILABLE("-Werror=incompatible-pointer-types" HAVE_ERROR_INCOMPATIBLE)
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wno-comment -Wno-write-strings -Winline -Wno-unused-result -Wformat -Wmissing-field-initializers -Wtype-limits -std=c99 -D_GNU_SOURCE")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wno-comment -Wno-write-strings -Winline -Wno-unused-result -Wformat -Wmissing-field-initializers -Wtype-limits -std=c99 -fno-strict-aliasing -D_GNU_SOURCE")
 
   if(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ggdb -O0 -DDEBUG_MODE -DBUILD_TYPE_DEBUG")
@@ -372,6 +378,10 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     else(${CMAKE_BUILD_TYPE} STREQUAL "RelWithDebInfo")
       set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -fno-trapping-math -fno-math-errno -DBUILD_TYPE_RELEASE")
       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fno-trapping-math -fno-math-errno -DBUILD_TYPE_RELEASE")
+      if(BUILD_WITH_LTO)
+        ADD_C_COMPILER_FLAG_IF_AVAILABLE(-flto HAVE_FLTO)
+        ADD_CXX_COMPILER_FLAG_IF_AVAILABLE(-flto HAVE_FLTO)
+      endif(BUILD_WITH_LTO)
     endif(${CMAKE_BUILD_TYPE} STREQUAL "RelWithDebInfo")
   endif(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
 
@@ -477,6 +487,11 @@ if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.9)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
 endif()
+
+if(CMAKE_C_COMPILER_ID MATCHES "GNU")
+  # Increase inlining limit to allow gcc compilation on e.g. RPi2
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --param large-function-growth=1600")
+endif(CMAKE_C_COMPILER_ID MATCHES "GNU")
 
 message(STATUS "CMAKE_C_FLAGS is ${CMAKE_C_FLAGS}")
 message(STATUS "CMAKE_CXX_FLAGS is ${CMAKE_CXX_FLAGS}")

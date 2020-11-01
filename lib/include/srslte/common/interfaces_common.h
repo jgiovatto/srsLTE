@@ -22,9 +22,7 @@
 #ifndef SRSLTE_INTERFACES_COMMON_H
 #define SRSLTE_INTERFACES_COMMON_H
 
-#include "srslte/common/multiqueue.h"
 #include "srslte/common/security.h"
-#include "srslte/common/timers.h"
 #include <string>
 
 namespace srslte {
@@ -44,11 +42,14 @@ typedef struct {
 typedef struct {
   std::string type;
   std::string log_level;
+  double      srate_hz;
   float       dl_freq;
   float       ul_freq;
   float       freq_offset;
   float       rx_gain;
+  float       rx_gain_ch[SRSLTE_MAX_CARRIERS];
   float       tx_gain;
+  float       tx_gain_ch[SRSLTE_MAX_CARRIERS];
   float       tx_max_power;
   float       tx_gain_offset;
   float       rx_gain_offset;
@@ -64,6 +65,14 @@ typedef struct {
 
 } rf_args_t;
 
+struct vnf_args_t {
+  std::string type;
+  std::string bind_addr;
+  uint16_t    bind_port;
+  std::string log_level;
+  int         log_hex_limit;
+};
+
 class srslte_gw_config_t
 {
 public:
@@ -78,17 +87,8 @@ public:
   virtual int read_pdu(uint32_t lcid, uint8_t* payload, uint32_t requested_bytes) = 0;
 };
 
-// Generic Task Management + Timer interface for upper stack
-class task_handler_interface
-{
-public:
-  virtual srslte::timer_handler::unique_timer    get_unique_timer()                                               = 0;
-  virtual srslte::task_multiqueue::queue_handler make_task_queue()                                                = 0;
-  virtual void                                   defer_callback(uint32_t duration_ms, std::function<void()> func) = 0;
-  virtual void                                   defer_task(srslte::move_task_t func)                             = 0;
-  virtual void                                   enqueue_background_task(std::function<void(uint32_t)> task)      = 0;
-  virtual void                                   notify_background_task_result(srslte::move_task_t task)          = 0;
-};
+class stack_interface_phy_nr
+{};
 
 } // namespace srslte
 

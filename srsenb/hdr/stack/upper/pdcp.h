@@ -33,7 +33,7 @@ namespace srsenb {
 class pdcp : public pdcp_interface_rlc, public pdcp_interface_gtpu, public pdcp_interface_rrc
 {
 public:
-  pdcp(srslte::task_handler_interface* task_executor_, const char* logname);
+  pdcp(srslte::task_sched_handle task_sched_, const char* logname);
   virtual ~pdcp() {}
   void init(rlc_interface_pdcp* rlc_, rrc_interface_pdcp* rrc_, gtpu_interface_pdcp* gtpu_);
   void stop();
@@ -48,11 +48,13 @@ public:
   void rem_user(uint16_t rnti) override;
   void write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu) override;
   void add_bearer(uint16_t rnti, uint32_t lcid, srslte::pdcp_config_t cnfg) override;
+  void del_bearer(uint16_t rnti, uint32_t lcid) override;
   void config_security(uint16_t rnti, uint32_t lcid, srslte::as_security_config_t cfg_sec) override;
   void enable_integrity(uint16_t rnti, uint32_t lcid) override;
   void enable_encryption(uint16_t rnti, uint32_t lcid) override;
-  bool get_bearer_status(uint16_t rnti, uint32_t lcid, uint16_t* dlsn, uint16_t* dlhfn, uint16_t* ulsn, uint16_t* ulhfn)
-      override;
+  bool get_bearer_state(uint16_t rnti, uint32_t lcid, srslte::pdcp_lte_state_t* state) override;
+  bool set_bearer_state(uint16_t rnti, uint32_t lcid, const srslte::pdcp_lte_state_t& state) override;
+  void reestablish(uint16_t rnti) override;
 
 private:
   class user_interface_rlc : public srsue::rlc_interface_pdcp
@@ -61,9 +63,10 @@ private:
     uint16_t                    rnti;
     srsenb::rlc_interface_pdcp* rlc;
     // rlc_interface_pdcp
-    void write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu, bool blocking);
+    void write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu);
     void discard_sdu(uint32_t lcid, uint32_t discard_sn);
     bool rb_is_um(uint32_t lcid);
+    bool sdu_queue_is_full(uint32_t lcid);
   };
 
   class user_interface_gtpu : public srsue::gw_interface_pdcp
@@ -103,12 +106,12 @@ private:
 
   std::map<uint32_t, user_interface> users;
 
-  rlc_interface_pdcp*             rlc;
-  rrc_interface_pdcp*             rrc;
-  gtpu_interface_pdcp*            gtpu;
-  srslte::task_handler_interface* task_executor;
-  srslte::log_ref                 log_h;
-  srslte::byte_buffer_pool*       pool;
+  rlc_interface_pdcp*       rlc;
+  rrc_interface_pdcp*       rrc;
+  gtpu_interface_pdcp*      gtpu;
+  srslte::task_sched_handle task_sched;
+  srslte::log_ref           log_h;
+  srslte::byte_buffer_pool* pool;
 };
 
 } // namespace srsenb

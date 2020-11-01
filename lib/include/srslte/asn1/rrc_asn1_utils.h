@@ -32,6 +32,10 @@
  * Forward declarations
  ***********************/
 namespace asn1 {
+
+template <uint32_t N, bool aligned>
+class fixed_octstring;
+
 namespace rrc {
 
 struct plmn_id_s;
@@ -39,6 +43,7 @@ struct s_tmsi_s;
 struct rlc_cfg_c;
 struct pdcp_cfg_s;
 struct srb_to_add_mod_s;
+struct drb_to_add_mod_s;
 // mac
 struct sched_request_cfg_c;
 struct mac_main_cfg_s;
@@ -80,6 +85,8 @@ namespace srslte {
 
 plmn_id_t make_plmn_id_t(const asn1::rrc::plmn_id_s& asn1_type);
 void      to_asn1(asn1::rrc::plmn_id_s* asn1_type, const plmn_id_t& cfg);
+plmn_id_t make_plmn_id_t(const asn1::fixed_octstring<3, true>& asn1_type);
+void      to_asn1(asn1::fixed_octstring<3, true>* asn1_type, const plmn_id_t& cfg);
 
 s_tmsi_t make_s_tmsi_t(const asn1::rrc::s_tmsi_s& asn1_type);
 void     to_asn1(asn1::rrc::s_tmsi_s* asn1_type, const s_tmsi_t& cfg);
@@ -125,7 +132,7 @@ void set_phy_cfg_t_enable_64qam(phy_cfg_t* cfg, const bool enabled);
 /***************************
  *  EUTRA UE Capabilities
  **************************/
-void set_rrc_ue_capabilities_t(rrc_ue_capabilities_t& ue_cap, const asn1::rrc::ue_eutra_cap_s& eutra_cap_s);
+rrc_ue_capabilities_t make_rrc_ue_capabilities(const asn1::rrc::ue_eutra_cap_s& eutra_cap_s);
 
 // mbms
 mbms_notif_cfg_t  make_mbms_notif_cfg(const asn1::rrc::mbms_notif_cfg_r9_s& asn1_type);
@@ -145,12 +152,30 @@ namespace rrc {
 /***************************
  *      MeasConfig
  **************************/
-bool operator==(const asn1::rrc::cells_to_add_mod_s& lhs, const asn1::rrc::cells_to_add_mod_s& rhs);
-bool operator==(const asn1::rrc::meas_obj_to_add_mod_s& lhs, const asn1::rrc::meas_obj_to_add_mod_s& rhs);
-bool operator==(const asn1::rrc::report_cfg_eutra_s& lhs, const asn1::rrc::report_cfg_eutra_s& rhs);
-bool operator==(const asn1::rrc::report_cfg_to_add_mod_s& lhs, const asn1::rrc::report_cfg_to_add_mod_s& rhs);
-bool operator==(const asn1::rrc::meas_id_to_add_mod_s& lhs, const asn1::rrc::meas_id_to_add_mod_s& rhs);
-bool operator==(const asn1::rrc::quant_cfg_s& lhs, const asn1::rrc::quant_cfg_s& rhs);
+bool operator==(const cells_to_add_mod_s& lhs, const cells_to_add_mod_s& rhs);
+bool operator==(const meas_obj_to_add_mod_s& lhs, const meas_obj_to_add_mod_s& rhs);
+bool operator==(const report_cfg_eutra_s& lhs, const report_cfg_eutra_s& rhs);
+bool operator==(const report_cfg_to_add_mod_s& lhs, const report_cfg_to_add_mod_s& rhs);
+bool operator==(const meas_id_to_add_mod_s& lhs, const meas_id_to_add_mod_s& rhs);
+bool operator==(const quant_cfg_s& lhs, const quant_cfg_s& rhs);
+
+/**************************
+ *     RRC Obj Id
+ *************************/
+
+uint8_t get_rrc_obj_id(const srb_to_add_mod_s& srb);
+uint8_t get_rrc_obj_id(const drb_to_add_mod_s& drb);
+uint8_t get_rrc_obj_id(const cells_to_add_mod_s& obj);
+uint8_t get_rrc_obj_id(const meas_obj_to_add_mod_s& obj);
+uint8_t get_rrc_obj_id(const report_cfg_to_add_mod_s& obj);
+uint8_t get_rrc_obj_id(const meas_id_to_add_mod_s& obj);
+
+void set_rrc_obj_id(srb_to_add_mod_s& srb, uint8_t id);
+void set_rrc_obj_id(drb_to_add_mod_s& drb, uint8_t id);
+void set_rrc_obj_id(cells_to_add_mod_s& obj, uint8_t id);
+void set_rrc_obj_id(meas_obj_to_add_mod_s& obj, uint8_t id);
+void set_rrc_obj_id(report_cfg_to_add_mod_s& obj, uint8_t id);
+void set_rrc_obj_id(meas_id_to_add_mod_s& obj, uint8_t id);
 
 } // namespace rrc
 } // namespace asn1

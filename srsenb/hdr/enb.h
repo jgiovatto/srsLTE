@@ -45,9 +45,9 @@
 #include "srslte/common/buffer_pool.h"
 #include "srslte/common/interfaces_common.h"
 #include "srslte/common/log_filter.h"
-#include "srslte/common/logger_file.h"
 #include "srslte/common/mac_pcap.h"
 #include "srslte/common/security.h"
+#include "srslte/interfaces/enb_command_interface.h"
 #include "srslte/interfaces/enb_metrics_interface.h"
 #include "srslte/interfaces/sched_interface.h"
 #include "srslte/interfaces/ue_interfaces.h"
@@ -112,7 +112,7 @@ struct all_args_t {
   Main eNB class
 *******************************************************************************/
 
-class enb : public enb_metrics_interface
+class enb : public enb_metrics_interface, enb_command_interface
 {
 public:
   enb();
@@ -127,12 +127,11 @@ public:
 
   void print_pool();
 
-  static void rf_msg(srslte_rf_error_t error);
-
-  void handle_rf_msg(srslte_rf_error_t error);
-
   // eNodeB metrics interface
-  bool get_metrics(enb_metrics_t* m);
+  bool get_metrics(enb_metrics_t* m) override;
+
+  // eNodeB command interface
+  void cmd_cell_gain(uint32_t cell_id, float gain) override;
 
 private:
   const static int ENB_POOL_SIZE = 1024 * 10;
@@ -141,13 +140,11 @@ private:
 
   // eNB components
   std::unique_ptr<enb_stack_base>     stack = nullptr;
-  std::unique_ptr<srslte::radio>      radio = nullptr;
+  std::unique_ptr<srslte::radio_base> radio = nullptr;
   std::unique_ptr<enb_phy_base>       phy   = nullptr;
 
-  srslte::logger_stdout logger_stdout;
-  srslte::logger_file   logger_file;
-  srslte::logger*       logger = nullptr;
-  srslte::log_filter    log; // Own logger for eNB
+  srslte::logger* logger = nullptr;
+  srslte::log_ref log; // Own logger for eNB
 
   srslte::log_filter pool_log;
 

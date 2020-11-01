@@ -146,8 +146,20 @@ SRSLTE_API int srslte_uci_decode_ack_ri(srslte_pusch_cfg_t* cfg,
                                         uint32_t            O_cqi,
                                         srslte_uci_bit_t*   ack_ri_bits,
                                         uint8_t*            data,
+                                        bool*               valid,
                                         uint32_t            nof_bits,
                                         bool                is_ri);
+
+/**
+ * Calculates the maximum number of coded symbols used by CQI-UCI over PUSCH
+ */
+SRSLTE_API uint32_t srslte_qprime_cqi_ext(uint32_t L_prb, uint32_t nof_symbols, uint32_t tbs, float beta);
+
+/**
+ * Calculates the maximum number of coded symbols used by ACK/RI over PUSCH
+ */
+SRSLTE_API uint32_t
+srslte_qprime_ack_ext(uint32_t L_prb, uint32_t nof_symbols, uint32_t tbs, uint32_t nof_ack, float beta);
 
 /**
  * Calculates the number of acknowledgements carried by the Uplink Control Information (UCI) deduced from the number of

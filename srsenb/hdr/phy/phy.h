@@ -51,8 +51,8 @@ public:
   std::string get_type() override { return "lte"; };
 
   /* MAC->PHY interface */
-  int  add_rnti(uint16_t rnti, uint32_t pcell_index, bool is_temporal) override;
   void rem_rnti(uint16_t rnti) final;
+  int  pregen_sequences(uint16_t rnti) override;
   void set_mch_period_stop(uint32_t stop) final;
   void set_activation_deactivation_scell(uint16_t                                     rnti,
                                          const std::array<bool, SRSLTE_MAX_CARRIERS>& activation) override;
@@ -63,21 +63,23 @@ public:
                        const asn1::rrc::mcch_msg_s& mcch) override;
 
   void start_plot() override;
-  void set_config_dedicated(uint16_t rnti, const phy_rrc_dedicated_list_t& dedicated_list) override;
-  void complete_config_dedicated(uint16_t rnti) override;
+  void set_config(uint16_t rnti, const phy_rrc_cfg_list_t& phy_cfg_list) override;
+  void complete_config(uint16_t rnti) override;
 
   void get_metrics(phy_metrics_t metrics[ENB_METRICS_MAX_USERS]) override;
+
+  void cmd_cell_gain(uint32_t cell_id, float gain_db) override;
 
   void radio_overflow() override{};
   void radio_failure() override{};
 
 private:
-  phy_rrc_cfg_t phy_rrc_config = {};
-  uint32_t      nof_workers    = 0;
+  phy_cfg_mbsfn_t mbsfn_config = {};
+  uint32_t        nof_workers  = 0;
 
   const static int MAX_WORKERS = 4;
 
-  const static int PRACH_WORKER_THREAD_PRIO = 3;
+  const static int PRACH_WORKER_THREAD_PRIO = 5;
   const static int SF_RECV_THREAD_PRIO      = 1;
   const static int WORKERS_THREAD_PRIO      = 2;
 

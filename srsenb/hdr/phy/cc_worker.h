@@ -42,8 +42,9 @@ public:
   cf_t* get_buffer_tx(uint32_t antenna_idx);
   void  set_tti(uint32_t tti);
 
-  int      add_rnti(uint16_t rnti, bool is_pcell, bool is_temporal);
+  int      add_rnti(uint16_t rnti);
   void     rem_rnti(uint16_t rnti);
+  int      pregen_sequences(uint16_t rnti);
   uint32_t get_nof_rnti();
 
   /* These are used by the GUI plotting tools */
@@ -65,13 +66,16 @@ private:
   constexpr static float PUSCH_RL_SNR_DB_TH = 1.0f;
   constexpr static float PUCCH_RL_CORR_TH   = 0.15f;
 
-  int encode_pdsch(stack_interface_phy_lte::dl_sched_grant_t* grants, uint32_t nof_grants);
-  int encode_pmch(stack_interface_phy_lte::dl_sched_grant_t* grant, srslte_mbsfn_cfg_t* mbsfn_cfg);
-  int decode_pusch(stack_interface_phy_lte::ul_sched_grant_t* grants, uint32_t nof_pusch);
-  int encode_phich(stack_interface_phy_lte::ul_sched_ack_t* acks, uint32_t nof_acks);
-  int encode_pdcch_dl(stack_interface_phy_lte::dl_sched_grant_t* grants, uint32_t nof_grants);
-  int encode_pdcch_ul(stack_interface_phy_lte::ul_sched_grant_t* grants, uint32_t nof_grants);
-  int decode_pucch();
+  int  encode_pdsch(stack_interface_phy_lte::dl_sched_grant_t* grants, uint32_t nof_grants);
+  int  encode_pmch(stack_interface_phy_lte::dl_sched_grant_t* grant, srslte_mbsfn_cfg_t* mbsfn_cfg);
+  void decode_pusch_rnti(stack_interface_phy_lte::ul_sched_grant_t& ul_grant,
+                         srslte_ul_cfg_t&                           ul_cfg,
+                         srslte_pusch_res_t&                        pusch_res);
+  void decode_pusch(stack_interface_phy_lte::ul_sched_grant_t* grants, uint32_t nof_pusch);
+  int  encode_phich(stack_interface_phy_lte::ul_sched_ack_t* acks, uint32_t nof_acks);
+  int  encode_pdcch_dl(stack_interface_phy_lte::dl_sched_grant_t* grants, uint32_t nof_grants);
+  int  encode_pdcch_ul(stack_interface_phy_lte::ul_sched_grant_t* grants, uint32_t nof_grants);
+  int  decode_pucch();
 
   /* Common objects */
   srslte::log* log_h     = nullptr;
@@ -94,24 +98,21 @@ private:
   class ue
   {
   public:
-    explicit ue(uint16_t rnti_, bool pcell_) : rnti(rnti_), pcell(pcell_)
+    explicit ue(uint16_t rnti_) : rnti(rnti_)
     {
       // Do nothing
     }
 
-    bool                 is_grant_available = false;
-    srslte_phich_grant_t phich_grant        = {};
+    srslte_phich_grant_t phich_grant = {};
 
-    void metrics_read(phy_metrics_t* metrics);
-    void metrics_dl(uint32_t mcs);
-    void metrics_ul(uint32_t mcs, float rssi, float sinr, float turbo_iters);
-    bool is_pcell() { return pcell; }
+    void     metrics_read(phy_metrics_t* metrics);
+    void     metrics_dl(uint32_t mcs);
+    void     metrics_ul(uint32_t mcs, float rssi, float sinr, float turbo_iters);
     uint32_t get_rnti() const { return rnti; }
 
   private:
     uint32_t      rnti    = 0;
     phy_metrics_t metrics = {};
-    bool          pcell;
   };
 
   // Component carrier index

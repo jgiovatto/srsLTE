@@ -53,7 +53,6 @@ int srslte_sync_init(srslte_sync_t* q, uint32_t frame_size, uint32_t max_offset,
 }
 int srslte_sync_init_decim(srslte_sync_t* q, uint32_t frame_size, uint32_t max_offset, uint32_t fft_size, int decimate)
 {
-
   int ret = SRSLTE_ERROR_INVALID_INPUTS;
 
   if (q != NULL && fft_size_isvalid(fft_size)) {
@@ -746,7 +745,7 @@ srslte_sync_find(srslte_sync_t* q, const cf_t* input, uint32_t find_offset, uint
           int                 sss_idx;
           uint32_t            nof_frame_type_trials;
           srslte_frame_type_t frame_type_trials[2];
-          float               sss_corr[2];
+          float               sss_corr[2] = {};
           uint32_t            sf_idx[2], N_id_1[2];
 
           if (q->detect_frame_type) {

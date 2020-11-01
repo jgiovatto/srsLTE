@@ -20,14 +20,13 @@
  */
 
 #include "srslte/upper/pdcp.h"
+#ifdef HAVE_5GNR
+#include "srslte/upper/pdcp_entity_nr.h"
+#endif
 
 namespace srslte {
 
-pdcp::pdcp(srslte::task_handler_interface* task_executor_, const char* logname) :
-  task_executor(task_executor_),
-  pdcp_log(logname)
-{
-}
+pdcp::pdcp(srslte::task_sched_handle task_sched_, const char* logname) : task_sched(task_sched_), pdcp_log(logname) {}
 
 pdcp::~pdcp()
 {
@@ -84,10 +83,10 @@ bool pdcp::is_lcid_enabled(uint32_t lcid)
   return valid_lcids_cached.count(lcid) > 0;
 }
 
-void pdcp::write_sdu(uint32_t lcid, unique_byte_buffer_t sdu, bool blocking)
+void pdcp::write_sdu(uint32_t lcid, unique_byte_buffer_t sdu)
 {
   if (valid_lcid(lcid)) {
-    pdcp_array.at(lcid)->write_sdu(std::move(sdu), blocking);
+    pdcp_array.at(lcid)->write_sdu(std::move(sdu));
   } else {
     pdcp_log->warning("Writing sdu: lcid=%d. Deallocating sdu\n", lcid);
   }
@@ -96,21 +95,30 @@ void pdcp::write_sdu(uint32_t lcid, unique_byte_buffer_t sdu, bool blocking)
 void pdcp::write_sdu_mch(uint32_t lcid, unique_byte_buffer_t sdu)
 {
   if (valid_mch_lcid(lcid)) {
-    pdcp_array_mrb.at(lcid)->write_sdu(std::move(sdu), true);
+    pdcp_array_mrb.at(lcid)->write_sdu(std::move(sdu));
   }
 }
 
 void pdcp::add_bearer(uint32_t lcid, pdcp_config_t cfg)
 {
   if (not valid_lcid(lcid)) {
-    if (not pdcp_array
-                .insert(std::make_pair(
-                    lcid, std::unique_ptr<pdcp_entity_lte>(new pdcp_entity_lte(rlc, rrc, gw, task_executor, pdcp_log))))
-                .second) {
-      pdcp_log->error("Error inserting PDCP entity in to array\n.");
+    std::unique_ptr<pdcp_entity_base> entity;
+    if (cfg.sn_len == srslte::PDCP_SN_LEN_18) {
+      // create NR entity for 18bit SN length
+
+#ifdef HAVE_5GNR
+      entity.reset(new pdcp_entity_nr{rlc, rrc, gw, task_sched, pdcp_log, lcid, cfg});
+#else
+      pdcp_log->error("Invalid PDCP configuration.\n");
+      return;
+#endif
+    } else {
+      entity.reset(new pdcp_entity_lte{rlc, rrc, gw, task_sched, pdcp_log, lcid, cfg});
+    }
+    if (not pdcp_array.insert(std::make_pair(lcid, std::move(entity))).second) {
+      pdcp_log->error("Error inserting PDCP entity in to array.\n");
       return;
     }
-    pdcp_array.at(lcid)->init(lcid, cfg);
     pdcp_log->info("Add %s (lcid=%d, bearer_id=%d, sn_len=%dbits)\n",
                    rrc->get_rb_name(lcid).c_str(),
                    lcid,
@@ -129,13 +137,13 @@ void pdcp::add_bearer_mrb(uint32_t lcid, pdcp_config_t cfg)
 {
   if (not valid_mch_lcid(lcid)) {
     if (not pdcp_array_mrb
-                .insert(std::make_pair(
-                    lcid, std::unique_ptr<pdcp_entity_lte>(new pdcp_entity_lte(rlc, rrc, gw, task_executor, pdcp_log))))
+                .insert(std::make_pair(lcid,
+                                       std::unique_ptr<pdcp_entity_lte>(
+                                           new pdcp_entity_lte(rlc, rrc, gw, task_sched, pdcp_log, lcid, cfg))))
                 .second) {
       pdcp_log->error("Error inserting PDCP entity in to array\n.");
       return;
     }
-    pdcp_array_mrb.at(lcid)->init(lcid, cfg);
     pdcp_log->info("Add %s (lcid=%d, bearer_id=%d, sn_len=%dbits)\n",
                    rrc->get_rb_name(lcid).c_str(),
                    lcid,
@@ -165,9 +173,9 @@ void pdcp::change_lcid(uint32_t old_lcid, uint32_t new_lcid)
   // make sure old LCID exists and new LCID is still free
   if (valid_lcid(old_lcid) && not valid_lcid(new_lcid)) {
     // insert old PDCP entity into new LCID
-    std::lock_guard<std::mutex>      lock(cache_mutex);
-    auto                             it          = pdcp_array.find(old_lcid);
-    std::unique_ptr<pdcp_entity_lte> pdcp_entity = std::move(it->second);
+    std::lock_guard<std::mutex>       lock(cache_mutex);
+    auto                              it          = pdcp_array.find(old_lcid);
+    std::unique_ptr<pdcp_entity_base> pdcp_entity = std::move(it->second);
     if (not pdcp_array.insert(std::make_pair(new_lcid, std::move(pdcp_entity))).second) {
       pdcp_log->error("Error inserting PDCP entity into array\n.");
       return;
@@ -221,12 +229,21 @@ void pdcp::enable_security_timed(uint32_t lcid, srslte_direction_t direction, ui
   }
 }
 
-bool pdcp::get_bearer_status(uint32_t lcid, uint16_t* dlsn, uint16_t* dlhfn, uint16_t* ulsn, uint16_t* ulhfn)
+bool pdcp::get_bearer_state(uint32_t lcid, srslte::pdcp_lte_state_t* state)
 {
   if (not valid_lcid(lcid)) {
     return false;
   }
-  pdcp_array[lcid]->get_bearer_status(dlsn, dlhfn, ulsn, ulhfn);
+  pdcp_array[lcid]->get_bearer_state(state);
+  return true;
+}
+
+bool pdcp::set_bearer_state(uint32_t lcid, const srslte::pdcp_lte_state_t& state)
+{
+  if (not valid_lcid(lcid)) {
+    return false;
+  }
+  pdcp_array[lcid]->set_bearer_state(state);
   return true;
 }
 

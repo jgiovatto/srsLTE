@@ -113,8 +113,8 @@ struct ue_ctxt_test {
       uint32_t          nof_txs   = 0;
       uint32_t          riv       = 0;
     };
-    std::array<harq_state_t, sched_ue_carrier::SCHED_MAX_HARQ_PROC> dl_harqs = {};
-    std::array<harq_state_t, sched_ue_carrier::SCHED_MAX_HARQ_PROC> ul_harqs = {};
+    std::array<harq_state_t, cc_sched_ue::SCHED_MAX_HARQ_PROC> dl_harqs = {};
+    std::array<harq_state_t, cc_sched_ue::SCHED_MAX_HARQ_PROC> ul_harqs = {};
   };
   std::vector<cc_ue_ctxt_test> active_ccs;
 
@@ -243,6 +243,7 @@ public:
 
   int          sim_cfg(sim_sched_args args);
   virtual int  add_user(uint16_t rnti, const ue_ctxt_test_cfg& ue_cfg_);
+  virtual int  reconf_user(uint16_t rnti, const sched_interface::ue_cfg_t& ue_cfg_);
   virtual void rem_user(uint16_t rnti);
   virtual int  process_results();
   int          process_tti_events(const tti_ev& tti_ev);

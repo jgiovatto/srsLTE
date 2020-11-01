@@ -47,9 +47,9 @@ public:
    * DL grant structure per UE
    */
   typedef struct {
-    srslte_dci_dl_t         dci;
-    uint8_t*                data[SRSLTE_MAX_TB];
-    srslte_softbuffer_tx_t* softbuffer_tx[SRSLTE_MAX_TB];
+    srslte_dci_dl_t         dci                          = {};
+    uint8_t*                data[SRSLTE_MAX_TB]          = {};
+    srslte_softbuffer_tx_t* softbuffer_tx[SRSLTE_MAX_TB] = {};
   } dl_sched_grant_t;
 
   /**
@@ -182,10 +182,6 @@ public:
   virtual int  get_mch_sched(uint32_t tti, bool is_mcch, dl_sched_list_t& dl_sched_res) = 0;
   virtual int  get_ul_sched(uint32_t tti, ul_sched_list_t& ul_sched_res)                = 0;
   virtual void set_sched_dl_tti_mask(uint8_t* tti_mask, uint32_t nof_sfs)               = 0;
-
-  // Radio-Link status
-  virtual void rl_failure(uint16_t rnti) = 0;
-  virtual void rl_ok(uint16_t rnti)      = 0;
 };
 
 /* Interface MAC -> PHY */
@@ -193,21 +189,18 @@ class phy_interface_mac_lte
 {
 public:
   /**
-   * Interface for MAC to add or modify user in the active UE database setting. This function requires a primary cell
-   * (PCell) index and a list of secondary cells (SCell) for the UE. The elements in the list SCell list must follow the
-   * UE's SCell indexes order.
-   *
-   * @param rnti identifier of the user
-   * @param pcell_index Primary cell (PCell) index
-   * @param is_temporal Indicates whether the UE is temporal
-   */
-  virtual int add_rnti(uint16_t rnti, uint32_t pcell_index, bool is_temporal) = 0;
-
-  /**
    * Removes an RNTI context from all the physical layer components, including secondary cells
    * @param rnti identifier of the user
    */
   virtual void rem_rnti(uint16_t rnti) = 0;
+
+  /**
+   * Pregenerates the scrambling sequences for a given RNTI.
+   * WARNING: This function make take several ms to complete.
+   *
+   * @param rnti identifier of the user
+   */
+  virtual int pregen_sequences(uint16_t rnti) = 0;
 
   /**
    *
@@ -238,10 +231,6 @@ public:
     asn1::rrc::mcch_msg_s           mcch;
   };
 
-  typedef struct {
-    phy_cfg_mbsfn_t mbsfn;
-  } phy_rrc_cfg_t;
-
   virtual void configure_mbsfn(asn1::rrc::sib_type2_s*      sib2,
                                asn1::rrc::sib_type13_r9_s*  sib13,
                                const asn1::rrc::mcch_msg_s& mcch) = 0;
@@ -250,25 +239,31 @@ public:
     bool              configured = false; ///< Indicates whether PHY shall consider configuring this cell/carrier
     uint32_t          enb_cc_idx = 0;     ///< eNb Cell index
     srslte::phy_cfg_t phy_cfg    = {};    ///< Dedicated physical layer configuration
-  } phy_rrc_dedicated_t;
+  } phy_rrc_cfg_t;
 
-  typedef std::vector<phy_rrc_dedicated_t> phy_rrc_dedicated_list_t;
+  typedef std::vector<phy_rrc_cfg_t> phy_rrc_cfg_list_t;
 
   /**
-   * Sets the physical layer dedicated configuration for a given RNTI, a cell index and a secondary cell index.
-   * The cc_idx indicates the eNb cell to configure and the scell_idx is the UE's cell index
+   * Sets the physical layer dedicated configuration for a given RNTI. The dedicated configuration list shall provide
+   * all the required information configuration for the following cases:
+   * - Add an RNTI straight from RRC
+   * - Moving primary to another serving cell
+   * - Add/Remove secondary serving cells
+   *
+   * Remind this call will partially reconfigure the primary serving cell, `complete_config``shall be called
+   * in order to complete the configuration.
    *
    * @param rnti the given RNTI
-   * @param dedicated_list Physical layer configuration for the indicated eNb cell
+   * @param phy_cfg_list Physical layer configuration for the indicated eNb cell
    */
-  virtual void set_config_dedicated(uint16_t rnti, const phy_rrc_dedicated_list_t& dedicated_list) = 0;
+  virtual void set_config(uint16_t rnti, const phy_rrc_cfg_list_t& phy_cfg_list) = 0;
 
   /**
    * Instructs the physical layer the configuration has been complete from upper layers for a given RNTI
    *
    * @param rnti the given UE identifier (RNTI)
    */
-  virtual void complete_config_dedicated(uint16_t rnti) = 0;
+  virtual void complete_config(uint16_t rnti) = 0;
 };
 
 class mac_interface_rrc
@@ -303,7 +298,7 @@ public:
    * Allocate a C-RNTI for a new user, without adding it to the phy layer and scheduler yet
    * @return value of the allocated C-RNTI
    */
-  virtual uint16_t allocate_rnti() = 0;
+  virtual uint16_t reserve_new_crnti(const sched_interface::ue_cfg_t& ue_cfg) = 0;
 };
 
 class mac_interface_rlc
@@ -336,6 +331,7 @@ public:
   virtual void write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu) = 0;
   virtual void discard_sdu(uint16_t rnti, uint32_t lcid, uint32_t sn)                    = 0;
   virtual bool rb_is_um(uint16_t rnti, uint32_t lcid)                                    = 0;
+  virtual bool sdu_queue_is_full(uint16_t rnti, uint32_t lcid)                           = 0;
 };
 
 // RLC interface for RRC
@@ -347,10 +343,12 @@ public:
   virtual void rem_user(uint16_t rnti)                                                   = 0;
   virtual void add_bearer(uint16_t rnti, uint32_t lcid, srslte::rlc_config_t cnfg)       = 0;
   virtual void add_bearer_mrb(uint16_t rnti, uint32_t lcid)                              = 0;
+  virtual void del_bearer(uint16_t rnti, uint32_t lcid)                                  = 0;
   virtual void write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu) = 0;
   virtual bool has_bearer(uint16_t rnti, uint32_t lcid)                                  = 0;
   virtual bool suspend_bearer(uint16_t rnti, uint32_t lcid)                              = 0;
   virtual bool resume_bearer(uint16_t rnti, uint32_t lcid)                               = 0;
+  virtual void reestablish(uint16_t rnti)                                                = 0;
 };
 
 // PDCP interface for GTPU
@@ -364,16 +362,18 @@ public:
 class pdcp_interface_rrc
 {
 public:
-  virtual void reset(uint16_t rnti)                                                                = 0;
-  virtual void add_user(uint16_t rnti)                                                             = 0;
-  virtual void rem_user(uint16_t rnti)                                                             = 0;
-  virtual void write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu)           = 0;
-  virtual void add_bearer(uint16_t rnti, uint32_t lcid, srslte::pdcp_config_t cnfg)                = 0;
-  virtual void config_security(uint16_t rnti, uint32_t lcid, srslte::as_security_config_t sec_cfg) = 0;
-  virtual void enable_integrity(uint16_t rnti, uint32_t lcid)                                      = 0;
-  virtual void enable_encryption(uint16_t rnti, uint32_t lcid)                                     = 0;
-  virtual bool
-  get_bearer_status(uint16_t rnti, uint32_t lcid, uint16_t* dlsn, uint16_t* dlhfn, uint16_t* ulsn, uint16_t* ulhfn) = 0;
+  virtual void reset(uint16_t rnti)                                                                  = 0;
+  virtual void add_user(uint16_t rnti)                                                               = 0;
+  virtual void rem_user(uint16_t rnti)                                                               = 0;
+  virtual void write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu)             = 0;
+  virtual void add_bearer(uint16_t rnti, uint32_t lcid, srslte::pdcp_config_t cnfg)                  = 0;
+  virtual void del_bearer(uint16_t rnti, uint32_t lcid)                                              = 0;
+  virtual void config_security(uint16_t rnti, uint32_t lcid, srslte::as_security_config_t sec_cfg)   = 0;
+  virtual void enable_integrity(uint16_t rnti, uint32_t lcid)                                        = 0;
+  virtual void enable_encryption(uint16_t rnti, uint32_t lcid)                                       = 0;
+  virtual bool get_bearer_state(uint16_t rnti, uint32_t lcid, srslte::pdcp_lte_state_t* state)       = 0;
+  virtual bool set_bearer_state(uint16_t rnti, uint32_t lcid, const srslte::pdcp_lte_state_t& state) = 0;
+  virtual void reestablish(uint16_t rnti)                                                            = 0;
 };
 
 // PDCP interface for RLC
@@ -398,7 +398,6 @@ class rrc_interface_mac
 {
 public:
   /* Radio Link failure */
-  virtual void rl_failure(uint16_t rnti)                                             = 0;
   virtual void add_user(uint16_t rnti, const sched_interface::ue_cfg_t& init_ue_cfg) = 0;
   virtual void upd_user(uint16_t new_rnti, uint16_t old_rnti)                        = 0;
   virtual void set_activity_user(uint16_t rnti)                                      = 0;
@@ -436,6 +435,10 @@ public:
    * @param container TargeteNB RRCConnectionReconfiguration message with MobilityControlInfo
    */
   virtual void ho_preparation_complete(uint16_t rnti, bool is_success, srslte::unique_byte_buffer_t container) = 0;
+  virtual uint16_t
+               start_ho_ue_resource_alloc(const asn1::s1ap::ho_request_s&                                   msg,
+                                          const asn1::s1ap::sourceenb_to_targetenb_transparent_container_s& container) = 0;
+  virtual void set_erab_status(uint16_t rnti, const asn1::s1ap::bearers_subject_to_status_transfer_list_l& erabs) = 0;
 };
 
 // GTPU interface for PDCP
@@ -449,9 +452,10 @@ public:
 class gtpu_interface_rrc
 {
 public:
-  virtual void add_bearer(uint16_t rnti, uint32_t lcid, uint32_t addr, uint32_t teid_out, uint32_t* teid_in) = 0;
-  virtual void rem_bearer(uint16_t rnti, uint32_t lcid)                                                      = 0;
-  virtual void rem_user(uint16_t rnti)                                                                       = 0;
+  virtual uint32_t add_bearer(uint16_t rnti, uint32_t lcid, uint32_t addr, uint32_t teid_out) = 0;
+  virtual void     rem_bearer(uint16_t rnti, uint32_t lcid)                                   = 0;
+  virtual void     mod_bearer_rnti(uint16_t old_rnti, uint16_t new_rnti)                      = 0;
+  virtual void     rem_user(uint16_t rnti)                                                    = 0;
 };
 
 // S1AP interface for RRC
@@ -474,6 +478,7 @@ public:
 
   virtual void write_pdu(uint16_t rnti, srslte::unique_byte_buffer_t pdu)                              = 0;
   virtual bool user_exists(uint16_t rnti)                                                              = 0;
+  virtual void user_mod(uint16_t old_rnti, uint16_t new_rnti)                                          = 0;
   virtual bool user_release(uint16_t rnti, asn1::s1ap::cause_radio_network_e cause_radio)              = 0;
   virtual void ue_ctxt_setup_complete(uint16_t rnti, const asn1::s1ap::init_context_setup_resp_s& res) = 0;
   virtual void ue_erab_setup_complete(uint16_t rnti, const asn1::s1ap::erab_setup_resp_s& res)         = 0;
@@ -503,6 +508,24 @@ public:
    * @return true if successful
    */
   virtual bool send_enb_status_transfer_proc(uint16_t rnti, std::vector<bearer_status_info>& bearer_status_list) = 0;
+
+  /* Acknowledge Handover Request message back to MME.
+   * This message signals the completion of the HandoverPreparation from the TeNB point of view. */
+  virtual bool send_ho_req_ack(const asn1::s1ap::ho_request_s&               msg,
+                               uint16_t                                      rnti,
+                               srslte::unique_byte_buffer_t                  ho_cmd,
+                               srslte::span<asn1::fixed_octstring<4, true> > admitted_bearers) = 0;
+
+  /**
+   * Notify MME that Handover is complete
+   */
+  virtual void send_ho_notify(uint16_t rnti, uint64_t target_eci) = 0;
+
+  /**
+   * Cancel on-going S1 Handover. MME should release UE context in target eNB
+   * SeNB --> MME
+   */
+  virtual void send_ho_cancel(uint16_t rnti) = 0;
 };
 
 // Combined interface for PHY to access stack (MAC and RRC)
@@ -531,7 +554,7 @@ typedef struct {
 typedef struct {
   uint32_t                      nof_prb; ///< Needed to dimension MAC softbuffers for all cells
   sched_interface::sched_args_t sched;
-  int                           link_failure_nof_err;
+  int                           nr_tb_size = -1;
 } mac_args_t;
 
 class stack_interface_s1ap_lte
@@ -547,10 +570,6 @@ public:
   virtual void add_gtpu_s1u_socket_handler(int fd) = 0;
   virtual void add_gtpu_m1u_socket_handler(int fd) = 0;
 };
-
-// STACK interface for MAC
-class stack_interface_mac_lte : public srslte::task_handler_interface
-{};
 
 } // namespace srsenb
 

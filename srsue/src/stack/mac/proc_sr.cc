@@ -25,6 +25,7 @@
 #define Debug(fmt, ...) log_h->debug(fmt, ##__VA_ARGS__)
 
 #include "srsue/hdr/stack/mac/proc_sr.h"
+#include "srsue/hdr/stack/mac/proc_ra.h"
 
 namespace srsue {
 
@@ -33,14 +34,14 @@ sr_proc::sr_proc()
   initiated = false;
 }
 
-void sr_proc::init(phy_interface_mac_lte* phy_h_, rrc_interface_mac* rrc_, srslte::log_ref log_h_)
+void sr_proc::init(ra_proc* ra_, phy_interface_mac_lte* phy_h_, rrc_interface_mac* rrc_, srslte::log_ref log_h_)
 {
   log_h      = log_h_;
   rrc        = rrc_;
+  ra         = ra_;
   phy_h      = phy_h_;
   initiated  = true;
   sr_counter = 0;
-  do_ra      = false;
 }
 
 void sr_proc::reset()
@@ -69,6 +70,13 @@ bool sr_proc::need_tx(uint32_t tti)
 
 void sr_proc::set_config(srslte::sr_cfg_t& cfg)
 {
+  if (cfg.enabled && cfg.dsr_transmax == 0) {
+    Error("Zero is an invalid value for dsr-TransMax (n4, n8, n16, n32, n64 are supported). Disabling SR.\n");
+    return;
+  }
+  if (cfg.enabled) {
+    Info("SR:    Set dsr_transmax=%d\n", sr_cfg.dsr_transmax);
+  }
   sr_cfg = cfg;
 }
 
@@ -88,32 +96,19 @@ void sr_proc::step(uint32_t tti)
             Info("SR:    Releasing PUCCH/SRS resources, sr_counter=%d, dsr_transmax=%d\n",
                  sr_counter,
                  sr_cfg.dsr_transmax);
-            log_h->console("Scheduling request failed: releasing RRC connection...\n");
+            srslte::console("Scheduling request failed: releasing RRC connection...\n");
             rrc->release_pucch_srs();
-            do_ra         = true;
-            is_pending_sr = false;
+            ra->start_mac_order();
+            reset();
           }
         }
-      } else {
+      } else if (ra->is_idle()) {
         Info("SR:    PUCCH not configured. Starting RA procedure\n");
-        do_ra = true;
+        ra->start_mac_order();
         reset();
       }
     }
   }
-}
-
-bool sr_proc::need_random_access()
-{
-  if (initiated) {
-    if (do_ra) {
-      do_ra = false;
-      return true;
-    } else {
-      return false;
-    }
-  }
-  return false;
 }
 
 void sr_proc::start()
@@ -122,9 +117,6 @@ void sr_proc::start()
     if (!is_pending_sr) {
       sr_counter    = 0;
       is_pending_sr = true;
-    }
-    if (sr_cfg.enabled) {
-      Info("SR:    Starting Procedure. dsrTransMax=%d\n", sr_cfg.dsr_transmax);
     }
   }
 }

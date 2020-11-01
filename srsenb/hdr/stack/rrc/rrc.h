@@ -22,6 +22,7 @@
 #ifndef SRSENB_RRC_H
 #define SRSENB_RRC_H
 
+#include "rrc_bearer_cfg.h"
 #include "rrc_cell_cfg.h"
 #include "rrc_metrics.h"
 #include "srsenb/hdr/stack/upper/common_enb.h"
@@ -30,6 +31,7 @@
 #include "srslte/common/common.h"
 #include "srslte/common/logmap.h"
 #include "srslte/common/stack_procedure.h"
+#include "srslte/common/task_scheduler.h"
 #include "srslte/common/timeout.h"
 #include "srslte/interfaces/enb_interfaces.h"
 #include <map>
@@ -51,7 +53,7 @@ class rrc final : public rrc_interface_pdcp,
                   public rrc_interface_s1ap
 {
 public:
-  rrc();
+  rrc(srslte::task_sched_handle task_sched_);
   ~rrc();
 
   void init(const rrc_cfg_t&       cfg_,
@@ -60,15 +62,13 @@ public:
             rlc_interface_rrc*     rlc,
             pdcp_interface_rrc*    pdcp,
             s1ap_interface_rrc*    s1ap,
-            gtpu_interface_rrc*    gtpu,
-            srslte::timer_handler* timers_);
+            gtpu_interface_rrc*    gtpu);
 
   void stop();
   void get_metrics(rrc_metrics_t& m);
   void tti_clock();
 
   // rrc_interface_mac
-  void     rl_failure(uint16_t rnti) override;
   void     add_user(uint16_t rnti, const sched_interface::ue_cfg_t& init_ue_cfg) override;
   void     upd_user(uint16_t new_rnti, uint16_t old_rnti) override;
   void     set_activity_user(uint16_t rnti) override;
@@ -88,6 +88,10 @@ public:
   bool release_erabs(uint32_t rnti) override;
   void add_paging_id(uint32_t ueid, const asn1::s1ap::ue_paging_id_c& UEPagingID) override;
   void ho_preparation_complete(uint16_t rnti, bool is_success, srslte::unique_byte_buffer_t rrc_container) override;
+  uint16_t
+       start_ho_ue_resource_alloc(const asn1::s1ap::ho_request_s&                                   msg,
+                                  const asn1::s1ap::sourceenb_to_targetenb_transparent_container_s& container) override;
+  void set_erab_status(uint16_t rnti, const asn1::s1ap::bearers_subject_to_status_transfer_list_l& erabs) override;
 
   // rrc_interface_pdcp
   void write_pdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t pdu) override;
@@ -95,192 +99,46 @@ public:
   uint32_t get_nof_users();
 
   // logging
-  typedef enum { Rx = 0, Tx } direction_t;
+  typedef enum { Rx = 0, Tx, toS1AP, fromS1AP } direction_t;
   template <class T>
   void log_rrc_message(const std::string&           source,
-                       direction_t                  dir,
+                       const direction_t            dir,
                        const srslte::byte_buffer_t* pdu,
                        const T&                     msg,
-                       const std::string&           msg_type);
+                       const std::string&           msg_type)
+  {
+    log_rrc_message(source, dir, srslte::make_span(*pdu), msg, msg_type);
+  }
+  template <class T>
+  void log_rrc_message(const std::string&      source,
+                       const direction_t       dir,
+                       srslte::const_byte_span pdu,
+                       const T&                msg,
+                       const std::string&      msg_type)
+  {
+    static const char* dir_str[] = {"Rx", "Tx", "S1AP Tx", "S1AP Rx"};
+    if (rrc_log->get_level() == srslte::LOG_LEVEL_INFO) {
+      rrc_log->info("%s - %s %s (%zd B)\n", source.c_str(), dir_str[dir], msg_type.c_str(), pdu.size());
+    } else if (rrc_log->get_level() >= srslte::LOG_LEVEL_DEBUG) {
+      asn1::json_writer json_writer;
+      msg.to_json(json_writer);
+      rrc_log->debug_hex(
+          pdu.data(), pdu.size(), "%s - %s %s (%zd B)\n", source.c_str(), dir_str[dir], msg_type.c_str(), pdu.size());
+      rrc_log->debug_long("Content:\n%s\n", json_writer.to_string().c_str());
+    }
+  }
 
 private:
-  class ue
-  {
-  public:
-    class rrc_mobility;
-
-    ue(rrc* outer_rrc, uint16_t rnti, const sched_interface::ue_cfg_t& ue_cfg);
-    ~ue();
-    bool is_connected();
-    bool is_idle();
-
-    typedef enum {
-      MSG3_RX_TIMEOUT = 0,    ///< Msg3 has its own timeout to quickly remove fake UEs from random PRACHs
-      UE_RESPONSE_RX_TIMEOUT, ///< General purpose timeout for responses to eNB requests
-      UE_INACTIVITY_TIMEOUT,  ///< UE inactivity timeout
-      nulltype
-    } activity_timeout_type_t;
-    std::string to_string(const activity_timeout_type_t& type);
-    void        set_activity_timeout(const activity_timeout_type_t type);
-    void        set_activity();
-    void        activity_timer_expired();
-
-    uint32_t rl_failure();
-
-    rrc_state_t get_state();
-
-    void send_connection_setup(bool is_setup = true);
-    void send_connection_reest();
-    void send_connection_reject();
-    void send_connection_release();
-    void send_connection_reest_rej();
-    void send_connection_reconf(srslte::unique_byte_buffer_t sdu);
-    void send_connection_reconf_new_bearer(const asn1::s1ap::erab_to_be_setup_list_bearer_su_req_l& e);
-    void send_connection_reconf_upd(srslte::unique_byte_buffer_t pdu);
-    void send_security_mode_command();
-    void send_ue_cap_enquiry();
-    void parse_ul_dcch(uint32_t lcid, srslte::unique_byte_buffer_t pdu);
-
-    void handle_rrc_con_req(asn1::rrc::rrc_conn_request_s* msg);
-    void handle_rrc_con_reest_req(asn1::rrc::rrc_conn_reest_request_r8_ies_s* msg);
-    void handle_rrc_con_setup_complete(asn1::rrc::rrc_conn_setup_complete_s* msg, srslte::unique_byte_buffer_t pdu);
-    void handle_rrc_reconf_complete(asn1::rrc::rrc_conn_recfg_complete_s* msg, srslte::unique_byte_buffer_t pdu);
-    void handle_security_mode_complete(asn1::rrc::security_mode_complete_s* msg);
-    void handle_security_mode_failure(asn1::rrc::security_mode_fail_s* msg);
-    bool handle_ue_cap_info(asn1::rrc::ue_cap_info_s* msg);
-
-    void set_bitrates(const asn1::s1ap::ue_aggregate_maximum_bitrate_s& rates);
-    void set_security_capabilities(const asn1::s1ap::ue_security_cap_s& caps);
-    void set_security_key(const asn1::fixed_bitstring<256, false, true>& key);
-
-    bool setup_erabs(const asn1::s1ap::erab_to_be_setup_list_ctxt_su_req_l& e);
-    bool setup_erabs(const asn1::s1ap::erab_to_be_setup_list_bearer_su_req_l& e);
-    void setup_erab(uint8_t                                            id,
-                    const asn1::s1ap::erab_level_qos_params_s&         qos,
-                    const asn1::bounded_bitstring<1, 160, true, true>& addr,
-                    uint32_t                                           teid_out,
-                    const asn1::unbounded_octstring<true>*             nas_pdu);
-    bool release_erabs();
-
-    // handover
-    void handle_ho_preparation_complete(bool is_success, srslte::unique_byte_buffer_t container);
-
-    void notify_s1ap_ue_ctxt_setup_complete();
-    void notify_s1ap_ue_erab_setup_response(const asn1::s1ap::erab_to_be_setup_list_bearer_su_req_l& e);
-
-    // Getters for PUCCH resources
-    int  get_cqi(uint16_t* pmi_idx, uint16_t* n_pucch, uint32_t ue_cc_idx);
-    int  get_ri(uint32_t m_ri, uint16_t* ri_idx);
-    bool is_allocated() const;
-
-    bool select_security_algorithms();
-    void send_dl_ccch(asn1::rrc::dl_ccch_msg_s* dl_ccch_msg);
-    void send_dl_dcch(asn1::rrc::dl_dcch_msg_s*    dl_dcch_msg,
-                      srslte::unique_byte_buffer_t pdu = srslte::unique_byte_buffer_t());
-
-    uint16_t rnti   = 0;
-    rrc*     parent = nullptr;
-
-    bool                          connect_notified = false;
-    std::unique_ptr<rrc_mobility> mobility_handler;
-
-    bool is_csfb = false;
-
-  private:
-    // args
-    srslte::byte_buffer_pool*           pool = nullptr;
-    srslte::timer_handler::unique_timer activity_timer;
-
-    // cached for ease of context transfer
-    asn1::rrc::rrc_conn_recfg_s         last_rrc_conn_recfg;
-    asn1::rrc::security_algorithm_cfg_s last_security_mode_cmd;
-
-    asn1::rrc::establishment_cause_e establishment_cause;
-
-    // S-TMSI for this UE
-    bool     has_tmsi = false;
-    uint32_t m_tmsi   = 0;
-    uint8_t  mmec     = 0;
-
-    // state
-    sched_interface::ue_cfg_t current_sched_ue_cfg = {};
-    uint32_t                  rlf_cnt              = 0;
-    uint8_t                   transaction_id       = 0;
-    rrc_state_t               state                = RRC_STATE_IDLE;
-
-    std::map<uint32_t, asn1::rrc::srb_to_add_mod_s> srbs;
-    std::map<uint32_t, asn1::rrc::drb_to_add_mod_s> drbs;
-
-    uint8_t                      k_enb[32]; // Provided by MME
-    srslte::as_security_config_t sec_cfg = {};
-
-    asn1::s1ap::ue_aggregate_maximum_bitrate_s bitrates;
-    asn1::s1ap::ue_security_cap_s              security_capabilities;
-    bool                                       eutra_capabilities_unpacked = false;
-    asn1::rrc::ue_eutra_cap_s                  eutra_capabilities;
-    srslte::rrc_ue_capabilities_t              ue_capabilities;
-
-    struct erab_t {
-      uint8_t                                     id;
-      asn1::s1ap::erab_level_qos_params_s         qos_params;
-      asn1::bounded_bitstring<1, 160, true, true> address;
-      uint32_t                                    teid_out;
-      uint32_t                                    teid_in;
-    };
-    std::map<uint8_t, erab_t> erabs;
-
-    std::map<uint8_t, srslte::unique_byte_buffer_t> erab_info_list;
-
-    const static uint32_t UE_PCELL_CC_IDX = 0;
-
-    cell_ctxt_dedicated_list cell_ded_list;
-
-    int get_drbid_config(asn1::rrc::drb_to_add_mod_s* drb, int drbid);
-
-    ///< Helper to access a cell cfg based on ue_cc_idx
-    cell_info_common* get_ue_cc_cfg(uint32_t ue_cc_idx);
-
-    ///< Helper to fill SCell struct for RRR Connection Reconfig
-    int fill_scell_to_addmod_list(asn1::rrc::rrc_conn_recfg_r8_ies_s* conn_reconf);
-
-    ///< UE's Physical layer dedicated configuration
-    phy_interface_rrc_lte::phy_rrc_dedicated_list_t phy_rrc_dedicated_list = {};
-
-    /**
-     * Setups the PCell physical layer common configuration of the UE from the SIB2 message. This methods is designed to
-     * be called from the constructor.
-     *
-     * @param config ASN1 Common SIB struct carrying the common physical layer parameters
-     */
-    void apply_setup_phy_common(const asn1::rrc::rr_cfg_common_sib_s& config);
-
-    /**
-     * Setups the PCell physical layer dedicated configuration of the UE. This method shall be called from the
-     * connection setup only.
-     *
-     * @param phys_cfg_ded ASN1 Physical layer configuration dedicated
-     */
-    void apply_setup_phy_config_dedicated(const asn1::rrc::phys_cfg_ded_s& phys_cfg_ded);
-
-    /**
-     * Reconfigures the PCell and SCell physical layer dedicated configuration of the UE. This method shall be called
-     * from the connection reconfiguration. `apply_setup_phy_config` shall not be called before/after. It automatically
-     * parses the PCell and SCell reconfiguration.
-     *
-     * @param reconfig_r8 ASN1 reconfiguration message
-     */
-    void apply_reconf_phy_config(const asn1::rrc::rrc_conn_recfg_r8_ies_s& reconfig_r8);
-  }; // class ue
-
+  class ue;
   // args
-  srslte::timer_handler*    timers = nullptr;
-  srslte::byte_buffer_pool* pool   = nullptr;
-  phy_interface_rrc_lte*    phy    = nullptr;
-  mac_interface_rrc*        mac    = nullptr;
-  rlc_interface_rrc*        rlc    = nullptr;
-  pdcp_interface_rrc*       pdcp   = nullptr;
-  gtpu_interface_rrc*       gtpu   = nullptr;
-  s1ap_interface_rrc*       s1ap   = nullptr;
+  srslte::task_sched_handle task_sched;
+  srslte::byte_buffer_pool* pool = nullptr;
+  phy_interface_rrc_lte*    phy  = nullptr;
+  mac_interface_rrc*        mac  = nullptr;
+  rlc_interface_rrc*        rlc  = nullptr;
+  pdcp_interface_rrc*       pdcp = nullptr;
+  gtpu_interface_rrc*       gtpu = nullptr;
+  s1ap_interface_rrc*       s1ap = nullptr;
   srslte::log_ref           rrc_log;
 
   // derived params
@@ -292,7 +150,6 @@ private:
   std::map<uint32_t, asn1::rrc::paging_record_s> pending_paging;
 
   void     process_release_complete(uint16_t rnti);
-  void     process_rl_failure(uint16_t rnti);
   void     rem_user(uint16_t rnti);
   uint32_t generate_sibs();
   void     configure_mbsfn_sibs(asn1::rrc::sib_type2_s* sib2, asn1::rrc::sib_type13_r9_s* sib13);
@@ -300,10 +157,8 @@ private:
   void config_mac();
   void parse_ul_dcch(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t pdu);
   void parse_ul_ccch(uint16_t rnti, srslte::unique_byte_buffer_t pdu);
-  void configure_security(uint16_t rnti, uint32_t lcid, srslte::as_security_config_t sec_cfg);
-  void enable_integrity(uint16_t rnti, uint32_t lcid);
-  void enable_encryption(uint16_t rnti, uint32_t lcid);
 
+  uint32_t              paging_tti = INVALID_TTI;
   srslte::byte_buffer_t byte_buf_paging;
 
   typedef struct {
@@ -315,7 +170,6 @@ private:
   const static uint32_t LCID_EXIT     = 0xffff0000;
   const static uint32_t LCID_REM_USER = 0xffff0001;
   const static uint32_t LCID_REL_USER = 0xffff0002;
-  const static uint32_t LCID_RLF_USER = 0xffff0003;
   const static uint32_t LCID_ACT_USER = 0xffff0004;
 
   bool                         running         = false;
@@ -327,9 +181,6 @@ private:
   rrc_cfg_t              cfg             = {};
   uint32_t               nof_si_messages = 0;
   asn1::rrc::sib_type7_s sib7;
-
-  class enb_mobility_handler;
-  std::unique_ptr<enb_mobility_handler> enb_mobility_cfg;
 
   void rem_user_thread(uint16_t rnti);
 

@@ -39,7 +39,7 @@ public:
   void phy_config_enabled(uint16_t rnti, bool enabled) override {}
   void write_mcch(asn1::rrc::sib_type2_s* sib2, asn1::rrc::sib_type13_r9_s* sib13, asn1::rrc::mcch_msg_s* mcch) override
   {}
-  uint16_t allocate_rnti() override { return last_rnti++; }
+  uint16_t reserve_new_crnti(const sched_interface::ue_cfg_t& ue_cfg) override { return last_rnti++; }
 
   uint16_t last_rnti = 70;
 };
@@ -52,10 +52,12 @@ public:
   void rem_user(uint16_t rnti) override {}
   void add_bearer(uint16_t rnti, uint32_t lcid, srslte::rlc_config_t cnfg) override {}
   void add_bearer_mrb(uint16_t rnti, uint32_t lcid) override {}
+  void del_bearer(uint16_t rnti, uint32_t lcid) override {}
   void write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu) override {}
   bool has_bearer(uint16_t rnti, uint32_t lcid) override { return false; }
   bool suspend_bearer(uint16_t rnti, uint32_t lcid) override { return true; }
   bool resume_bearer(uint16_t rnti, uint32_t lcid) override { return true; }
+  void reestablish(uint16_t rnti) override {}
 };
 
 class pdcp_dummy : public pdcp_interface_rrc
@@ -66,14 +68,13 @@ public:
   void rem_user(uint16_t rnti) override {}
   void write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu) override {}
   void add_bearer(uint16_t rnti, uint32_t lcid, srslte::pdcp_config_t cnfg) override {}
+  void del_bearer(uint16_t rnti, uint32_t lcid) override {}
   void config_security(uint16_t rnti, uint32_t lcid, srslte::as_security_config_t sec_cfg_) override {}
   void enable_integrity(uint16_t rnti, uint32_t lcid) override {}
   void enable_encryption(uint16_t rnti, uint32_t lcid) override {}
-  bool get_bearer_status(uint16_t rnti, uint32_t lcid, uint16_t* dlsn, uint16_t* dlhfn, uint16_t* ulsn, uint16_t* ulhfn)
-      override
-  {
-    return true;
-  }
+  bool get_bearer_state(uint16_t rnti, uint32_t lcid, srslte::pdcp_lte_state_t* state) override { return true; }
+  bool set_bearer_state(uint16_t rnti, uint32_t lcid, const srslte::pdcp_lte_state_t& state) override { return true; }
+  void reestablish(uint16_t rnti) override {}
 };
 
 class s1ap_dummy : public s1ap_interface_rrc
@@ -105,6 +106,16 @@ public:
   {
     return true;
   }
+  bool send_ho_req_ack(const asn1::s1ap::ho_request_s&               msg,
+                       uint16_t                                      rnti,
+                       srslte::unique_byte_buffer_t                  ho_cmd,
+                       srslte::span<asn1::fixed_octstring<4, true> > admitted_bearers) override
+  {
+    return true;
+  }
+  void send_ho_notify(uint16_t rnti, uint64_t target_eci) override {}
+
+  void send_ho_cancel(uint16_t rnti) override {}
 };
 
 class phy_dummy : public phy_interface_rrc_lte
@@ -114,16 +125,17 @@ public:
                        asn1::rrc::sib_type13_r9_s*  sib13,
                        const asn1::rrc::mcch_msg_s& mcch) override
   {}
-  void set_config_dedicated(uint16_t rnti, const phy_rrc_dedicated_list_t& dedicated_list) override {}
-  void complete_config_dedicated(uint16_t rnti) override{};
+  void set_config(uint16_t rnti, const phy_rrc_cfg_list_t& dedicated_list) override {}
+  void complete_config(uint16_t rnti) override{};
 };
 
 class gtpu_dummy : public gtpu_interface_rrc
 {
 public:
-  void add_bearer(uint16_t rnti, uint32_t lcid, uint32_t addr, uint32_t teid_out, uint32_t* teid_in) override {}
-  void rem_bearer(uint16_t rnti, uint32_t lcid) override {}
-  void rem_user(uint16_t rnti) override {}
+  uint32_t add_bearer(uint16_t rnti, uint32_t lcid, uint32_t addr, uint32_t teid_out) override { return 0; }
+  void     rem_bearer(uint16_t rnti, uint32_t lcid) override {}
+  void     mod_bearer_rnti(uint16_t old_rnti, uint16_t new_rnti) override {}
+  void     rem_user(uint16_t rnti) override {}
 };
 
 } // namespace srsenb

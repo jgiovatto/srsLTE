@@ -47,10 +47,7 @@ phy_common::phy_common()
   reset();
 }
 
-phy_common::~phy_common()
-{
-
-}
+phy_common::~phy_common() = default;
 
 void phy_common::set_nof_workers(uint32_t nof_workers_)
 {
@@ -60,12 +57,14 @@ void phy_common::set_nof_workers(uint32_t nof_workers_)
 void phy_common::init(phy_args_t*                  _args,
                       srslte::log*                 _log,
                       srslte::radio_interface_phy* _radio,
-                      stack_interface_phy_lte*     _stack)
+                      stack_interface_phy_lte*     _stack,
+                      rsrp_insync_itf*             _chest_loop)
 {
   log_h          = _log;
   radio_h        = _radio;
   stack          = _stack;
   args           = _args;
+  insync_itf     = _chest_loop;
   sr_last_tx_tti = -1;
 
   ta.set_logger(_log);
@@ -101,8 +100,8 @@ void phy_common::set_ue_dl_cfg(srslte_ue_dl_cfg_t* ue_dl_cfg)
     chest_cfg->noise_alg = SRSLTE_NOISE_ALG_PSS;
   }
 
-  chest_cfg->rsrp_neighbour       = false;
-  chest_cfg->sync_error_enable    = args->correct_sync_error;
+  chest_cfg->rsrp_neighbour    = false;
+  chest_cfg->sync_error_enable = args->correct_sync_error;
   chest_cfg->estimator_alg =
       args->interpolate_subframe_enabled ? SRSLTE_ESTIMATOR_ALG_INTERPOLATE : SRSLTE_ESTIMATOR_ALG_AVERAGE;
   chest_cfg->cfo_estimate_enable  = args->cfo_ref_mask != 0;
@@ -177,11 +176,12 @@ void phy_common::set_rar_grant(uint8_t             grant_payload[SRSLTE_RAR_GRAN
 
   // Save Msg3 UL dci
   std::lock_guard<std::mutex> lock(pending_ul_grant_mutex);
-  if (!pending_ul_grant[TTIMOD(msg3_tx_tti)][0].enable) {
+  pending_ul_grant_t&         pending_grant = pending_ul_grant[0][msg3_tx_tti];
+  if (!pending_grant.enable) {
     Debug("RAR grant rar_grant=%d, msg3_tti=%d, stored in index=%d\n", rar_grant_tti, msg3_tx_tti, TTIMOD(msg3_tx_tti));
-    pending_ul_grant[TTIMOD(msg3_tx_tti)][0].pid    = ul_pidof(msg3_tx_tti, &tdd_config);
-    pending_ul_grant[TTIMOD(msg3_tx_tti)][0].dci    = dci_ul;
-    pending_ul_grant[TTIMOD(msg3_tx_tti)][0].enable = true;
+    pending_grant.pid    = ul_pidof(msg3_tx_tti, &tdd_config);
+    pending_grant.dci    = dci_ul;
+    pending_grant.enable = true;
   } else {
     Warning("set_rar_grant: sf->tti=%d, cc=%d already in use\n", msg3_tx_tti, 0);
   }
@@ -271,10 +271,12 @@ void phy_common::set_ul_pending_ack(srslte_ul_sf_cfg_t*  sf,
   // Use a lock here because subframe 4 and 9 of TDD config 0 accept multiple PHICH from multiple frames
   std::lock_guard<std::mutex> lock(pending_ul_ack_mutex);
 
-  if (!pending_ul_ack[TTIMOD(tti_phich(sf))][cc_idx][phich_grant.I_phich].enable) {
-    pending_ul_ack[TTIMOD(tti_phich(sf))][cc_idx][phich_grant.I_phich].dci_ul      = *dci_ul;
-    pending_ul_ack[TTIMOD(tti_phich(sf))][cc_idx][phich_grant.I_phich].phich_grant = phich_grant;
-    pending_ul_ack[TTIMOD(tti_phich(sf))][cc_idx][phich_grant.I_phich].enable      = true;
+  pending_ul_ack_t& pending_ack = pending_ul_ack[cc_idx][phich_grant.I_phich][tti_phich(sf)];
+
+  if (!pending_ack.enable) {
+    pending_ack.dci_ul      = *dci_ul;
+    pending_ack.phich_grant = phich_grant;
+    pending_ack.enable      = true;
     Debug("Set pending ACK for sf->tti=%d n_dmrs=%d, I_phich=%d, cc_idx=%d\n",
           sf->tti,
           phich_grant.n_dmrs,
@@ -292,12 +294,13 @@ bool phy_common::get_ul_pending_ack(srslte_dl_sf_cfg_t*   sf,
                                     srslte_dci_ul_t*      dci_ul)
 {
   std::lock_guard<std::mutex> lock(pending_ul_ack_mutex);
-  bool                        ret = false;
-  if (pending_ul_ack[TTIMOD(sf->tti)][cc_idx][phich_grant->I_phich].enable) {
-    *phich_grant = pending_ul_ack[TTIMOD(sf->tti)][cc_idx][phich_grant->I_phich].phich_grant;
-    *dci_ul      = pending_ul_ack[TTIMOD(sf->tti)][cc_idx][phich_grant->I_phich].dci_ul;
-    ret          = true;
-    pending_ul_ack[TTIMOD(sf->tti)][cc_idx][phich_grant->I_phich].enable = false;
+  bool                        ret         = false;
+  pending_ul_ack_t&           pending_ack = pending_ul_ack[cc_idx][phich_grant->I_phich][sf->tti];
+  if (pending_ack.enable) {
+    *phich_grant       = pending_ack.phich_grant;
+    *dci_ul            = pending_ack.dci_ul;
+    ret                = true;
+    pending_ack.enable = false;
     Debug("Get pending ACK for sf->tti=%d n_dmrs=%d, I_phich=%d\n", sf->tti, phich_grant->n_dmrs, phich_grant->I_phich);
   }
   return ret;
@@ -306,15 +309,16 @@ bool phy_common::get_ul_pending_ack(srslte_dl_sf_cfg_t*   sf,
 bool phy_common::is_any_ul_pending_ack()
 {
   std::lock_guard<std::mutex> lock(pending_ul_ack_mutex);
-  bool                        ret = false;
-  for (int i = 0; i < TTIMOD_SZ && !ret; i++) {
-    for (int n = 0; n < SRSLTE_MAX_CARRIERS && !ret; n++) {
-      for (int j = 0; j < 2 && !ret; j++) {
-        ret = pending_ul_ack[i][n][j].enable;
+
+  for (const auto& i : pending_ul_ack) {
+    for (const auto& j : i) {
+      if (std::any_of(j.begin(), j.end(), [](const pending_ul_ack_t& ack) { return ack.enable; })) {
+        return true;
       }
     }
   }
-  return ret;
+
+  return false;
 }
 
 // Computes SF->TTI at which PUSCH will be transmitted according to Section 8 of 36.213
@@ -335,12 +339,13 @@ void phy_common::set_ul_pending_grant(srslte_dl_sf_cfg_t* sf, uint32_t cc_idx, s
   std::lock_guard<std::mutex> lock(pending_ul_grant_mutex);
 
   // Calculate PID for this SF->TTI
-  uint32_t pid = ul_pidof(tti_pusch_gr(sf), &sf->tdd_config);
+  uint32_t            pid           = ul_pidof(tti_pusch_gr(sf), &sf->tdd_config);
+  pending_ul_grant_t& pending_grant = pending_ul_grant[cc_idx][tti_pusch_gr(sf)];
 
-  if (!pending_ul_grant[TTIMOD(tti_pusch_gr(sf))][cc_idx].enable) {
-    pending_ul_grant[TTIMOD(tti_pusch_gr(sf))][cc_idx].pid    = pid;
-    pending_ul_grant[TTIMOD(tti_pusch_gr(sf))][cc_idx].dci    = *dci;
-    pending_ul_grant[TTIMOD(tti_pusch_gr(sf))][cc_idx].enable = true;
+  if (!pending_grant.enable) {
+    pending_grant.pid    = pid;
+    pending_grant.dci    = *dci;
+    pending_grant.enable = true;
     Debug("Set ul pending grant for sf->tti=%d current_tti=%d, pid=%d\n", tti_pusch_gr(sf), sf->tti, pid);
   } else {
     Warning("set_ul_pending_grant: sf->tti=%d, cc=%d already in use\n", sf->tti, cc_idx);
@@ -351,20 +356,34 @@ void phy_common::set_ul_pending_grant(srslte_dl_sf_cfg_t* sf, uint32_t cc_idx, s
 bool phy_common::get_ul_pending_grant(srslte_ul_sf_cfg_t* sf, uint32_t cc_idx, uint32_t* pid, srslte_dci_ul_t* dci)
 {
   std::lock_guard<std::mutex> lock(pending_ul_grant_mutex);
-  bool                        ret = false;
-  if (pending_ul_grant[TTIMOD(sf->tti)][cc_idx].enable) {
+  bool                        ret           = false;
+  pending_ul_grant_t&         pending_grant = pending_ul_grant[cc_idx][sf->tti];
+
+  if (pending_grant.enable) {
     Debug("Reading grant sf->tti=%d idx=%d\n", sf->tti, TTIMOD(sf->tti));
     if (pid) {
-      *pid = pending_ul_grant[TTIMOD(sf->tti)][cc_idx].pid;
+      *pid = pending_grant.pid;
     }
     if (dci) {
-      *dci = pending_ul_grant[TTIMOD(sf->tti)][cc_idx].dci;
+      *dci = pending_grant.dci;
     }
-    pending_ul_grant[TTIMOD(sf->tti)][cc_idx].enable = false;
-    ret                                              = true;
+    pending_grant.enable = false;
+    ret                  = true;
   }
 
   return ret;
+}
+
+uint32_t phy_common::get_ul_uci_cc(uint32_t tti_tx) const
+{
+  std::lock_guard<std::mutex> lock(pending_ul_grant_mutex);
+  for (uint32_t cc = 0; cc < args->nof_carriers; cc++) {
+    const pending_ul_grant_t& grant = pending_ul_grant[cc][tti_tx];
+    if (grant.enable) {
+      return cc;
+    }
+  }
+  return 0; // Return Primary cell
 }
 
 // SF->TTI at which PHICH is received
@@ -375,9 +394,11 @@ void phy_common::set_ul_received_ack(srslte_dl_sf_cfg_t* sf,
                                      srslte_dci_ul_t*    dci_ul)
 {
   std::lock_guard<std::mutex> lock(received_ul_ack_mutex);
-  received_ul_ack[TTIMOD(tti_pusch_hi(sf))][cc_idx].hi_present = true;
-  received_ul_ack[TTIMOD(tti_pusch_hi(sf))][cc_idx].hi_value   = ack_value;
-  received_ul_ack[TTIMOD(tti_pusch_hi(sf))][cc_idx].dci_ul     = *dci_ul;
+  received_ul_ack_t&          received_ack = received_ul_ack[cc_idx][tti_pusch_hi(sf)];
+
+  received_ack.hi_present = true;
+  received_ack.hi_value   = ack_value;
+  received_ack.dci_ul     = *dci_ul;
   Debug("Set ul received ack for sf->tti=%d, current_tti=%d\n", tti_pusch_hi(sf), sf->tti);
 }
 
@@ -385,18 +406,21 @@ void phy_common::set_ul_received_ack(srslte_dl_sf_cfg_t* sf,
 bool phy_common::get_ul_received_ack(srslte_ul_sf_cfg_t* sf, uint32_t cc_idx, bool* ack_value, srslte_dci_ul_t* dci_ul)
 {
   std::lock_guard<std::mutex> lock(received_ul_ack_mutex);
-  bool                        ret = false;
-  if (received_ul_ack[TTIMOD(sf->tti)][cc_idx].hi_present) {
+  bool                        ret          = false;
+  received_ul_ack_t&          received_ack = received_ul_ack[cc_idx][sf->tti];
+
+  if (received_ack.hi_present) {
     if (ack_value) {
-      *ack_value = received_ul_ack[TTIMOD(sf->tti)][cc_idx].hi_value;
+      *ack_value = received_ack.hi_value;
     }
     if (dci_ul) {
-      *dci_ul = received_ul_ack[TTIMOD(sf->tti)][cc_idx].dci_ul;
+      *dci_ul = received_ack.dci_ul;
     }
     Debug("Get ul received ack for current_tti=%d\n", sf->tti);
-    received_ul_ack[TTIMOD(sf->tti)][cc_idx].hi_present = false;
-    ret                                                 = true;
+    received_ack.hi_present = false;
+    ret                     = true;
   }
+
   return ret;
 }
 
@@ -407,10 +431,12 @@ void phy_common::set_dl_pending_ack(srslte_dl_sf_cfg_t*         sf,
                                     srslte_pdsch_ack_resource_t resource)
 {
   std::lock_guard<std::mutex> lock(pending_dl_ack_mutex);
-  if (!pending_dl_ack[TTIMOD(sf->tti)][cc_idx].enable) {
-    pending_dl_ack[TTIMOD(sf->tti)][cc_idx].enable   = true;
-    pending_dl_ack[TTIMOD(sf->tti)][cc_idx].resource = resource;
-    memcpy(pending_dl_ack[TTIMOD(sf->tti)][cc_idx].value, value, SRSLTE_MAX_CODEWORDS * sizeof(uint8_t));
+  received_ack_t&             pending_ack = pending_dl_ack[cc_idx][sf->tti];
+
+  if (!pending_ack.enable) {
+    pending_ack.enable   = true;
+    pending_ack.resource = resource;
+    memcpy(pending_ack.value, value, SRSLTE_MAX_CODEWORDS * sizeof(uint8_t));
     Debug("Set dl pending ack for sf->tti=%d, value=%d, ncce=%d\n", sf->tti, value[0], resource.n_cce);
   } else {
     Warning("pending_dl_ack: sf->tti=%d, cc=%d already in use\n", sf->tti, cc_idx);
@@ -495,12 +521,13 @@ bool phy_common::get_dl_pending_ack(srslte_ul_sf_cfg_t* sf, uint32_t cc_idx, srs
 
     uint32_t k =
         (cell.frame_type == SRSLTE_FDD) ? FDD_HARQ_DELAY_UL_MS : das_table[sf->tdd_config.sf_config][sf->tti % 10].K[i];
-    uint32_t pdsch_tti = TTI_SUB(sf->tti, k + (FDD_HARQ_DELAY_DL_MS - FDD_HARQ_DELAY_UL_MS));
-    if (pending_dl_ack[TTIMOD(pdsch_tti)][cc_idx].enable) {
+    uint32_t        pdsch_tti   = TTI_SUB(sf->tti, k + (FDD_HARQ_DELAY_DL_MS - FDD_HARQ_DELAY_UL_MS));
+    received_ack_t& pending_ack = pending_dl_ack[cc_idx][pdsch_tti];
+    if (pending_ack.enable) {
       ack->m[i].present  = true;
       ack->m[i].k        = k;
-      ack->m[i].resource = pending_dl_ack[TTIMOD(pdsch_tti)][cc_idx].resource;
-      memcpy(ack->m[i].value, pending_dl_ack[TTIMOD(pdsch_tti)][cc_idx].value, SRSLTE_MAX_CODEWORDS * sizeof(uint8_t));
+      ack->m[i].resource = pending_ack.resource;
+      memcpy(ack->m[i].value, pending_ack.value, SRSLTE_MAX_CODEWORDS * sizeof(uint8_t));
       Debug("Get dl pending ack for sf->tti=%d, i=%d, k=%d, pdsch_tti=%d, value=%d, ncce=%d, v_dai=%d\n",
             sf->tti,
             i,
@@ -511,7 +538,7 @@ bool phy_common::get_dl_pending_ack(srslte_ul_sf_cfg_t* sf, uint32_t cc_idx, srs
             ack->m[i].resource.v_dai_dl);
       ret = true;
     }
-    bzero(&pending_dl_ack[TTIMOD(pdsch_tti)][cc_idx], sizeof(received_ack_t));
+    pending_ack = {};
   }
   ack->M = ret ? M : 0;
   return ret;
@@ -524,26 +551,25 @@ bool phy_common::get_dl_pending_ack(srslte_ul_sf_cfg_t* sf, uint32_t cc_idx, srs
  * Each worker uses this function to indicate that all processing is done and data is ready for transmission or
  * there is no transmission at all (tx_enable). In that case, the end of burst message will be sent to the radio
  */
-void phy_common::worker_end(void*                tx_sem_id,
-                            bool                 tx_enable,
-                            srslte::rf_buffer_t& buffer,
-                            uint32_t             nof_samples,
-                            srslte_timestamp_t   tx_time)
+void phy_common::worker_end(void*                   tx_sem_id,
+                            bool                    tx_enable,
+                            srslte::rf_buffer_t&    buffer,
+                            srslte::rf_timestamp_t& tx_time)
 {
   // Wait for the green light to transmit in the current TTI
   semaphore.wait(tx_sem_id);
 
   // Add Time Alignment
-  srslte_timestamp_sub(&tx_time, 0, ta.get_sec());
+  tx_time.sub((double)ta.get_sec());
 
   // For each radio, transmit
-  if (tx_enable && !srslte_timestamp_iszero(&tx_time)) {
+  if (tx_enable) {
 
     if (ul_channel) {
-      ul_channel->run(buffer.to_cf_t(), buffer.to_cf_t(), nof_samples, tx_time);
+      ul_channel->run(buffer.to_cf_t(), buffer.to_cf_t(), buffer.get_nof_samples(), tx_time.get(0));
     }
 
-    radio_h->tx(buffer, nof_samples, tx_time);
+    radio_h->tx(buffer, tx_time);
   } else {
     if (radio_h->is_continuous_tx()) {
       if (is_pending_tx_end) {
@@ -552,12 +578,13 @@ void phy_common::worker_end(void*                tx_sem_id,
       } else {
         if (!radio_h->get_is_start_of_burst()) {
 
-          if (ul_channel && !srslte_timestamp_iszero(&tx_time)) {
-            srslte_vec_cf_zero(zeros_multi.get(0), nof_samples);
-            ul_channel->run(zeros_multi.to_cf_t(), zeros_multi.to_cf_t(), nof_samples, tx_time);
+          if (ul_channel) {
+            srslte_vec_cf_zero(zeros_multi.get(0), buffer.get_nof_samples());
+            ul_channel->run(zeros_multi.to_cf_t(), zeros_multi.to_cf_t(), buffer.get_nof_samples(), tx_time.get(0));
           }
 
-          radio_h->tx(zeros_multi, nof_samples, tx_time);
+          zeros_multi.set_nof_samples(buffer.get_nof_samples());
+          radio_h->tx(zeros_multi, tx_time);
         }
       }
     } else {
@@ -578,75 +605,288 @@ void phy_common::set_cell(const srslte_cell_t& c)
   }
 }
 
-void phy_common::set_dl_metrics(const dl_metrics_t m, uint32_t cc_idx)
+void phy_common::update_cfo_measurement(uint32_t cc_idx, float cfo_hz)
 {
-  if (dl_metrics_read) {
-    bzero(dl_metrics, sizeof(dl_metrics_t) * SRSLTE_MAX_CARRIERS);
-    dl_metrics_count = 0;
-    dl_metrics_read  = false;
+  std::unique_lock<std::mutex> lock(meas_mutex);
+
+  // use SNR EMA coefficient for averaging
+  avg_cfo_hz[cc_idx] = SRSLTE_VEC_EMA(cfo_hz, avg_cfo_hz[cc_idx], args->snr_ema_coeff);
+}
+
+void phy_common::update_measurements(uint32_t                                        cc_idx,
+                                     srslte_chest_dl_res_t                           chest_res,
+                                     srslte_dl_sf_cfg_t                              sf_cfg_dl,
+                                     float                                           tx_crs_power,
+                                     std::vector<rrc_interface_phy_lte::phy_meas_t>& serving_cells,
+                                     cf_t*                                           rssi_power_buffer)
+{
+  bool insync = true;
+  {
+    std::unique_lock<std::mutex> lock(meas_mutex);
+
+    float snr_ema_coeff = args->snr_ema_coeff;
+
+    // In TDD, ignore special subframes without PDSCH
+    if (srslte_sfidx_tdd_type(sf_cfg_dl.tdd_config, sf_cfg_dl.tti % 10) == SRSLTE_TDD_SF_S &&
+        srslte_sfidx_tdd_nof_dw(sf_cfg_dl.tdd_config) < 4) {
+      return;
+    }
+
+    // Only worker 0 reads the RSSI sensor
+    if (rssi_power_buffer) {
+
+      if (!rssi_read_cnt) {
+        // Average RSSI over all symbols in antenna port 0 (make sure SF length is non-zero)
+        float rssi_dbm = SRSLTE_SF_LEN_PRB(cell.nof_prb) > 0
+                             ? (srslte_convert_power_to_dB(
+                                    srslte_vec_avg_power_cf(rssi_power_buffer, SRSLTE_SF_LEN_PRB(cell.nof_prb))) +
+                                30)
+                             : 0;
+        if (std::isnormal(rssi_dbm)) {
+          avg_rssi_dbm[0] = SRSLTE_VEC_EMA(rssi_dbm, avg_rssi_dbm[0], args->snr_ema_coeff);
+        }
+
+        rx_gain_offset = get_radio()->get_rx_gain() + args->rx_gain_offset;
+      }
+      rssi_read_cnt++;
+      if (rssi_read_cnt == 1000) {
+        rssi_read_cnt = 0;
+      }
+    }
+
+    // Average RSRQ over DEFAULT_MEAS_PERIOD_MS then sent to RRC
+    float rsrq_db = chest_res.rsrq_db;
+    if (std::isnormal(rsrq_db)) {
+      if (!(sf_cfg_dl.tti % pcell_report_period) || !std::isnormal(avg_rsrq_db[cc_idx])) {
+        avg_rsrq_db[cc_idx] = rsrq_db;
+      } else {
+        avg_rsrq_db[cc_idx] = SRSLTE_VEC_CMA(rsrq_db, avg_rsrq_db[cc_idx], sf_cfg_dl.tti % pcell_report_period);
+      }
+    }
+
+    // Average RSRP taken from CRS
+    float rsrp_lin = chest_res.rsrp;
+    if (std::isnormal(rsrp_lin)) {
+      if (!std::isnormal(avg_rsrp[cc_idx])) {
+        avg_rsrp[cc_idx] = rsrp_lin;
+      } else {
+        avg_rsrp[cc_idx] = SRSLTE_VEC_EMA(rsrp_lin, avg_rsrp[cc_idx], snr_ema_coeff);
+      }
+    }
+
+    /* Correct absolute power measurements by RX gain offset */
+    float rsrp_dbm = chest_res.rsrp_dbm - rx_gain_offset;
+
+    // Serving cell RSRP measurements are averaged over DEFAULT_MEAS_PERIOD_MS then sent to RRC
+    if (std::isnormal(rsrp_dbm)) {
+      if (!(sf_cfg_dl.tti % pcell_report_period) || !std::isnormal(avg_rsrp_dbm[cc_idx])) {
+        avg_rsrp_dbm[cc_idx] = rsrp_dbm;
+      } else {
+        avg_rsrp_dbm[cc_idx] = SRSLTE_VEC_CMA(rsrp_dbm, avg_rsrp_dbm[cc_idx], sf_cfg_dl.tti % pcell_report_period);
+      }
+    }
+
+    // Compute PL
+    pathloss[cc_idx] = tx_crs_power - avg_rsrp_dbm[cc_idx];
+
+    // Average noise
+    float cur_noise = chest_res.noise_estimate;
+    if (std::isnormal(cur_noise)) {
+      if (!std::isnormal(avg_noise[cc_idx])) {
+        avg_noise[cc_idx] = cur_noise;
+      } else {
+        avg_noise[cc_idx] = SRSLTE_VEC_EMA(cur_noise, avg_noise[cc_idx], snr_ema_coeff);
+      }
+    }
+
+    // Calculate SINR using CRS from neighbours if are detected
+    float sinr_db = chest_res.snr_db;
+    if (std::isnormal(avg_rsrp_neigh[cc_idx])) {
+      cur_noise /= srslte_convert_dB_to_power(rx_gain_offset - 30);
+
+      // Normalize the measured power ot the fraction of CRS pilots per PRB. Assume all neighbours have the same
+      // number of ports and CP length
+      uint32_t nof_re_x_prb = SRSLTE_NRE * (SRSLTE_CP_NSYMB(cell.cp));
+      float    factor       = nof_re_x_prb / (srslte_refsignal_cs_nof_pilots_x_slot(cell.nof_ports));
+      sinr_db = avg_rsrp_dbm[cc_idx] - srslte_convert_power_to_dB(avg_rsrp_neigh[cc_idx] / factor + cur_noise);
+    }
+
+    // Average sinr in the log domain
+    if (std::isnormal(sinr_db)) {
+      if (!std::isnormal(avg_sinr_db[cc_idx])) {
+        avg_sinr_db[cc_idx] = sinr_db;
+      } else {
+        avg_sinr_db[cc_idx] = SRSLTE_VEC_EMA(sinr_db, avg_sinr_db[cc_idx], snr_ema_coeff);
+      }
+    }
+
+    // Average snr in the log domain
+    if (std::isnormal(chest_res.snr_db)) {
+      if (!std::isnormal(avg_snr_db[cc_idx])) {
+        avg_snr_db[cc_idx] = chest_res.snr_db;
+      } else {
+        avg_snr_db[cc_idx] = SRSLTE_VEC_EMA(chest_res.snr_db, avg_snr_db[cc_idx], snr_ema_coeff);
+      }
+    }
+
+    // Store metrics
+    ch_metrics_t ch = {};
+    ch.n            = avg_noise[cc_idx];
+    ch.rsrp         = avg_rsrp_dbm[cc_idx];
+    ch.rsrq         = avg_rsrq_db[cc_idx];
+    ch.rssi         = avg_rssi_dbm[cc_idx];
+    ch.pathloss     = pathloss[cc_idx];
+    ch.sinr         = avg_sinr_db[cc_idx];
+    ch.sync_err     = chest_res.sync_error;
+
+    log_h->info("cc_idx %d, noise %3.3f, rsrp %3.3f, rsrq %3.3f, rssi %3.3f, pathloss %3.3f, sinr % 3.3f, sync_err %f\n",
+                cc_idx,
+                ch.n,
+                ch.rsrp,
+                ch.rsrq,
+                ch.rssi,
+                ch.pathloss,
+                ch.sinr,
+                ch.sync_err);
+
+
+    set_ch_metrics(cc_idx, ch);
+
+    // Prepare measurements for serving cells
+    bool active = (cc_idx == 0 || scell_cfg[cc_idx].configured);
+    if (active && ((sf_cfg_dl.tti % pcell_report_period) == pcell_report_period - 1)) {
+      rrc_interface_phy_lte::phy_meas_t meas = {};
+      meas.rsrp                              = avg_rsrp_dbm[cc_idx];
+      meas.rsrq                              = avg_rsrq_db[cc_idx];
+      meas.cfo_hz                            = avg_cfo_hz[cc_idx];
+
+      // Save PCI and EARFCN (if available)
+      if (cc_idx == 0) {
+        meas.pci = cell.id;
+      } else {
+        meas.earfcn = scell_cfg[cc_idx].earfcn;
+        meas.pci    = scell_cfg[cc_idx].pci;
+      }
+      serving_cells.push_back(meas);
+    }
+
+    // Check in-sync / out-sync conditions. Use SNR instead of SINR for RLF threshold
+    if (cc_idx == 0) {
+      if (avg_rsrp_dbm[0] > args->in_sync_rsrp_dbm_th && avg_snr_db[0] > args->in_sync_snr_db_th) {
+        log_h->debug(
+            "SNR=%.1f dB, RSRP=%.1f dBm sync=in-sync from channel estimator\n", avg_snr_db[0], avg_rsrp_dbm[0]);
+      } else {
+        log_h->warning(
+            "SNR=%.1f dB RSRP=%.1f dBm, sync=out-of-sync from channel estimator\n", avg_snr_db[0], avg_rsrp_dbm[0]);
+        insync = false;
+      }
+    }
   }
-  dl_metrics_count++;
-  dl_metrics[cc_idx].mcs  = dl_metrics[cc_idx].mcs + (m.mcs - dl_metrics[cc_idx].mcs) / dl_metrics_count;
-  dl_metrics[cc_idx].n    = dl_metrics[cc_idx].n + (m.n - dl_metrics[cc_idx].n) / dl_metrics_count;
-  dl_metrics[cc_idx].rsrq = dl_metrics[cc_idx].rsrq + (m.rsrq - dl_metrics[cc_idx].rsrq) / dl_metrics_count;
-  dl_metrics[cc_idx].rssi = dl_metrics[cc_idx].rssi + (m.rssi - dl_metrics[cc_idx].rssi) / dl_metrics_count;
-  dl_metrics[cc_idx].rsrp = dl_metrics[cc_idx].rsrp + (m.rsrp - dl_metrics[cc_idx].rsrp) / dl_metrics_count;
-  dl_metrics[cc_idx].sinr = dl_metrics[cc_idx].sinr + (m.sinr - dl_metrics[cc_idx].sinr) / dl_metrics_count;
-  dl_metrics[cc_idx].sync_err =
-      dl_metrics[cc_idx].sync_err + (m.sync_err - dl_metrics[cc_idx].sync_err) / dl_metrics_count;
-  dl_metrics[cc_idx].pathloss =
-      dl_metrics[cc_idx].pathloss + (m.pathloss - dl_metrics[cc_idx].pathloss) / dl_metrics_count;
+
+  // Report in-sync status to the stack outside the mutex lock
+  if (insync_itf && cc_idx == 0) {
+    if (insync) {
+      insync_itf->in_sync();
+    } else {
+      insync_itf->out_of_sync();
+    }
+  }
+
+  // Call feedback loop for chest
+  if (cc_idx == 0) {
+    if (insync_itf && ((1U << (sf_cfg_dl.tti % 10U)) & args->cfo_ref_mask)) {
+      insync_itf->set_cfo(chest_res.cfo);
+    }
+  }
+}
+
+void phy_common::set_dl_metrics(uint32_t cc_idx, const dl_metrics_t& m)
+{
+  std::unique_lock<std::mutex> lock(metrics_mutex);
+
+  dl_metrics_count[cc_idx]++;
+  dl_metrics[cc_idx].mcs = dl_metrics[cc_idx].mcs + (m.mcs - dl_metrics[cc_idx].mcs) / dl_metrics_count[cc_idx];
   dl_metrics[cc_idx].turbo_iters =
-      dl_metrics[cc_idx].turbo_iters + (m.turbo_iters - dl_metrics[cc_idx].turbo_iters) / dl_metrics_count;
+      dl_metrics[cc_idx].turbo_iters + (m.turbo_iters - dl_metrics[cc_idx].turbo_iters) / dl_metrics_count[cc_idx];
 }
 
 void phy_common::get_dl_metrics(dl_metrics_t m[SRSLTE_MAX_CARRIERS])
 {
-  memcpy(m, dl_metrics, sizeof(dl_metrics_t) * SRSLTE_MAX_CARRIERS);
-  dl_metrics_read = true;
+  std::unique_lock<std::mutex> lock(metrics_mutex);
+
+  for (uint32_t i = 0; i < args->nof_carriers; i++) {
+    m[i]                = dl_metrics[i];
+    dl_metrics[i]       = {};
+    dl_metrics_count[i] = 0;
+  }
 }
 
-void phy_common::set_ul_metrics(const ul_metrics_t m, uint32_t cc_idx)
+void phy_common::set_ch_metrics(uint32_t cc_idx, const ch_metrics_t& m)
 {
-  if (ul_metrics_read) {
-    bzero(ul_metrics, sizeof(ul_metrics_t) * SRSLTE_MAX_CARRIERS);
-    ul_metrics_count = 0;
-    ul_metrics_read  = false;
+  std::unique_lock<std::mutex> lock(metrics_mutex);
+
+  ch_metrics_count[cc_idx]++;
+  ch_metrics[cc_idx].n    = ch_metrics[cc_idx].n + (m.n - ch_metrics[cc_idx].n) / ch_metrics_count[cc_idx];
+  ch_metrics[cc_idx].rsrq = ch_metrics[cc_idx].rsrq + (m.rsrq - ch_metrics[cc_idx].rsrq) / ch_metrics_count[cc_idx];
+  ch_metrics[cc_idx].rssi = ch_metrics[cc_idx].rssi + (m.rssi - ch_metrics[cc_idx].rssi) / ch_metrics_count[cc_idx];
+  ch_metrics[cc_idx].rsrp = ch_metrics[cc_idx].rsrp + (m.rsrp - ch_metrics[cc_idx].rsrp) / ch_metrics_count[cc_idx];
+  ch_metrics[cc_idx].sinr = ch_metrics[cc_idx].sinr + (m.sinr - ch_metrics[cc_idx].sinr) / ch_metrics_count[cc_idx];
+  ch_metrics[cc_idx].sync_err =
+      ch_metrics[cc_idx].sync_err + (m.sync_err - ch_metrics[cc_idx].sync_err) / ch_metrics_count[cc_idx];
+  ch_metrics[cc_idx].pathloss =
+      ch_metrics[cc_idx].pathloss + (m.pathloss - ch_metrics[cc_idx].pathloss) / ch_metrics_count[cc_idx];
+}
+
+void phy_common::get_ch_metrics(ch_metrics_t m[SRSLTE_MAX_CARRIERS])
+{
+  std::unique_lock<std::mutex> lock(metrics_mutex);
+
+  for (uint32_t i = 0; i < args->nof_carriers; i++) {
+    m[i]                = ch_metrics[i];
+    ch_metrics[i]       = {};
+    ch_metrics_count[i] = 0;
   }
-  ul_metrics_count++;
-  for (uint32_t r = 0; r < args->nof_carriers; r++) {
-    ul_metrics[cc_idx].mcs   = ul_metrics[cc_idx].mcs + (m.mcs - ul_metrics[cc_idx].mcs) / ul_metrics_count;
-    ul_metrics[cc_idx].power = ul_metrics[cc_idx].power + (m.power - ul_metrics[cc_idx].power) / ul_metrics_count;
-  }
+}
+
+void phy_common::set_ul_metrics(uint32_t cc_idx, const ul_metrics_t& m)
+{
+  std::unique_lock<std::mutex> lock(metrics_mutex);
+
+  ul_metrics_count[cc_idx]++;
+  ul_metrics[cc_idx].mcs   = ul_metrics[cc_idx].mcs + (m.mcs - ul_metrics[cc_idx].mcs) / ul_metrics_count[cc_idx];
+  ul_metrics[cc_idx].power = ul_metrics[cc_idx].power + (m.power - ul_metrics[cc_idx].power) / ul_metrics_count[cc_idx];
 }
 
 void phy_common::get_ul_metrics(ul_metrics_t m[SRSLTE_MAX_CARRIERS])
 {
-  memcpy(m, ul_metrics, sizeof(ul_metrics_t) * SRSLTE_MAX_CARRIERS);
-  ul_metrics_read = true;
+  std::unique_lock<std::mutex> lock(metrics_mutex);
+
+  for (uint32_t i = 0; i < args->nof_carriers; i++) {
+    m[i]                = ul_metrics[i];
+    ul_metrics[i]       = {};
+    ul_metrics_count[i] = 0;
+  }
 }
 
 void phy_common::set_sync_metrics(const uint32_t& cc_idx, const sync_metrics_t& m)
 {
-  if (sync_metrics_read) {
-    sync_metrics[cc_idx] = m;
-    sync_metrics_count   = 1;
-    if (cc_idx == 0)
-      sync_metrics_read = false;
-  } else {
-    if (cc_idx == 0)
-      sync_metrics_count++;
-    sync_metrics[cc_idx].cfo = sync_metrics[cc_idx].cfo + (m.cfo - sync_metrics[cc_idx].cfo) / sync_metrics_count;
-    sync_metrics[cc_idx].sfo = sync_metrics[cc_idx].sfo + (m.sfo - sync_metrics[cc_idx].sfo) / sync_metrics_count;
-  }
+  std::unique_lock<std::mutex> lock(metrics_mutex);
+
+  sync_metrics_count[cc_idx]++;
+  sync_metrics[cc_idx].cfo = sync_metrics[cc_idx].cfo + (m.cfo - sync_metrics[cc_idx].cfo) / sync_metrics_count[cc_idx];
+  sync_metrics[cc_idx].sfo = sync_metrics[cc_idx].sfo + (m.sfo - sync_metrics[cc_idx].sfo) / sync_metrics_count[cc_idx];
+  sync_metrics[cc_idx].ta_us = m.ta_us;
 }
 
 void phy_common::get_sync_metrics(sync_metrics_t m[SRSLTE_MAX_CARRIERS])
 {
+  std::unique_lock<std::mutex> lock(metrics_mutex);
+
   for (uint32_t i = 0; i < args->nof_carriers; i++) {
-    m[i] = sync_metrics[i];
+    m[i]                  = sync_metrics[i];
+    sync_metrics[i]       = {};
+    sync_metrics_count[i] = 0;
   }
-  sync_metrics_read = true;
 }
 
 void phy_common::reset_radio()
@@ -662,23 +902,46 @@ void phy_common::reset()
 {
   reset_radio();
 
-  sr_enabled      = false;
-  cur_pathloss    = 0;
-  cur_pusch_power = 0;
-  sr_last_tx_tti  = -1;
-  cur_pusch_power = 0;
+  sr_enabled          = false;
+  cur_pathloss        = 0;
+  cur_pusch_power     = 0;
+  sr_last_tx_tti      = -1;
   pcell_report_period = 20;
 
   ZERO_OBJECT(pathloss);
-  ZERO_OBJECT(avg_snr_db_cqi);
+  ZERO_OBJECT(avg_sinr_db);
+  ZERO_OBJECT(avg_snr_db);
   ZERO_OBJECT(avg_rsrp);
   ZERO_OBJECT(avg_rsrp_dbm);
   ZERO_OBJECT(avg_rsrq_db);
   ZERO_OBJECT(scell_cfg);
-  ZERO_OBJECT(pending_dl_ack);
-  ZERO_OBJECT(pending_dl_dai);
-  ZERO_OBJECT(pending_ul_ack);
-  ZERO_OBJECT(pending_ul_grant);
+
+  reset_neighbour_cells();
+
+  // Note: Using memset to reset these members is forbidden because they are real objects, not plain arrays.
+  {
+    std::lock_guard<std::mutex> lock(pending_dl_ack_mutex);
+    for (auto& i : pending_dl_ack) {
+      i = {};
+    }
+  }
+  for (auto& i : pending_dl_dai) {
+    i = {};
+  }
+  {
+    std::lock_guard<std::mutex> lock(pending_ul_ack_mutex);
+    for (auto& i : pending_ul_ack) {
+      for (auto& j : i) {
+        j = {};
+      }
+    }
+  }
+  {
+    std::lock_guard<std::mutex> lock(pending_ul_grant_mutex);
+    for (auto& i : pending_ul_grant) {
+      i = {};
+    }
+  }
 
   // Release mapping of secondary cells
   if (args != nullptr && radio_h != nullptr) {

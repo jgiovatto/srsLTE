@@ -18,9 +18,12 @@
  * and at http://www.gnu.org/licenses/.
  *
  */
+
+#include <srslte/common/logger_srslog_wrapper.h>
 #include <srslte/common/test_common.h>
 #include <srslte/common/threads.h>
 #include <srslte/phy/utils/random.h>
+#include <srslte/srslog/srslog.h>
 #include <srslte/srslte.h>
 #include <srsue/hdr/phy/phy.h>
 
@@ -42,7 +45,7 @@ public:                                                                         
       expired = (cvar.wait_until(lock, expire_time) == std::cv_status::timeout);                                       \
     }                                                                                                                  \
     if (expired) {                                                                                                     \
-      log_h.info("Expired " #NAME " waiting\n");                                                                       \
+      log_h.debug("Expired " #NAME " waiting\n");                                                                      \
     }                                                                                                                  \
     return received_##NAME;                                                                                            \
   }                                                                                                                    \
@@ -54,7 +57,7 @@ private:                                                                        
   {                                                                                                                    \
     std::unique_lock<std::mutex> lock(mutex);                                                                          \
     cvar.notify_all();                                                                                                 \
-    log_h.info(#NAME " received\n");                                                                                   \
+    log_h.debug(#NAME " received\n");                                                                                  \
     received_##NAME = true;                                                                                            \
   }
 
@@ -76,6 +79,10 @@ private:
     CALLBACK(new_grant_ul)
     CALLBACK(new_grant_dl)
     CALLBACK(run_tti)
+    CALLBACK(cell_search)
+    CALLBACK(cell_select)
+    CALLBACK(config)
+    CALLBACK(scell)
 
   public:
     // Local test access methods
@@ -111,8 +118,34 @@ private:
     void run_tti(const uint32_t tti, const uint32_t tti_jump) override
     {
       notify_run_tti();
-      log_h.info("Run TTI %d\n", tti);
+      log_h.debug("Run TTI %d\n", tti);
     }
+
+    void cell_search_complete(cell_search_ret_t ret, srsue::phy_cell_t found_cell) override
+    {
+      cell_search_ret = ret;
+      last_found_cell = found_cell;
+      notify_cell_search();
+    }
+    void cell_select_complete(bool status) override
+    {
+      notify_cell_select();
+      last_cell_select = status;
+    }
+    void set_config_complete(bool status) override
+    {
+      notify_config();
+      last_config = status;
+    }
+    void set_scell_complete(bool status) override
+    {
+      notify_scell();
+      last_scell = status;
+    }
+
+    cell_search_ret_t cell_search_ret  = {};
+    srsue::phy_cell_t last_found_cell  = {};
+    bool              last_cell_select = false, last_config = false, last_scell = false;
   };
 
   class dummy_radio : public srslte::radio_interface_phy
@@ -131,7 +164,7 @@ private:
     std::mutex                       mutex;
     std::condition_variable          cvar;
     srslte_rf_info_t                 rf_info    = {};
-    srslte_timestamp_t               tx_last_tx = {};
+    srslte::rf_timestamp_t           tx_last_tx = {};
     uint32_t                         count_late = 0;
 
     CALLBACK(rx_now)
@@ -191,8 +224,7 @@ private:
 
     uint32_t get_count_late() { return count_late; }
 
-    bool
-    tx(srslte::rf_buffer_interface& buffer, const uint32_t& nof_samples, const srslte_timestamp_t& tx_time) override
+    bool tx(srslte::rf_buffer_interface& buffer, const srslte::rf_timestamp_interface& tx_time) override
     {
       bool ret = true;
       notify_tx();
@@ -201,23 +233,25 @@ private:
       if (!std::isnormal(tx_srate)) {
         count_late++;
       }
-      if (srslte_timestamp_compare(&tx_time, &tx_last_tx) < 0) {
+      if (srslte_timestamp_compare(&tx_time.get(0), tx_last_tx.get_ptr(0)) < 0) {
         ret = false;
       }
 
-      tx_last_tx = tx_time;
-      srslte_timestamp_add(&tx_last_tx, 0, (double)nof_samples / (double)tx_srate);
+      tx_last_tx.copy(tx_time);
+      if (std::isnormal(tx_srate)) {
+        tx_last_tx.add((double)buffer.get_nof_samples() / (double)tx_srate);
+      }
 
       return ret;
     }
     void release_freq(const uint32_t& carrier_idx) override{};
     void tx_end() override {}
-    bool rx_now(srslte::rf_buffer_interface& buffer, const uint32_t& nof_samples, srslte_timestamp_t* rxd_time) override
+    bool rx_now(srslte::rf_buffer_interface& buffer, srslte::rf_timestamp_interface& rxd_time) override
     {
       notify_rx_now();
 
       std::lock_guard<std::mutex> lock(mutex);
-      auto                        base_nsamples = (uint32_t)floorf(((float)nof_samples * base_srate) / rx_srate);
+      uint32_t base_nsamples = (uint32_t)floorf(((float)buffer.get_nof_samples() * base_srate) / rx_srate);
 
       for (uint32_t i = 0; i < ring_buffers.size(); i++) {
         cf_t* buf_ptr = ((buffer.get(i) != nullptr) && (base_srate == rx_srate)) ? buffer.get(i) : temp_buffer;
@@ -237,7 +271,7 @@ private:
             auto decimation = (uint32_t)roundf(base_srate / rx_srate);
 
             // Perform decimation
-            for (uint32_t j = 0, k = 0; j < nof_samples; j++, k += decimation) {
+            for (uint32_t j = 0, k = 0; j < buffer.get_nof_samples(); j++, k += decimation) {
               buffer.get(i)[j] = buf_ptr[k];
             }
           } else if (base_srate < rx_srate) {
@@ -245,7 +279,7 @@ private:
             auto interpolation = (uint32_t)roundf(rx_srate / base_srate);
 
             // Perform zero order hold interpolation
-            for (uint32_t j = 0, k = 0; j < nof_samples; k++) {
+            for (uint32_t j = 0, k = 0; j < buffer.get_nof_samples(); k++) {
               for (uint32_t c = 0; c < interpolation; c++, j++) {
                 buffer.get(i)[j] = buf_ptr[k];
               }
@@ -255,9 +289,7 @@ private:
       }
 
       // Set Rx timestamp
-      if (rxd_time) {
-        srslte_timestamp_init_uint64(rxd_time, rx_timestamp, (double)base_srate);
-      }
+      srslte_timestamp_init_uint64(rxd_time.get_ptr(0), rx_timestamp, (double)base_srate);
 
       // Update timestamp
       rx_timestamp += base_nsamples;
@@ -306,6 +338,7 @@ private:
       rx_srate = (float)srate;
       log_h.info("Set Rx sampling rate to %+.3f MHz.\n", srate * 1.0e-6);
     }
+    void  set_channel_rx_offset(uint32_t ch, int32_t offset_samples) override{};
     float get_rx_gain() override
     {
       std::unique_lock<std::mutex> lock(mutex);
@@ -320,8 +353,7 @@ private:
   };
 
   // Common instances
-  srslte::logger_stdout main_logger;
-  srslte::log_filter    log_h;
+  srslte::log_filter log_h;
 
   // Dummy instances
   dummy_stack stack;
@@ -343,9 +375,9 @@ private:
   std::condition_variable cvar;
 
 public:
-  phy_test_bench(const srsue::phy_args_t& phy_args, const srslte_cell_t& cell) :
-    stack(main_logger),
-    radio(main_logger, cell.nof_ports, srslte_sampling_freq_hz(cell.nof_prb)),
+  phy_test_bench(const srsue::phy_args_t& phy_args, const srslte_cell_t& cell, srslte::logger& logger_) :
+    stack(logger_),
+    radio(logger_, cell.nof_ports, srslte_sampling_freq_hz(cell.nof_prb)),
     thread("phy_test_bench"),
     log_h("test bench")
   {
@@ -353,7 +385,7 @@ public:
     sf_len = SRSLTE_SF_LEN_PRB(cell.nof_prb);
 
     // Initialise UE
-    phy = std::unique_ptr<srsue::phy>(new srsue::phy(&main_logger));
+    phy = std::unique_ptr<srsue::phy>(new srsue::phy(&logger_));
     phy->init(phy_args, &stack, &radio);
 
     // Initialise DL baseband buffers
@@ -397,7 +429,7 @@ public:
     phy->set_crnti(rnti);
 
     // Set PHY configuration
-    phy->set_config(phy_cfg, 0, 0, nullptr);
+    phy->set_config(phy_cfg, 0);
   }
 
   void run_thread() override
@@ -481,33 +513,53 @@ int main(int argc, char** argv)
   // Set custom test cell and arguments here
   phy_args.log.phy_level = "info";
 
+  // Setup logging.
+  srslog::sink* log_sink = srslog::create_stdout_sink();
+  if (!log_sink) {
+    return SRSLTE_ERROR;
+  }
+  srslog::log_channel* chan = srslog::create_log_channel("main_channel", *log_sink);
+  if (!chan) {
+    return SRSLTE_ERROR;
+  }
+  srslte::srslog_wrapper log_wrapper(*chan);
+
+  // Start the log backend.
+  srslog::init();
+
   // Create test bench
-  std::unique_ptr<phy_test_bench> phy_test = std::unique_ptr<phy_test_bench>(new phy_test_bench(phy_args, cell));
+  std::unique_ptr<phy_test_bench> phy_test =
+      std::unique_ptr<phy_test_bench>(new phy_test_bench(phy_args, cell, log_wrapper));
   phy_test->set_loglevel("info");
 
   // Start test bench
   phy_test->start();
 
   // 1. Cell search
-  srsue::phy_interface_rrc_lte::phy_cell_t phy_cell;
-  auto                                     cell_search_res = phy_test->get_phy_interface_rrc()->cell_search(&phy_cell);
-  TESTASSERT(cell_search_res.found == srsue::phy_interface_rrc_lte::cell_search_ret_t::CELL_FOUND);
-  TESTASSERT(phy_test->get_stack()->wait_in_sync(default_timeout));
-  TESTASSERT(phy_cell.pci == cell.id);
+  TESTASSERT(phy_test->get_phy_interface_rrc()->cell_search());
+  TESTASSERT(phy_test->get_stack()->wait_cell_search(default_timeout));
+  TESTASSERT(phy_test->get_stack()->cell_search_ret.found ==
+             srsue::rrc_interface_phy_lte::cell_search_ret_t::CELL_FOUND);
 
   // 2. Cell select
-  phy_test->get_phy_interface_rrc()->cell_select(&phy_cell);
+  srsue::phy_cell_t phy_cell = phy_test->get_stack()->last_found_cell;
+  TESTASSERT(phy_test->get_phy_interface_rrc()->cell_select(phy_cell));
+  TESTASSERT(phy_test->get_stack()->wait_cell_select(default_timeout));
   TESTASSERT(phy_test->get_stack()->wait_in_sync(default_timeout));
   TESTASSERT(phy_test->get_stack()->wait_new_phy_meas(default_timeout));
 
   // 3. Transmit PRACH
-  phy_test->get_phy_interface_mac()->configure_prach_params();
+  srslte::phy_cfg_t phy_cfg = {};
+  phy_cfg.set_defaults();
+  phy_test->get_phy_interface_rrc()->set_config(phy_cfg, 0);
+  TESTASSERT(phy_test->get_stack()->wait_config(default_timeout));
+  //  phy_test->get_phy_interface_mac()->configure_prach_params();
   phy_test->get_phy_interface_mac()->prach_send(0, -1, 0.0f);
   TESTASSERT(phy_test->get_radio()->wait_tx(default_timeout, false));
 
   // 4. Configure RNTI with PUCCH and check transmission
-  uint16_t          rnti    = 0x3c;
-  srslte::phy_cfg_t phy_cfg = {};
+  uint16_t rnti = 0x3c;
+  phy_cfg       = {};
   phy_cfg.set_defaults();
   phy_cfg.dl_cfg.cqi_report.periodic_mode       = SRSLTE_CQI_MODE_12;
   phy_cfg.dl_cfg.cqi_report.periodic_configured = true;

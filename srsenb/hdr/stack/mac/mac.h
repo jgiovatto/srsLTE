@@ -26,6 +26,7 @@
 #include "scheduler_metric.h"
 #include "srslte/common/log.h"
 #include "srslte/common/mac_pcap.h"
+#include "srslte/common/task_scheduler.h"
 #include "srslte/common/threads.h"
 #include "srslte/common/tti_sync_cv.h"
 #include "srslte/interfaces/enb_interfaces.h"
@@ -41,14 +42,13 @@ namespace srsenb {
 class mac final : public mac_interface_phy_lte, public mac_interface_rlc, public mac_interface_rrc
 {
 public:
-  mac();
+  mac(srslte::ext_task_sched_handle task_sched_);
   ~mac();
   bool init(const mac_args_t&        args_,
             const cell_list_t&       cells_,
             phy_interface_stack_lte* phy,
             rlc_interface_mac*       rlc,
             rrc_interface_mac*       rrc,
-            stack_interface_mac_lte* stack_,
             srslte::log_ref          log_h);
   void stop();
 
@@ -74,8 +74,6 @@ public:
     scheduler.set_dl_tti_mask(tti_mask, nof_sfs);
   }
   void build_mch_sched(uint32_t tbs);
-  void rl_failure(uint16_t rnti) override;
-  void rl_ok(uint16_t rnti) override;
 
   /******** Interface from RRC (RRC -> MAC) ****************/
   /* Provides cell configuration including SIB periodicity, etc. */
@@ -95,17 +93,20 @@ public:
   int bearer_ue_rem(uint16_t rnti, uint32_t lc_id) override;
   int rlc_buffer_state(uint16_t rnti, uint32_t lc_id, uint32_t tx_queue, uint32_t retx_queue) override;
 
+  /* Handover-related */
+  uint16_t reserve_new_crnti(const sched_interface::ue_cfg_t& ue_cfg) override;
+
   bool process_pdus();
 
   void get_metrics(mac_metrics_t metrics[ENB_METRICS_MAX_USERS]);
   void
   write_mcch(asn1::rrc::sib_type2_s* sib2, asn1::rrc::sib_type13_r9_s* sib13, asn1::rrc::mcch_msg_s* mcch) override;
 
-  /* Allocate C-RNTI */
-  uint16_t allocate_rnti() final;
-
 private:
-  static const uint32_t cfi                      = 3;
+  static const uint32_t cfi = 3;
+
+  bool     check_ue_exists(uint16_t rnti);
+  uint16_t allocate_rnti();
 
   std::mutex rnti_mutex;
 
@@ -114,17 +115,17 @@ private:
   pthread_rwlock_t rwlock = {};
 
   // Interaction with PHY
-  phy_interface_stack_lte* phy_h = nullptr;
-  rlc_interface_mac*       rlc_h = nullptr;
-  rrc_interface_mac*       rrc_h = nullptr;
-  stack_interface_mac_lte* stack = nullptr;
-  srslte::log_ref          log_h;
+  phy_interface_stack_lte*      phy_h = nullptr;
+  rlc_interface_mac*            rlc_h = nullptr;
+  rrc_interface_mac*            rrc_h = nullptr;
+  srslte::ext_task_sched_handle task_sched;
+  srslte::log_ref               log_h;
 
   cell_list_t cells = {};
   mac_args_t  args  = {};
 
   // derived from args
-  srslte::task_multiqueue::queue_handler stack_task_queue;
+  srslte::task_multiqueue::queue_handle stack_task_queue;
 
   bool started = false;
 
@@ -135,8 +136,11 @@ private:
   sched_interface::dl_pdu_mch_t mch = {};
 
   /* Map of active UEs */
-  std::map<uint16_t, std::unique_ptr<ue> > ue_db;
-  uint16_t                                 last_rnti = 0;
+  std::map<uint16_t, std::unique_ptr<ue> > ue_db, ues_to_rem;
+  uint16_t                                 last_rnti = 70;
+
+  srslte::block_queue<std::unique_ptr<ue> > ue_pool; ///< Pool of pre-allocated UE objects
+  void                                      prealloc_ue(uint32_t nof_ue);
 
   uint8_t* assemble_rar(sched_interface::dl_sched_rar_grant_t* grants,
                         uint32_t                               nof_grants,
@@ -150,7 +154,7 @@ private:
 
   const static int NOF_BCCH_DLSCH_MSG = sched_interface::MAX_SIBS;
 
-  const static int       pcch_payload_buffer_len                      = 1024;
+  const static int pcch_payload_buffer_len = 1024;
   typedef struct {
     uint8_t                pcch_payload_buffer[pcch_payload_buffer_len] = {};
     srslte_softbuffer_tx_t bcch_softbuffer_tx[NOF_BCCH_DLSCH_MSG]       = {};

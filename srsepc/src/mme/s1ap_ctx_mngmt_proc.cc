@@ -144,7 +144,7 @@ bool s1ap_ctx_mngmt_proc::send_initial_context_setup_request(nas* nas_ctx, uint1
   srslte::unique_byte_buffer_t nas_buffer = allocate_unique_buffer(*m_pool);
   if (emm_ctx->state == EMM_STATE_DEREGISTERED) {
     // Attach procedure initiated from an attach request
-    m_s1ap_log->console("Adding attach accept to Initial Context Setup Request\n");
+    srslte::console("Adding attach accept to Initial Context Setup Request\n");
     m_s1ap_log->info("Adding attach accept to Initial Context Setup Request\n");
     nas_ctx->pack_attach_accept(nas_buffer.get());
 
@@ -164,7 +164,7 @@ bool s1ap_ctx_mngmt_proc::send_initial_context_setup_request(nas* nas_ctx, uint1
 
   struct in_addr addr;
   addr.s_addr = htonl(erab_ctx_req.transport_layer_address.to_number());
-  m_s1ap_log->console("Sent Initial Context Setup Request. E-RAB id %d \n", erab_ctx_req.erab_id);
+  srslte::console("Sent Initial Context Setup Request. E-RAB id %d \n", erab_ctx_req.erab_id);
   m_s1ap_log->info(
       "Initial Context -- S1-U TEID 0x%" PRIx64 ". IP %s \n", erab_ctx_req.gtp_teid.to_number(), inet_ntoa(addr));
   m_s1ap_log->info("Initial Context Setup Request -- eNB UE S1AP Id %d, MME UE S1AP Id %" PRIu64 "\n",
@@ -194,7 +194,7 @@ bool s1ap_ctx_mngmt_proc::handle_initial_context_setup_response(
   emm_ctx_t* emm_ctx = &nas_ctx->m_emm_ctx;
   ecm_ctx_t* ecm_ctx = &nas_ctx->m_ecm_ctx;
 
-  m_s1ap_log->console("Received Initial Context Setup Response\n");
+  srslte::console("Received Initial Context Setup Response\n");
 
   // Setup E-RABs
   for (const asn1::s1ap::protocol_ie_single_container_s<asn1::s1ap::erab_setup_item_ctxt_su_res_ies_o>& ie_container :
@@ -229,14 +229,13 @@ bool s1ap_ctx_mngmt_proc::handle_initial_context_setup_response(
 
     m_s1ap_log->info("E-RAB Context Setup. E-RAB id %d\n", esm_ctx->erab_id);
     m_s1ap_log->info("E-RAB Context -- eNB TEID 0x%x, eNB Address %s\n", esm_ctx->enb_fteid.teid, enb_addr_str);
-    m_s1ap_log->console("E-RAB Context Setup. E-RAB id %d\n", esm_ctx->erab_id);
-    m_s1ap_log->console(
-        "E-RAB Context -- eNB TEID 0x%x; eNB GTP-U Address %s\n", esm_ctx->enb_fteid.teid, enb_addr_str);
+    srslte::console("E-RAB Context Setup. E-RAB id %d\n", esm_ctx->erab_id);
+    srslte::console("E-RAB Context -- eNB TEID 0x%x; eNB GTP-U Address %s\n", esm_ctx->enb_fteid.teid, enb_addr_str);
   }
 
   if (emm_ctx->state == EMM_STATE_REGISTERED) {
-    m_s1ap_log->console("Initial Context Setup Response triggered from Service Request.\n");
-    m_s1ap_log->console("Sending Modify Bearer Request.\n");
+    srslte::console("Initial Context Setup Response triggered from Service Request.\n");
+    srslte::console("Sending Modify Bearer Request.\n");
     m_mme_gtpc->send_modify_bearer_request(emm_ctx->imsi, 5, &nas_ctx->m_esm_ctx[5].enb_fteid);
   }
   return true;
@@ -247,34 +246,24 @@ bool s1ap_ctx_mngmt_proc::handle_ue_context_release_request(const asn1::s1ap::ue
 {
   uint32_t mme_ue_s1ap_id = ue_rel.protocol_ies.mme_ue_s1ap_id.value.value;
   m_s1ap_log->info("Received UE Context Release Request. MME-UE S1AP Id: %d\n", mme_ue_s1ap_id);
-  m_s1ap_log->console("Received UE Context Release Request. MME-UE S1AP Id %d\n", mme_ue_s1ap_id);
+  srslte::console("Received UE Context Release Request. MME-UE S1AP Id %d\n", mme_ue_s1ap_id);
 
   nas* nas_ctx = m_s1ap->find_nas_ctx_from_mme_ue_s1ap_id(mme_ue_s1ap_id);
   if (nas_ctx == nullptr) {
     m_s1ap_log->info("No UE context to release found. MME-UE S1AP Id: %d\n", mme_ue_s1ap_id);
-    m_s1ap_log->console("No UE context to release found. MME-UE S1AP Id: %d\n", mme_ue_s1ap_id);
+    srslte::console("No UE context to release found. MME-UE S1AP Id: %d\n", mme_ue_s1ap_id);
     return false;
   }
 
   emm_ctx_t* emm_ctx = &nas_ctx->m_emm_ctx;
   ecm_ctx_t* ecm_ctx = &nas_ctx->m_ecm_ctx;
 
-  // Delete user plane context at the SPGW (but keep GTP-C connection).
+  // Send release context command to eNB, so that it can release it's bearers
   if (ecm_ctx->state == ECM_STATE_CONNECTED) {
-    // There are active E-RABs, send release access mearers request
-    m_s1ap_log->console("There are active E-RABs, send release access bearers request\n");
-    m_s1ap_log->info("There are active E-RABs, send release access bearers request\n");
-
-    // The handle_release_access_bearers_response function will make sure to mark E-RABS DEACTIVATED
-    // It will release the UEs downstream S1-u and keep the upstream S1-U connection active.
-    m_mme_gtpc->send_release_access_bearers_request(emm_ctx->imsi);
-
-    // Send release context command to enb, so that it can release it's bearers
     send_ue_context_release_command(nas_ctx);
   } else {
     // No ECM Context to release
     m_s1ap_log->info("UE is not ECM connected. No need to release S1-U. MME UE S1AP Id %d\n", mme_ue_s1ap_id);
-    m_s1ap_log->console("UE is not ECM connected. No need to release S1-U. MME UE S1AP Id %d\n", mme_ue_s1ap_id);
     // Make sure E-RABS are marked as DEACTIVATED.
     for (esm_ctx_t& esm_ctx : nas_ctx->m_esm_ctx) {
       esm_ctx.state = ERAB_DEACTIVATED;
@@ -287,6 +276,42 @@ bool s1ap_ctx_mngmt_proc::handle_ue_context_release_request(const asn1::s1ap::ue
 
 bool s1ap_ctx_mngmt_proc::send_ue_context_release_command(nas* nas_ctx)
 {
+  emm_ctx_t* emm_ctx = &nas_ctx->m_emm_ctx;
+  ecm_ctx_t* ecm_ctx = &nas_ctx->m_ecm_ctx;
+
+  if (ecm_ctx->state != ECM_STATE_CONNECTED) {
+    m_s1ap_log->error("UE is not ECM connected. No send context release command. MME UE S1AP Id %d\n",
+                      ecm_ctx->mme_ue_s1ap_id);
+    return false;
+  }
+
+  // Detect weather there are active E-RABs
+  bool active_erabs = false;
+  for (esm_ctx_t& esm_ctx : nas_ctx->m_esm_ctx) {
+    if (esm_ctx.state != ERAB_DEACTIVATED) {
+      active_erabs = true;
+      break;
+    }
+  }
+
+  // On some circumstances, such as the NAS Detach, the UE context has already been cleared from
+  // the SPGW. In such cases, there is no need to send the GTP-C Release Access Bearers Request.
+  if (active_erabs) {
+    // There are active E-RABs, send release access mearers request
+    srslte::console("There are active E-RABs, send release access bearers request\n");
+    m_s1ap_log->info("There are active E-RABs, send release access bearers request\n");
+
+    // The handle_release_access_bearers_response function will make sure to mark E-RABS DEACTIVATED
+    // It will release the UEs downstream S1-u and keep the upstream S1-U connection active.
+    m_mme_gtpc->send_release_access_bearers_request(emm_ctx->imsi);
+  }
+
+  // Mark ECM state as IDLE and de-activate E-RABs
+  ecm_ctx->state = ECM_STATE_IDLE;
+  for (esm_ctx_t& esm_ctx : nas_ctx->m_esm_ctx) {
+    esm_ctx.state = ERAB_DEACTIVATED;
+  }
+
   // Prepare reply PDU
   s1ap_pdu_t tx_pdu;
   tx_pdu.set_init_msg().load_info_obj(ASN1_S1AP_ID_UE_CONTEXT_RELEASE);
@@ -313,39 +338,19 @@ bool s1ap_ctx_mngmt_proc::handle_ue_context_release_complete(const asn1::s1ap::u
 {
   uint32_t mme_ue_s1ap_id = rel_comp.protocol_ies.mme_ue_s1ap_id.value.value;
   m_s1ap_log->info("Received UE Context Release Complete. MME-UE S1AP Id: %d\n", mme_ue_s1ap_id);
-  m_s1ap_log->console("Received UE Context Release Complete. MME-UE S1AP Id %d\n", mme_ue_s1ap_id);
+  srslte::console("Received UE Context Release Complete. MME-UE S1AP Id %d\n", mme_ue_s1ap_id);
 
   nas* nas_ctx = m_s1ap->find_nas_ctx_from_mme_ue_s1ap_id(mme_ue_s1ap_id);
   if (nas_ctx == nullptr) {
     m_s1ap_log->info("No UE context to release found. MME-UE S1AP Id: %d\n", mme_ue_s1ap_id);
-    m_s1ap_log->console("No UE context to release found. MME-UE S1AP Id: %d\n", mme_ue_s1ap_id);
+    srslte::console("No UE context to release found. MME-UE S1AP Id: %d\n", mme_ue_s1ap_id);
     return false;
-  }
-  emm_ctx_t* emm_ctx = &nas_ctx->m_emm_ctx;
-  ecm_ctx_t* ecm_ctx = &nas_ctx->m_ecm_ctx;
-
-  // Delete user plane context at the SPGW (but keep GTP-C connection).
-  if (ecm_ctx->state == ECM_STATE_CONNECTED) {
-    // There are active E-RABs, send release access mearers request
-    m_s1ap_log->console("There are active E-RABs, send release access bearers request\n");
-    m_s1ap_log->info("There are active E-RABs, send release access bearers request\n");
-    m_mme_gtpc->send_release_access_bearers_request(emm_ctx->imsi);
-    // The handle_release_access_bearers_response function will make sure to mark E-RABS DEACTIVATED
-    // It will release the UEs downstream S1-U and keep the upstream S1-U connection active.
-  } else {
-    // No ECM Context to release
-    m_s1ap_log->info("UE is not ECM connected. No need to release S1-U. MME UE S1AP Id %d\n", mme_ue_s1ap_id);
-    m_s1ap_log->console("UE is not ECM connected. No need to release S1-U. MME UE S1AP Id %d\n", mme_ue_s1ap_id);
-    // Make sure E-RABS are marked as DEACTIVATED.
-    for (esm_ctx_t& esm_ctx : nas_ctx->m_esm_ctx) {
-      esm_ctx.state = ERAB_DEACTIVATED;
-    }
   }
 
   // Delete UE context
   m_s1ap->release_ue_ecm_ctx(nas_ctx->m_ecm_ctx.mme_ue_s1ap_id);
   m_s1ap_log->info("UE Context Release Completed.\n");
-  m_s1ap_log->console("UE Context Release Completed.\n");
+  srslte::console("UE Context Release Completed.\n");
   return true;
 }
 } // namespace srsepc

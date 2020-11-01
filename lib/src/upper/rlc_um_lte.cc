@@ -135,10 +135,10 @@ int rlc_um_lte::rlc_um_lte_tx::build_data_pdu(unique_byte_buffer_t pdu, uint8_t*
   int pdu_space = SRSLTE_MIN(nof_bytes, pdu->get_tailroom());
 
   if (pdu_space <= head_len + 1) {
-    log->warning("%s Cannot build a PDU - %d bytes available, %d bytes required for header\n",
-                 rb_name.c_str(),
-                 nof_bytes,
-                 head_len);
+    log->info("%s Cannot build a PDU - %d bytes available, %d bytes required for header\n",
+              rb_name.c_str(),
+              nof_bytes,
+              head_len);
     return 0;
   }
 
@@ -167,12 +167,18 @@ int rlc_um_lte::rlc_um_lte_tx::build_data_pdu(unique_byte_buffer_t pdu, uint8_t*
   // Pull SDUs from queue
   while (pdu_space > head_len + 1 && tx_sdu_queue.size() > 0) {
     log->debug("pdu_space=%d, head_len=%d\n", pdu_space, head_len);
-    if (last_li > 0)
+    if (last_li > 0) {
       header.li[header.N_li++] = last_li;
+    }
     head_len       = rlc_um_packed_length(&header);
-    tx_sdu         = tx_sdu_queue.read();
     uint32_t space = pdu_space - head_len;
-    to_move        = space >= tx_sdu->N_bytes ? tx_sdu->N_bytes : space;
+    if (space == 0) {
+      // we cannot even fit a single byte of the newly added SDU, remove it again
+      header.N_li--;
+      break;
+    }
+    tx_sdu  = tx_sdu_queue.read();
+    to_move = (space >= tx_sdu->N_bytes) ? tx_sdu->N_bytes : space;
     log->debug("%s adding new SDU segment - %d bytes of %d remaining\n", rb_name.c_str(), to_move, tx_sdu->N_bytes);
     memcpy(pdu_ptr, tx_sdu->msg, to_move);
     last_li = to_move;
@@ -200,18 +206,22 @@ int rlc_um_lte::rlc_um_lte_tx::build_data_pdu(unique_byte_buffer_t pdu, uint8_t*
   // Add header and TX
   rlc_um_write_data_pdu_header(&header, pdu.get());
   memcpy(payload, pdu->msg, pdu->N_bytes);
-  uint32_t ret = pdu->N_bytes;
 
-  log->info_hex(payload, ret, "%s Tx PDU SN=%d (%d B)\n", rb_name.c_str(), header.sn, pdu->N_bytes);
+  log->info_hex(payload, pdu->N_bytes, "%s Tx PDU SN=%d (%d B)\n", rb_name.c_str(), header.sn, pdu->N_bytes);
 
   debug_state();
 
-  return ret;
+  return pdu->N_bytes;
 }
 
 void rlc_um_lte::rlc_um_lte_tx::debug_state()
 {
   log->debug("%s vt_us = %d\n", rb_name.c_str(), vt_us);
+}
+
+void rlc_um_lte::rlc_um_lte_tx::reset()
+{
+  vt_us = 0;
 }
 
 /****************************************************************************
@@ -282,17 +292,17 @@ void rlc_um_lte::rlc_um_lte_rx::handle_data_pdu(uint8_t* payload, uint32_t nof_b
 {
   rlc_umd_pdu_header_t header;
   rlc_um_read_data_pdu_header(payload, nof_bytes, cfg.um.rx_sn_field_length, &header);
-  log->info_hex(payload, nof_bytes, "RX %s Rx data PDU SN: %d (%d B)", rb_name.c_str(), header.sn, nof_bytes);
+  log->info_hex(payload, nof_bytes, "RX %s Rx data PDU SN=%d (%d B)", rb_name.c_str(), header.sn, nof_bytes);
 
   if (RX_MOD_BASE(header.sn) >= RX_MOD_BASE(vr_uh - cfg.um.rx_window_size) &&
       RX_MOD_BASE(header.sn) < RX_MOD_BASE(vr_ur)) {
-    log->info("%s SN: %d outside rx window [%d:%d] - discarding\n", rb_name.c_str(), header.sn, vr_ur, vr_uh);
+    log->info("%s SN=%d outside rx window [%d:%d] - discarding\n", rb_name.c_str(), header.sn, vr_ur, vr_uh);
     return;
   }
 
   std::map<uint32_t, rlc_umd_pdu_t>::iterator it = rx_window.find(header.sn);
   if (rx_window.end() != it) {
-    log->info("%s Discarding duplicate SN: %d\n", rb_name.c_str(), header.sn);
+    log->info("%s Discarding duplicate SN=%d\n", rb_name.c_str(), header.sn);
     return;
   }
 
@@ -369,11 +379,12 @@ void rlc_um_lte::rlc_um_lte_rx::reassemble_rx_sdus()
                        vr_ur);
         // Check if we received a middle or end segment
         if (rx_sdu->N_bytes == 0 && i == 0 && !rlc_um_start_aligned(rx_window[vr_ur].header.fi)) {
-          log->warning("Dropping PDU %d due to lost start segment\n", vr_ur);
+          log->warning("Dropping PDU %d in reassembly due to lost start segment\n", vr_ur);
           // Advance data pointers and continue with next segment
           rx_window[vr_ur].buf->msg += len;
           rx_window[vr_ur].buf->N_bytes -= len;
           rx_sdu->clear();
+          metrics.num_lost_pdus++;
           break;
         }
 
@@ -387,6 +398,7 @@ void rlc_um_lte::rlc_um_lte_rx::reassemble_rx_sdus()
                        vr_ur,
                        vr_ur_in_rx_sdu);
           rx_sdu->clear();
+          metrics.num_lost_pdus++;
         } else {
           log->info_hex(rx_sdu->msg,
                         rx_sdu->N_bytes,
@@ -395,6 +407,8 @@ void rlc_um_lte::rlc_um_lte_rx::reassemble_rx_sdus()
                         vr_ur,
                         i);
           rx_sdu->set_timestamp();
+          metrics.num_rx_sdus++;
+          metrics.num_rx_sdu_bytes += rx_sdu->N_bytes;
           if (cfg.um.is_mrb) {
             pdcp->write_pdu_mch(lcid, std::move(rx_sdu));
           } else {
@@ -423,10 +437,13 @@ void rlc_um_lte::rlc_um_lte_rx::reassemble_rx_sdus()
           if (pdu_lost && !rlc_um_start_aligned(rx_window[vr_ur].header.fi)) {
             log->warning("Dropping remainder of lost PDU (lower edge last segments)\n");
             rx_sdu->clear();
+            metrics.num_lost_pdus++;
           } else {
             log->info_hex(
                 rx_sdu->msg, rx_sdu->N_bytes, "%s Rx SDU vr_ur=%d (lower edge last segments)", rb_name.c_str(), vr_ur);
             rx_sdu->set_timestamp();
+            metrics.num_rx_sdus++;
+            metrics.num_rx_sdu_bytes += rx_sdu->N_bytes;
             if (cfg.um.is_mrb) {
               pdcp->write_pdu_mch(lcid, std::move(rx_sdu));
             } else {
@@ -472,10 +489,10 @@ void rlc_um_lte::rlc_um_lte_rx::reassemble_rx_sdus()
       // Check if the first part of the PDU is a middle or end segment
       if (rx_sdu->N_bytes == 0 && i == 0 && !rlc_um_start_aligned(rx_window[vr_ur].header.fi)) {
         log->warning_hex(
-            rx_window[vr_ur].buf->msg, len, "Dropping first %d B of SN %d due to lost start segment\n", len, vr_ur);
+            rx_window[vr_ur].buf->msg, len, "Dropping first %d B of SN=%d due to lost start segment\n", len, vr_ur);
 
         if (rx_window[vr_ur].buf->N_bytes < len) {
-          log->error("Dropping remaining remainder of SN %d too (N_bytes=%u < len=%d)\n",
+          log->error("Dropping remaining remainder of SN=%d too (N_bytes=%u < len=%d)\n",
                      vr_ur,
                      rx_window[vr_ur].buf->N_bytes,
                      len);
@@ -486,6 +503,7 @@ void rlc_um_lte::rlc_um_lte_rx::reassemble_rx_sdus()
         rx_window[vr_ur].buf->msg += len;
         rx_window[vr_ur].buf->N_bytes -= len;
         rx_sdu->clear();
+        metrics.num_lost_pdus++;
 
         // Reset flag, it is safe to process all remaining segments of this PDU
         pdu_lost = false;
@@ -499,6 +517,7 @@ void rlc_um_lte::rlc_um_lte_rx::reassemble_rx_sdus()
                    rx_sdu->N_bytes,
                    len);
         rx_sdu->clear();
+        metrics.num_lost_pdus++;
         goto clean_up_rx_window;
       }
 
@@ -534,6 +553,8 @@ void rlc_um_lte::rlc_um_lte_rx::reassemble_rx_sdus()
                       vr_ur,
                       i);
         rx_sdu->set_timestamp();
+        metrics.num_rx_sdus++;
+        metrics.num_rx_sdu_bytes += rx_sdu->N_bytes;
         if (cfg.um.is_mrb) {
           pdcp->write_pdu_mch(lcid, std::move(rx_sdu));
         } else {
@@ -551,6 +572,7 @@ void rlc_um_lte::rlc_um_lte_rx::reassemble_rx_sdus()
         // Advance data pointers and continue with next segment
         rx_window[vr_ur].buf->msg += len;
         rx_window[vr_ur].buf->N_bytes -= len;
+        metrics.num_lost_pdus++;
       }
       pdu_lost = false;
     }
@@ -558,8 +580,9 @@ void rlc_um_lte::rlc_um_lte_rx::reassemble_rx_sdus()
     // Handle last segment
     if (rx_sdu->N_bytes == 0 && rx_window[vr_ur].header.N_li == 0 &&
         !rlc_um_start_aligned(rx_window[vr_ur].header.fi)) {
-      log->warning("Dropping PDU %d due to lost start segment\n", vr_ur);
+      log->warning("Dropping PDU %d during last segment handling due to lost start segment\n", vr_ur);
       rx_sdu->clear();
+      metrics.num_lost_pdus++;
       goto clean_up_rx_window;
     }
 
@@ -587,10 +610,13 @@ void rlc_um_lte::rlc_um_lte_rx::reassemble_rx_sdus()
       if (pdu_lost && !rlc_um_start_aligned(rx_window[vr_ur].header.fi)) {
         log->warning("Dropping remainder of lost PDU (update vr_ur last segments)\n");
         rx_sdu->clear();
+        metrics.num_lost_pdus++;
       } else {
         log->info_hex(
             rx_sdu->msg, rx_sdu->N_bytes, "%s Rx SDU vr_ur=%d (update vr_ur last segments)", rb_name.c_str(), vr_ur);
         rx_sdu->set_timestamp();
+        metrics.num_rx_sdus++;
+        metrics.num_rx_sdu_bytes += rx_sdu->N_bytes;
         if (cfg.um.is_mrb) {
           pdcp->write_pdu_mch(lcid, std::move(rx_sdu));
         } else {
@@ -647,7 +673,7 @@ void rlc_um_lte::rlc_um_lte_rx::timer_expired(uint32_t timeout_id)
     // 36.322 v10 Section 5.1.2.2.4
     log->info("%s reordering timeout expiry - updating vr_ur and reassembling\n", rb_name.c_str());
 
-    log->warning("Lost PDU SN: %d\n", vr_ur);
+    log->warning("Lost PDU SN=%d\n", vr_ur);
 
     pdu_lost = true;
     if (rx_sdu != NULL) {

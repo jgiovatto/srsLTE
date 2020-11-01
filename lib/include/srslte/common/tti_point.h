@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 Software Radio Systems Limited
+ * Copyright 2013-2020 Software Radio Systems Limited
  *
  * This file is part of srsLTE.
  *
@@ -23,6 +23,7 @@
 #define SRSLTE_TTI_POINT_H
 
 #include "logmap.h"
+#include "srslte/adt/interval.h"
 #include <cstdint>
 #include <limits>
 
@@ -129,6 +130,8 @@ inline tti_point to_tx_dl_ack(const srslte::tti_point& t)
 {
   return to_tx_ul(t);
 }
+
+using tti_interval = srslte::interval<srslte::tti_point>;
 
 } // namespace srslte
 

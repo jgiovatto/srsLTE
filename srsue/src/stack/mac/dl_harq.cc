@@ -175,7 +175,6 @@ dl_harq_entity::dl_harq_process::dl_tb_process::dl_tb_process()
   n_retx       = 0;
   bzero(&cur_grant, sizeof(mac_interface_phy_lte::mac_grant_dl_t));
   payload_buffer_ptr = NULL;
-  pthread_mutex_init(&mutex, NULL);
 }
 
 dl_harq_entity::dl_harq_process::dl_tb_process::~dl_tb_process()
@@ -211,7 +210,7 @@ bool dl_harq_entity::dl_harq_process::dl_tb_process::init(int pid, dl_harq_entit
 void dl_harq_entity::dl_harq_process::dl_tb_process::reset(bool lock)
 {
   if (lock) {
-    pthread_mutex_lock(&mutex);
+    mutex.lock();
   }
 
   bzero(&cur_grant, sizeof(mac_interface_phy_lte::mac_grant_dl_t));
@@ -226,12 +225,8 @@ void dl_harq_entity::dl_harq_process::dl_tb_process::reset(bool lock)
     payload_buffer_ptr = NULL;
   }
 
-  if (is_initiated && lock) {
-    srslte_softbuffer_rx_reset(&softbuffer);
-  }
-
   if (lock) {
-    pthread_mutex_unlock(&mutex);
+    mutex.unlock();
   }
 }
 
@@ -244,7 +239,7 @@ void dl_harq_entity::dl_harq_process::dl_tb_process::new_grant_dl(mac_interface_
                                                                   mac_interface_phy_lte::tb_action_dl_t* action)
 {
 
-  pthread_mutex_lock(&mutex);
+  mutex.lock();
 
   // Compute RV for BCCH when not specified in PDCCH format
   if (is_bcch && grant.tb[tid].rv == -1) {
@@ -263,10 +258,10 @@ void dl_harq_entity::dl_harq_process::dl_tb_process::new_grant_dl(mac_interface_
   // If this is a new transmission or the size of the TB has changed
   if (is_new_transmission || (cur_grant.tb[tid].tbs != grant.tb[tid].tbs)) {
     if (!is_new_transmission) {
-      Warning("DL PID %d: Size of dci changed during a retransmission %d!=%d\n",
-              pid,
-              cur_grant.tb[tid].tbs,
-              grant.tb[tid].tbs);
+      Debug("DL PID %d: Size of dci changed during a retransmission %d!=%d\n",
+            pid,
+            cur_grant.tb[tid].tbs,
+            grant.tb[tid].tbs);
     }
     ack    = false;
     n_retx = 0;
@@ -369,7 +364,7 @@ void dl_harq_entity::dl_harq_process::dl_tb_process::tb_decoded(mac_interface_ph
          cur_grant.tb[tid].ndi);
   }
 
-  pthread_mutex_unlock(&mutex);
+  mutex.unlock();
 
   if (ack && is_bcch) {
     reset();
@@ -380,7 +375,6 @@ void dl_harq_entity::dl_harq_process::dl_tb_process::tb_decoded(mac_interface_ph
 bool dl_harq_entity::dl_harq_process::dl_tb_process::calc_is_new_transmission(
     mac_interface_phy_lte::mac_grant_dl_t grant)
 {
-
   if (((grant.tb[tid].ndi_present &&
         grant.tb[tid].ndi != cur_grant.tb[tid].ndi) || // 1st condition (NDI provided and has changed)
        (is_bcch && grant.tb[tid].rv == 0) ||           // 2nd condition (Broadcast and 1st transmission)

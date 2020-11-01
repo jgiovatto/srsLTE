@@ -41,35 +41,31 @@ namespace srsue {
 class sf_worker : public srslte::thread_pool::worker
 {
 public:
-  sf_worker(uint32_t            max_prb,
-            phy_common*         phy,
-            srslte::log*        log,
-            srslte::log*        log_phy_lib_h,
-            chest_feedback_itf* chest_loop);
+  sf_worker(uint32_t max_prb, phy_common* phy, srslte::log* log, srslte::log* log_phy_lib_h);
   virtual ~sf_worker();
-  void reset();
 
-  bool set_cell(uint32_t cc_idx, srslte_cell_t cell);
+  void reset_cell_unlocked(uint32_t cc_idx);
+  bool set_cell_unlocked(uint32_t cc_idx, srslte_cell_t cell_);
 
   /* Functions used by main PHY thread */
   cf_t*    get_buffer(uint32_t cc_idx, uint32_t antenna_idx);
   uint32_t get_buffer_len();
   void     set_tti(uint32_t tti);
-  void     set_tx_time(srslte_timestamp_t tx_time);
+  void     set_tx_time(const srslte::rf_timestamp_t& tx_time);
   void     set_prach(cf_t* prach_ptr, float prach_power);
-  void     set_cfo(const uint32_t& cc_idx, float cfo);
+  void     set_cfo_unlocked(const uint32_t& cc_idx, float cfo);
 
-  void set_tdd_config(srslte_tdd_config_t config);
-  void set_config(uint32_t cc_idx, srslte::phy_cfg_t& phy_cfg);
-  void set_crnti(uint16_t rnti);
-  void enable_pregen_signals(bool enabled);
+  void set_tdd_config_unlocked(srslte_tdd_config_t config);
+  void set_config_unlocked(uint32_t cc_idx, srslte::phy_cfg_t phy_cfg);
+  void set_crnti_unlocked(uint16_t rnti);
+  void enable_pregen_signals_unlocked(bool enabled);
 
   ///< Methods for plotting called from GUI thread
   int      read_ce_abs(float* ce_abs, uint32_t tx_antenna, uint32_t rx_antenna);
   uint32_t get_cell_nof_ports()
   {
     // wait until cell is initialized
-    std::unique_lock<std::mutex> lock(mutex);
+    std::unique_lock<std::mutex> lock(cell_mutex);
     while (!cell_initiated) {
       cell_init_cond.wait(lock);
     }
@@ -77,7 +73,6 @@ public:
   }
   uint32_t get_rx_nof_antennas() { return phy->args->nof_rx_ant; }
   int      read_pdsch_d(cf_t* pdsch_d);
-  float    get_sync_error();
   float    get_cfo();
   void     start_plot();
 
@@ -96,23 +91,19 @@ private:
 
   srslte::log* log_phy_lib_h = nullptr;
 
-  chest_feedback_itf* chest_loop = nullptr;
-
-  std::mutex mutex;
-
-  srslte_cell_t       cell       = {};
+  srslte_cell_t       cell = {};
+  std::mutex          cell_mutex;
   srslte_tdd_config_t tdd_config = {};
 
   std::condition_variable cell_init_cond;
-  bool cell_initiated = false;
+  bool                    cell_initiated = false;
 
   cf_t* prach_ptr   = nullptr;
   float prach_power = 0;
 
-  uint32_t           tti         = 0;
-  srslte_timestamp_t tx_time     = {};
+  uint32_t               tti     = 0;
+  srslte::rf_timestamp_t tx_time = {};
 
-  uint32_t rssi_read_cnt = 0;
 };
 
 } // namespace srsue

@@ -72,6 +72,16 @@ void rlc::init(srsue::pdcp_interface_rlc* pdcp_,
   add_bearer(default_lcid, rlc_config_t());
 }
 
+void rlc::init(srsue::pdcp_interface_rlc* pdcp_,
+               srsue::rrc_interface_rlc*  rrc_,
+               srslte::timer_handler*     timers_,
+               uint32_t                   lcid_,
+               bsr_callback_t             bsr_callback_)
+{
+  init(pdcp_, rrc_, timers_, lcid_);
+  bsr_callback = bsr_callback_;
+}
+
 void rlc::reset_metrics()
 {
   for (rlc_map_t::iterator it = rlc_array.begin(); it != rlc_array.end(); ++it) {
@@ -103,8 +113,8 @@ void rlc::get_metrics(rlc_metrics_t& m)
     rlc_bearer_metrics_t metrics = it->second->get_metrics();
     rlc_log->info("LCID=%d, RX throughput: %4.6f Mbps. TX throughput: %4.6f Mbps.\n",
                   it->first,
-                  (metrics.num_rx_bytes * 8 / static_cast<double>(1e6)) / secs,
-                  (metrics.num_tx_bytes * 8 / static_cast<double>(1e6)) / secs);
+                  (metrics.num_rx_pdu_bytes * 8 / static_cast<double>(1e6)) / secs,
+                  (metrics.num_tx_pdu_bytes * 8 / static_cast<double>(1e6)) / secs);
     m.bearer[it->first] = metrics;
   }
 
@@ -113,7 +123,7 @@ void rlc::get_metrics(rlc_metrics_t& m)
     rlc_bearer_metrics_t metrics = it->second->get_metrics();
     rlc_log->info("MCH_LCID=%d, RX throughput: %4.6f Mbps\n",
                   it->first,
-                  (metrics.num_rx_bytes * 8 / static_cast<double>(1e6)) / secs);
+                  (metrics.num_rx_pdu_bytes * 8 / static_cast<double>(1e6)) / secs);
     m.bearer[it->first] = metrics;
   }
 
@@ -140,7 +150,7 @@ void rlc::reestablish(uint32_t lcid)
     rlc_log->info("Reestablishing LCID %d\n", lcid);
     rlc_array.at(lcid)->reestablish();
   } else {
-    rlc_log->warning("RLC LCID %d doesn't exist. Deallocating SDU\n", lcid);
+    rlc_log->warning("RLC LCID %d doesn't exist.\n", lcid);
   }
 }
 
@@ -172,10 +182,10 @@ void rlc::empty_queue()
 }
 
 /*******************************************************************************
-  PDCP interface
+  PDCP interface (called from Stack thread and therefore no lock required)
 *******************************************************************************/
 
-void rlc::write_sdu(uint32_t lcid, unique_byte_buffer_t sdu, bool blocking)
+void rlc::write_sdu(uint32_t lcid, unique_byte_buffer_t sdu)
 {
   // TODO: rework build PDU logic to allow large SDUs (without concatenation)
   if (sdu->N_bytes > RLC_MAX_SDU_SIZE) {
@@ -184,7 +194,8 @@ void rlc::write_sdu(uint32_t lcid, unique_byte_buffer_t sdu, bool blocking)
   }
 
   if (valid_lcid(lcid)) {
-    rlc_array.at(lcid)->write_sdu_s(std::move(sdu), blocking);
+    rlc_array.at(lcid)->write_sdu_s(std::move(sdu));
+    update_bsr(lcid);
   } else {
     rlc_log->warning("RLC LCID %d doesn't exist. Deallocating SDU\n", lcid);
   }
@@ -193,7 +204,8 @@ void rlc::write_sdu(uint32_t lcid, unique_byte_buffer_t sdu, bool blocking)
 void rlc::write_sdu_mch(uint32_t lcid, unique_byte_buffer_t sdu)
 {
   if (valid_lcid_mrb(lcid)) {
-    rlc_array_mrb.at(lcid)->write_sdu(std::move(sdu), false); // write in non-blocking mode by default
+    rlc_array_mrb.at(lcid)->write_sdu(std::move(sdu));
+    update_bsr_mch(lcid);
   } else {
     rlc_log->warning("RLC LCID %d doesn't exist. Deallocating SDU\n", lcid);
   }
@@ -216,33 +228,28 @@ void rlc::discard_sdu(uint32_t lcid, uint32_t discard_sn)
 {
   if (valid_lcid(lcid)) {
     rlc_array.at(lcid)->discard_sdu(discard_sn);
+    update_bsr(lcid);
   } else {
     rlc_log->warning("RLC LCID %d doesn't exist. Ignoring discard SDU\n", lcid);
   }
 }
 
-/*******************************************************************************
-  MAC interface
-*******************************************************************************/
-bool rlc::has_data(uint32_t lcid)
+bool rlc::sdu_queue_is_full(uint32_t lcid)
 {
-  bool has_data = false;
-
   if (valid_lcid(lcid)) {
-    has_data = rlc_array.at(lcid)->has_data();
+    return rlc_array.at(lcid)->sdu_queue_is_full();
   }
-
-  return has_data;
+  rlc_log->warning("RLC LCID %d doesn't exist. Ignoring queue check\n", lcid);
+  return false;
 }
-bool rlc::is_suspended(const uint32_t lcid)
+
+/*******************************************************************************
+  MAC interface (mostly called from PHY workers, lock needs to be hold)
+*******************************************************************************/
+bool rlc::has_data_locked(const uint32_t lcid)
 {
-  bool ret = false;
-
-  if (valid_lcid(lcid)) {
-    ret = rlc_array.at(lcid)->is_suspended();
-  }
-
-  return ret;
+  rwlock_read_guard lock(rwlock);
+  return has_data(lcid);
 }
 
 uint32_t rlc::get_buffer_state(uint32_t lcid)
@@ -266,7 +273,6 @@ uint32_t rlc::get_total_mch_buffer_state(uint32_t lcid)
   uint32_t ret = 0;
 
   rwlock_read_guard lock(rwlock);
-
   if (valid_lcid_mrb(lcid)) {
     ret = rlc_array_mrb.at(lcid)->get_buffer_state();
   }
@@ -281,6 +287,7 @@ int rlc::read_pdu(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes)
   rwlock_read_guard lock(rwlock);
   if (valid_lcid(lcid)) {
     ret = rlc_array.at(lcid)->read_pdu(payload, nof_bytes);
+    update_bsr(lcid);
   } else {
     rlc_log->warning("LCID %d doesn't exist.\n", lcid);
   }
@@ -295,6 +302,7 @@ int rlc::read_pdu_mch(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes)
   rwlock_read_guard lock(rwlock);
   if (valid_lcid_mrb(lcid)) {
     ret = rlc_array_mrb.at(lcid)->read_pdu(payload, nof_bytes);
+    update_bsr_mch(lcid);
   } else {
     rlc_log->warning("LCID %d doesn't exist.\n", lcid);
   }
@@ -302,10 +310,12 @@ int rlc::read_pdu_mch(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes)
   return ret;
 }
 
+// Write PDU methods are called from Stack thread context, no need to acquire the lock
 void rlc::write_pdu(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes)
 {
   if (valid_lcid(lcid)) {
     rlc_array.at(lcid)->write_pdu_s(payload, nof_bytes);
+    update_bsr(lcid);
   } else {
     rlc_log->warning("LCID %d doesn't exist. Dropping PDU.\n", lcid);
   }
@@ -348,20 +358,42 @@ void rlc::write_pdu_mch(uint32_t lcid, uint8_t* payload, uint32_t nof_bytes)
 }
 
 /*******************************************************************************
-  RRC interface
+  RRC interface (write-lock ONLY needs to be hold for all calls modifying the RLC array)
 *******************************************************************************/
+bool rlc::is_suspended(const uint32_t lcid)
+{
+  bool ret = false;
 
+  if (valid_lcid(lcid)) {
+    ret = rlc_array.at(lcid)->is_suspended();
+  }
+
+  return ret;
+}
+
+bool rlc::has_data(uint32_t lcid)
+{
+  bool has_data = false;
+
+  if (valid_lcid(lcid)) {
+    has_data = rlc_array.at(lcid)->has_data();
+  }
+
+  return has_data;
+}
+
+// Methods modifying the RLC array need to acquire the write-lock
 void rlc::add_bearer(uint32_t lcid, const rlc_config_t& cnfg)
 {
   rwlock_write_guard lock(rwlock);
 
-  rlc_common* rlc_entity = NULL;
+  rlc_common* rlc_entity = nullptr;
 
   if (not valid_lcid(lcid)) {
     if (cnfg.rat == srslte_rat_t::lte) {
       switch (cnfg.rlc_mode) {
         case rlc_mode_t::tm:
-          rlc_entity = new rlc_tm(rlc_log, lcid, pdcp, rrc, timers);
+          rlc_entity = new rlc_tm(rlc_log, lcid, pdcp, rrc);
           break;
         case rlc_mode_t::am:
           rlc_entity = new rlc_am_lte(rlc_log, lcid, pdcp, rrc, timers);
@@ -373,11 +405,14 @@ void rlc::add_bearer(uint32_t lcid, const rlc_config_t& cnfg)
           rlc_log->error("Cannot add RLC entity - invalid mode\n");
           return;
       }
+      if (rlc_entity != nullptr) {
+        rlc_entity->set_bsr_callback(bsr_callback);
+      }
 #ifdef HAVE_5GNR
     } else if (cnfg.rat == srslte_rat_t::nr) {
       switch (cnfg.rlc_mode) {
         case rlc_mode_t::tm:
-          rlc_entity = new rlc_tm(rlc_log, lcid, pdcp, rrc, timers);
+          rlc_entity = new rlc_tm(rlc_log, lcid, pdcp, rrc);
           break;
         case rlc_mode_t::um:
           rlc_entity = new rlc_um_nr(rlc_log, lcid, pdcp, rrc, timers);
@@ -505,6 +540,7 @@ void rlc::change_lcid(uint32_t old_lcid, uint32_t new_lcid)
   }
 }
 
+// Further RRC calls executed from Stack thread, no need to hold lock
 void rlc::suspend_bearer(uint32_t lcid)
 {
   if (valid_lcid(lcid)) {
@@ -541,7 +577,6 @@ bool rlc::has_bearer(uint32_t lcid)
 /*******************************************************************************
   Helpers (Lock must be hold when calling those)
 *******************************************************************************/
-
 bool rlc::valid_lcid(uint32_t lcid)
 {
   if (lcid >= SRSLTE_N_RADIO_BEARERS) {
@@ -568,6 +603,38 @@ bool rlc::valid_lcid_mrb(uint32_t lcid)
   }
 
   return true;
+}
+
+void rlc::update_bsr(uint32_t lcid)
+{
+  if (bsr_callback) {
+    uint32_t tx_queue   = get_buffer_state(lcid);
+    uint32_t retx_queue = 0; // todo: separate tx_queue and retx_queue
+    bsr_callback(lcid, tx_queue, retx_queue);
+  }
+}
+
+void rlc::update_bsr_mch(uint32_t lcid)
+{
+  if (bsr_callback) {
+    uint32_t tx_queue   = get_total_mch_buffer_state(lcid);
+    uint32_t retx_queue = 0; // todo: separate tx_queue and retx_queue
+    bsr_callback(lcid, tx_queue, retx_queue);
+  }
+}
+
+void rlc_bearer_metrics_print(const rlc_bearer_metrics_t& metrics)
+{
+  std::cout << "num_tx_sdus=" << metrics.num_tx_sdus << "\n";
+  std::cout << "num_rx_sdus=" << metrics.num_rx_sdus << "\n";
+  std::cout << "num_tx_sdu_bytes=" << metrics.num_tx_sdu_bytes << "\n";
+  std::cout << "num_rx_sdu_bytes=" << metrics.num_rx_sdu_bytes << "\n";
+  std::cout << "num_tx_pdus=" << metrics.num_tx_pdus << "\n";
+  std::cout << "num_rx_pdus=" << metrics.num_rx_pdus << "\n";
+  std::cout << "num_tx_pdu_bytes=" << metrics.num_tx_pdu_bytes << "\n";
+  std::cout << "num_rx_pdu_bytes=" << metrics.num_rx_pdu_bytes << "\n";
+  std::cout << "num_lost_pdus=" << metrics.num_lost_pdus << "\n";
+  std::cout << "num_lost_sdus=" << metrics.num_lost_sdus << "\n";
 }
 
 } // namespace srslte

@@ -163,31 +163,39 @@ void srslte_pucch_free_rnti(srslte_pucch_t* q, uint16_t rnti)
 
 int srslte_pucch_set_rnti(srslte_pucch_t* q, uint16_t rnti)
 {
-
   uint32_t rnti_idx = q->is_ue ? 0 : rnti;
-  if (!q->users[rnti_idx] || q->is_ue) {
+
+  // Decide whether re-generating the sequence
+  if (!q->users[rnti_idx]) {
+    // If the sequence is not allocated generate
+    q->users[rnti_idx] = calloc(1, sizeof(srslte_pdsch_user_t));
     if (!q->users[rnti_idx]) {
-      q->users[rnti_idx] = calloc(1, sizeof(srslte_pucch_user_t));
-      if (!q->users[rnti_idx]) {
-        perror("calloc");
-        return -1;
-      }
+      ERROR("Alocating PDSCH user\n");
+      return SRSLTE_ERROR;
     }
-    q->users[rnti_idx]->sequence_generated = false;
-    for (uint32_t sf_idx = 0; sf_idx < SRSLTE_NOF_SF_X_FRAME; sf_idx++) {
-      // Precompute scrambling sequence for pucch format 2
-      if (srslte_sequence_pucch(&q->users[rnti_idx]->seq_f2[sf_idx], rnti, 2 * sf_idx, q->cell.id)) {
-        ERROR("Error computing PUCCH Format 2 scrambling sequence\n");
-        srslte_pucch_free_rnti(q, rnti);
-        return SRSLTE_ERROR;
-      }
-    }
-    q->ue_rnti                             = rnti;
-    q->users[rnti_idx]->cell_id            = q->cell.id;
-    q->users[rnti_idx]->sequence_generated = true;
-  } else {
-    ERROR("Error generating PUSCH sequence: rnti=0x%x already generated\n", rnti);
+  } else if (q->users[rnti_idx]->sequence_generated && q->users[rnti_idx]->cell_id == q->cell.id && !q->is_ue) {
+    // The sequence was generated, cell has not changed and it is eNb, save any efforts
+    return SRSLTE_SUCCESS;
   }
+
+  // Set sequence as not generated
+  q->users[rnti_idx]->sequence_generated = false;
+
+  // For each subframe
+  for (int sf_idx = 0; sf_idx < SRSLTE_NOF_SF_X_FRAME; sf_idx++) {
+    if (srslte_sequence_pucch(
+            &q->users[rnti_idx]->seq_f2[sf_idx], rnti, SRSLTE_NOF_SLOTS_PER_SF * sf_idx, q->cell.id)) {
+      ERROR("Error initializing PUCCH scrambling sequence\n");
+      srslte_pucch_free_rnti(q, rnti);
+      return SRSLTE_ERROR;
+    }
+  }
+
+  // Save generation states
+  q->ue_rnti                             = rnti;
+  q->users[rnti_idx]->cell_id            = q->cell.id;
+  q->users[rnti_idx]->sequence_generated = true;
+
   return SRSLTE_SUCCESS;
 }
 
@@ -801,7 +809,7 @@ static bool decode_signal(srslte_pucch_t*     q,
       break;
     case SRSLTE_PUCCH_FORMAT_3:
       corr     = (float)decode_signal_format3(q, sf, cfg, pucch_bits, q->z) / 4800.0f;
-      detected = true;
+      detected = corr > cfg->threshold_data_valid_format3;
       break;
     default:
       ERROR("PUCCH format %d not implemented\n", cfg->format);
@@ -823,7 +831,7 @@ static void decode_bits(srslte_pucch_cfg_t* cfg,
     uint32_t nof_ack = srslte_uci_cfg_total_ack(&cfg->uci_cfg);
     memcpy(uci_data->ack.ack_value, pucch_bits, nof_ack);
     uci_data->scheduling_request = (pucch_bits[nof_ack] == 1);
-    uci_data->ack.valid          = true;
+    uci_data->ack.valid          = pucch_found;
   } else {
     // If was looking for scheduling request, update value
     if (cfg->uci_cfg.is_scheduling_request_tti) {
@@ -1386,6 +1394,10 @@ void srslte_pucch_rx_info(srslte_pucch_cfg_t* cfg, srslte_pucch_res_t* pucch_res
 
     n = srslte_print_check(str, str_len, n, ", corr=%.3f", pucch_res->correlation);
 
-    srslte_uci_data_info(&cfg->uci_cfg, &pucch_res->uci_data, &str[n], str_len - n);
+    n += srslte_uci_data_info(&cfg->uci_cfg, &pucch_res->uci_data, &str[n], str_len - n);
+
+    if (pucch_res->ta_valid) {
+      n = srslte_print_check(str, str_len, n, ", ta=%.1f us", pucch_res->ta_us);
+    }
   }
 }

@@ -52,10 +52,11 @@
 #define SRSLTE_PUCCH_CS_MAX_CARRIERS 2
 #define SRSLTE_PUCCH_FORMAT3_MAX_CARRIERS 5
 
-#define SRSLTE_PUCCH_DEFAULT_THRESHOLD_FORMAT1 (0.2f)
-#define SRSLTE_PUCCH_DEFAULT_THRESHOLD_FORMAT1A (0.2f)
-#define SRSLTE_PUCCH_DEFAULT_THRESHOLD_FORMAT2 (0.2f)
-#define SRSLTE_PUCCH_DEFAULT_THRESHOLD_DMRS (0.2f)
+#define SRSLTE_PUCCH_DEFAULT_THRESHOLD_FORMAT1 (0.5f)
+#define SRSLTE_PUCCH_DEFAULT_THRESHOLD_FORMAT1A (0.5f)
+#define SRSLTE_PUCCH_DEFAULT_THRESHOLD_FORMAT2 (0.5f)
+#define SRSLTE_PUCCH_DEFAULT_THRESHOLD_FORMAT3 (0.5f)
+#define SRSLTE_PUCCH_DEFAULT_THRESHOLD_DMRS (0.4f)
 
 typedef struct {
   srslte_sequence_t seq_f2[SRSLTE_NOF_SF_X_FRAME];
@@ -93,6 +94,10 @@ typedef struct SRSLTE_API {
   float              dmrs_correlation;
   float              correlation;
   bool               detected;
+
+  // PUCCH Measurements
+  bool  ta_valid;
+  float ta_us;
 } srslte_pucch_res_t;
 
 SRSLTE_API int srslte_pucch_init_ue(srslte_pucch_t* q);

@@ -75,7 +75,9 @@ typedef struct SRSLTE_API {
   float threshold_format1;
   float threshold_data_valid_format1a;
   float threshold_data_valid_format2;
+  float threshold_data_valid_format3;
   float threshold_dmrs_detection;
+  bool  meas_ta_en;
 
   // PUCCH configuration generated during a call to encode/decode
   srslte_pucch_format_t format;

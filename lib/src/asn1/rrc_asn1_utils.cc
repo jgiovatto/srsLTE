@@ -59,6 +59,25 @@ void to_asn1(asn1::rrc::plmn_id_s* asn1_type, const plmn_id_t& cfg)
   std::copy(&cfg.mnc[0], &cfg.mnc[cfg.nof_mnc_digits], &asn1_type->mnc[0]);
 }
 
+plmn_id_t make_plmn_id_t(const asn1::fixed_octstring<3, true>& asn1_type) // used for NGAP/S1AP
+{
+  plmn_id_t plmn;
+  uint16_t  mcc, mnc;
+  uint32_t  encoded_plmn = asn1_type.to_number();
+  s1ap_plmn_to_mccmnc(encoded_plmn, &mcc, &mnc);
+  plmn.from_number(mcc, mnc);
+  return plmn;
+}
+
+void to_asn1(asn1::fixed_octstring<3, true>* asn1_type, const plmn_id_t& cfg)
+{
+  uint16_t mcc, mnc;
+  cfg.to_number(&mcc, &mnc);
+  uint32_t encoded_plmn;
+  s1ap_mccmnc_to_plmn(mcc, mnc, &encoded_plmn);
+  asn1_type->from_number(encoded_plmn);
+}
+
 /***************************
  *        s-TMSI
  **************************/
@@ -214,8 +233,8 @@ srslte::pdcp_config_t make_drb_pdcp_config_t(const uint8_t bearer_id, bool is_ue
 
 srslte::pdcp_config_t make_drb_pdcp_config_t(const uint8_t bearer_id, bool is_ue, const asn1::rrc::pdcp_cfg_s& pdcp_cfg)
 {
-  // TODO: complete config processing 
-  pdcp_discard_timer_t discard_timer =  pdcp_discard_timer_t::infinity;
+  // TODO: complete config processing
+  pdcp_discard_timer_t discard_timer = pdcp_discard_timer_t::infinity;
   if (pdcp_cfg.discard_timer_present) {
     switch (pdcp_cfg.discard_timer.to_number()) {
       case 10:
@@ -588,6 +607,7 @@ void set_phy_cfg_t_common_prach(phy_cfg_t* cfg, const asn1::rrc::prach_cfg_info_
     cfg->prach_cfg.hs_flag        = asn1_type->high_speed_flag;
   }
   cfg->prach_cfg.root_seq_idx = root_seq_idx;
+  cfg->prach_cfg_present      = true;
 }
 
 void set_phy_cfg_t_common_pdsch(phy_cfg_t* cfg, const asn1::rrc::pdsch_cfg_common_s& asn1_type)
@@ -877,9 +897,11 @@ static void set_rrc_ue_eutra_cap_t_gen(rrc_ue_capabilities_t&                   
   ; // Do nothing
 }
 
-void set_rrc_ue_capabilities_t(rrc_ue_capabilities_t& ue_cap, const asn1::rrc::ue_eutra_cap_s& eutra_cap_s)
+rrc_ue_capabilities_t make_rrc_ue_capabilities(const asn1::rrc::ue_eutra_cap_s& eutra_cap_s)
 {
+  rrc_ue_capabilities_t ue_cap;
   set_rrc_ue_eutra_cap_t_gen(ue_cap, eutra_cap_s);
+  return ue_cap;
 }
 
 // MBMS
@@ -1082,6 +1104,60 @@ bool operator==(const asn1::rrc::quant_cfg_s& lhs, const asn1::rrc::quant_cfg_s&
          lhs.quant_cfg_eutra.filt_coef_rsrp == rhs.quant_cfg_eutra.filt_coef_rsrp and
          lhs.quant_cfg_eutra.filt_coef_rsrq_present == rhs.quant_cfg_eutra.filt_coef_rsrq_present and
          lhs.quant_cfg_eutra.filt_coef_rsrq == rhs.quant_cfg_eutra.filt_coef_rsrq;
+}
+
+/**************************
+ *     RRC Obj Id
+ *************************/
+
+uint8_t get_rrc_obj_id(const srb_to_add_mod_s& srb)
+{
+  return srb.srb_id;
+}
+uint8_t get_rrc_obj_id(const drb_to_add_mod_s& drb)
+{
+  return drb.drb_id;
+}
+uint8_t get_rrc_obj_id(const cells_to_add_mod_s& obj)
+{
+  return obj.cell_idx;
+}
+uint8_t get_rrc_obj_id(const meas_obj_to_add_mod_s& obj)
+{
+  return obj.meas_obj_id;
+}
+uint8_t get_rrc_obj_id(const report_cfg_to_add_mod_s& obj)
+{
+  return obj.report_cfg_id;
+}
+uint8_t get_rrc_obj_id(const meas_id_to_add_mod_s& obj)
+{
+  return obj.meas_id;
+}
+
+void set_rrc_obj_id(srb_to_add_mod_s& srb, uint8_t id)
+{
+  srb.srb_id = id;
+}
+void set_rrc_obj_id(drb_to_add_mod_s& drb, uint8_t id)
+{
+  drb.drb_id = id;
+}
+void set_rrc_obj_id(cells_to_add_mod_s& obj, uint8_t id)
+{
+  obj.cell_idx = id;
+}
+void set_rrc_obj_id(meas_obj_to_add_mod_s& obj, uint8_t id)
+{
+  obj.meas_obj_id = id;
+}
+void set_rrc_obj_id(report_cfg_to_add_mod_s& obj, uint8_t id)
+{
+  obj.report_cfg_id = id;
+}
+void set_rrc_obj_id(meas_id_to_add_mod_s& obj, uint8_t id)
+{
+  obj.meas_id = id;
 }
 
 } // namespace rrc

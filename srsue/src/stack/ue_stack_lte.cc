@@ -25,35 +25,31 @@
 #include <algorithm>
 #include <chrono>
 #include <numeric>
+#include <thread>
 
 using namespace srslte;
 
 namespace srsue {
 
 ue_stack_lte::ue_stack_lte() :
-  timers(64),
   running(false),
   args(),
   logger(nullptr),
   usim(nullptr),
   phy(nullptr),
   rlc("RLC"),
-  mac("MAC "),
-  rrc(this),
-  pdcp(this, "PDCP"),
-  nas(this),
+  mac("MAC", &task_sched),
+  rrc(this, &task_sched),
+  pdcp(&task_sched, "PDCP"),
+  nas(&task_sched),
   thread("STACK"),
-  pending_tasks(512),
-  background_tasks(2),
+  task_sched(512, 2, 64),
   tti_tprof("tti_tprof", "STCK", TTI_STAT_PERIOD)
 {
-  ue_queue_id         = pending_tasks.add_queue();
-  sync_queue_id       = pending_tasks.add_queue();
-  gw_queue_id         = pending_tasks.add_queue();
-  stack_queue_id      = pending_tasks.add_queue();
-  background_queue_id = pending_tasks.add_queue();
-
-  background_tasks.start();
+  ue_task_queue  = task_sched.make_task_queue();
+  gw_queue_id    = task_sched.make_task_queue();
+  cfg_task_queue = task_sched.make_task_queue();
+  // sync_queue is added in init()
 }
 
 ue_stack_lte::~ue_stack_lte()
@@ -120,12 +116,15 @@ int ue_stack_lte::init(const stack_args_t& args_, srslte::logger* logger_)
   // Init USIM first to allow early exit in case reader couldn't be found
   usim = usim_base::get_instance(&args.usim, usim_log.get());
   if (usim->init(&args.usim)) {
-    usim_log->console("Failed to initialize USIM.\n");
+    srslte::console("Failed to initialize USIM.\n");
     return SRSLTE_ERROR;
   }
 
-  mac.init(phy, &rlc, &rrc, this);
-  rlc.init(&pdcp, &rrc, &timers, 0 /* RB_ID_SRB0 */);
+  // add sync queue
+  sync_task_queue = task_sched.make_task_queue(args.sync_queue_size);
+
+  mac.init(phy, &rlc, &rrc);
+  rlc.init(&pdcp, &rrc, task_sched.get_timer_handler(), 0 /* RB_ID_SRB0 */);
   pdcp.init(&rlc, &rrc, gw);
   nas.init(usim.get(), &rrc, gw, args.nas);
   rrc.init(phy, &mac, &rlc, &pdcp, &nas, usim.get(), gw, args.rrc);
@@ -139,7 +138,7 @@ int ue_stack_lte::init(const stack_args_t& args_, srslte::logger* logger_)
 void ue_stack_lte::stop()
 {
   if (running) {
-    pending_tasks.try_push(ue_queue_id, [this]() { stop_impl(); });
+    ue_task_queue.try_push([this]() { stop_impl(); });
     wait_thread_finish();
   }
 }
@@ -167,8 +166,7 @@ void ue_stack_lte::stop_impl()
 bool ue_stack_lte::switch_on()
 {
   if (running) {
-    pending_tasks.try_push(ue_queue_id,
-                           [this]() { nas.start_attach_proc(nullptr, srslte::establishment_cause_t::mo_sig); });
+    ue_task_queue.try_push([this]() { nas.start_attach_proc(nullptr, srslte::establishment_cause_t::mo_sig); });
     return true;
   }
   return false;
@@ -180,15 +178,13 @@ bool ue_stack_lte::switch_off()
   nas.detach_request(true);
 
   // wait for max. 5s for it to be sent (according to TS 24.301 Sec 25.5.2.2)
-  const uint32_t RB_ID_SRB1 = 1;
-  int            cnt = 0, timeout = 5000;
-
-  while (rlc.has_data(RB_ID_SRB1) && ++cnt <= timeout) {
-    usleep(1000);
+  int cnt = 0, timeout_ms = 5000;
+  while (not rrc.srbs_flushed() && ++cnt <= timeout_ms) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
   bool detach_sent = true;
-  if (rlc.has_data(RB_ID_SRB1)) {
-    logmap::get("NAS ")->warning("Detach couldn't be sent after %ds.\n", timeout);
+  if (not rrc.srbs_flushed()) {
+    logmap::get("NAS ")->warning("Detach couldn't be sent after %dms.\n", timeout_ms);
     detach_sent = false;
   }
 
@@ -198,21 +194,21 @@ bool ue_stack_lte::switch_off()
 bool ue_stack_lte::enable_data()
 {
   // perform attach request
-  stack_log->console("Turning off airplane mode.\n");
+  srslte::console("Turning off airplane mode.\n");
   return switch_on();
 }
 
 bool ue_stack_lte::disable_data()
 {
   // generate detach request
-  stack_log->console("Turning on airplane mode.\n");
+  srslte::console("Turning on airplane mode.\n");
   return nas.detach_request(false);
 }
 
 bool ue_stack_lte::get_metrics(stack_metrics_t* metrics)
 {
   // use stack thread to query metrics
-  pending_tasks.try_push(ue_queue_id, [this]() {
+  ue_task_queue.try_push([this]() {
     stack_metrics_t metrics{};
     mac.get_metrics(metrics.mac);
     rlc.get_metrics(metrics.rlc);
@@ -228,10 +224,7 @@ bool ue_stack_lte::get_metrics(stack_metrics_t* metrics)
 void ue_stack_lte::run_thread()
 {
   while (running) {
-    srslte::move_task_t task{};
-    if (pending_tasks.wait_pop(&task) >= 0) {
-      task();
-    }
+    task_sched.run_next_task();
   }
 }
 
@@ -249,15 +242,37 @@ void ue_stack_lte::run_thread()
  * @param sdu
  * @param blocking
  */
-void ue_stack_lte::write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu, bool blocking)
+void ue_stack_lte::write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu)
 {
-  auto task = [this, lcid, blocking](srslte::unique_byte_buffer_t& sdu) {
-    pdcp.write_sdu(lcid, std::move(sdu), blocking);
-  };
-  bool ret = pending_tasks.try_push(gw_queue_id, std::bind(task, std::move(sdu))).first;
+  auto task = [this, lcid](srslte::unique_byte_buffer_t& sdu) { pdcp.write_sdu(lcid, std::move(sdu)); };
+  bool ret  = gw_queue_id.try_push(std::bind(task, std::move(sdu))).first;
   if (not ret) {
     pdcp_log->warning("GW SDU with lcid=%d was discarded.\n", lcid);
   }
+}
+
+/********************
+ *  PHY Interface
+ *******************/
+
+void ue_stack_lte::cell_search_complete(cell_search_ret_t ret, phy_cell_t found_cell)
+{
+  cfg_task_queue.push([this, ret, found_cell]() { rrc.cell_search_complete(ret, found_cell); });
+}
+
+void ue_stack_lte::cell_select_complete(bool status)
+{
+  cfg_task_queue.push([this, status]() { rrc.cell_select_complete(status); });
+}
+
+void ue_stack_lte::set_config_complete(bool status)
+{
+  cfg_task_queue.push([this, status]() { rrc.set_config_complete(status); });
+}
+
+void ue_stack_lte::set_scell_complete(bool status)
+{
+  cfg_task_queue.push([this, status]() { rrc.set_scell_complete(status); });
 }
 
 /********************
@@ -269,17 +284,19 @@ void ue_stack_lte::write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu, bo
  */
 void ue_stack_lte::in_sync()
 {
-  pending_tasks.push(sync_queue_id, [this]() { rrc.in_sync(); });
+  sync_task_queue.push([this]() { rrc.in_sync(); });
 }
 
 void ue_stack_lte::out_of_sync()
 {
-  pending_tasks.push(sync_queue_id, [this]() { rrc.out_of_sync(); });
+  sync_task_queue.push([this]() { rrc.out_of_sync(); });
 }
 
 void ue_stack_lte::run_tti(uint32_t tti, uint32_t tti_jump)
 {
-  pending_tasks.push(sync_queue_id, [this, tti, tti_jump]() { run_tti_impl(tti, tti_jump); });
+  if (running) {
+    sync_task_queue.push([this, tti, tti_jump]() { run_tti_impl(tti, tti_jump); });
+  }
 }
 
 void ue_stack_lte::run_tti_impl(uint32_t tti, uint32_t tti_jump)
@@ -289,17 +306,11 @@ void ue_stack_lte::run_tti_impl(uint32_t tti, uint32_t tti_jump)
   }
   current_tti = tti_point{tti};
 
-  // Perform pending stack deferred tasks
-  for (auto& task : deferred_stack_tasks) {
-    task();
-  }
-  deferred_stack_tasks.clear();
-
   // perform tasks for the received TTI range
   for (uint32_t i = 0; i < tti_jump; ++i) {
     uint32_t next_tti = TTI_SUB(tti, (tti_jump - i - 1));
     mac.run_tti(next_tti);
-    timers.step_all();
+    task_sched.tic();
   }
   rrc.run_tti();
   nas.run_tti();
@@ -314,57 +325,9 @@ void ue_stack_lte::run_tti_impl(uint32_t tti, uint32_t tti_jump)
   }
 
   // print warning if PHY pushes new TTI messages faster than we process them
-  if (pending_tasks.size(sync_queue_id) > SYNC_QUEUE_WARN_THRESHOLD) {
-    stack_log->warning("Detected slow task processing (sync_queue_len=%zd).\n", pending_tasks.size(sync_queue_id));
+  if (sync_task_queue.size() > SYNC_QUEUE_WARN_THRESHOLD) {
+    stack_log->warning("Detected slow task processing (sync_queue_len=%zd).\n", sync_task_queue.size());
   }
-}
-
-/***************************
- * Task Handling Interface
- **************************/
-
-void ue_stack_lte::enqueue_background_task(std::function<void(uint32_t)> f)
-{
-  background_tasks.push_task(std::move(f));
-}
-
-void ue_stack_lte::notify_background_task_result(srslte::move_task_t task)
-{
-  // run the notification in the stack thread
-  pending_tasks.push(background_queue_id, std::move(task));
-}
-
-void ue_stack_lte::defer_callback(uint32_t duration_ms, std::function<void()> func)
-{
-  timers.defer_callback(duration_ms, func);
-}
-
-void ue_stack_lte::defer_task(srslte::move_task_t task)
-{
-  deferred_stack_tasks.push_back(std::move(task));
-}
-
-/********************
- *  RRC Interface
- *******************/
-
-void ue_stack_lte::start_cell_search()
-{
-  background_tasks.push_task([this](uint32_t worker_id) {
-    phy_interface_rrc_lte::phy_cell_t        found_cell;
-    phy_interface_rrc_lte::cell_search_ret_t ret = phy->cell_search(&found_cell);
-    // notify back RRC
-    pending_tasks.push(background_queue_id, [this, found_cell, ret]() { rrc.cell_search_completed(ret, found_cell); });
-  });
-}
-
-void ue_stack_lte::start_cell_select(const phy_interface_rrc_lte::phy_cell_t* phy_cell)
-{
-  background_tasks.push_task([this, phy_cell](uint32_t worker_id) {
-    bool ret = phy->cell_select(phy_cell);
-    // notify back RRC
-    pending_tasks.push(background_queue_id, [this, ret]() { rrc.cell_select_completed(ret); });
-  });
 }
 
 } // namespace srsue

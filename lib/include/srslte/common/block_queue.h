@@ -29,6 +29,7 @@
 #ifndef SRSLTE_BLOCK_QUEUE_H
 #define SRSLTE_BLOCK_QUEUE_H
 
+#include "srslte/adt/expected.h"
 #include <memory>
 #include <pthread.h>
 #include <queue>
@@ -93,7 +94,7 @@ public:
 
   bool try_push(const myobj& value) { return push_(value, false); }
 
-  std::pair<bool, myobj> try_push(myobj&& value) { return push_(std::move(value), false); }
+  srslte::error_type<myobj> try_push(myobj&& value) { return push_(std::move(value), false); }
 
   bool try_pop(myobj* value) { return pop_(value, false); }
 
@@ -108,6 +109,14 @@ public:
   { // queue is empty?
     pthread_mutex_lock(&mutex);
     bool ret = q.empty();
+    pthread_mutex_unlock(&mutex);
+    return ret;
+  }
+
+  bool full()
+  { // queue is full?
+    pthread_mutex_lock(&mutex);
+    bool ret = not check_queue_space_unlocked(false);
     pthread_mutex_unlock(&mutex);
     return ret;
   }
@@ -159,7 +168,6 @@ private:
   bool check_queue_space_unlocked(bool block)
   {
     num_threads++;
-    bool ret = false;
     if (capacity > 0) {
       if (block) {
         while (q.size() >= (uint32_t)capacity && enable) {
@@ -178,10 +186,10 @@ private:
     return true;
   }
 
-  std::pair<bool, myobj> push_(myobj&& value, bool block)
+  srslte::error_type<myobj> push_(myobj&& value, bool block)
   {
     if (!enable) {
-      return std::make_pair(false, std::move(value));
+      return std::move(value);
     }
     pthread_mutex_lock(&mutex);
     bool ret = check_queue_space_unlocked(block);
@@ -190,10 +198,12 @@ private:
         mutexed_callback->pushing(value);
       }
       q.push(std::move(value));
+      pthread_mutex_unlock(&mutex);
       pthread_cond_signal(&cv_empty);
+      return {};
     }
     pthread_mutex_unlock(&mutex);
-    return std::make_pair(ret, std::move(value));
+    return std::move(value);
   }
 
   bool push_(const myobj& value, bool block)

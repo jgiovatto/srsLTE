@@ -43,6 +43,13 @@ const uint8_t PDCP_SN_LEN_18 = 18;
 
 typedef enum { PDCP_RB_IS_SRB, PDCP_RB_IS_DRB } pdcp_rb_type_t;
 
+enum pdcp_dc_field_t {
+  PDCP_DC_FIELD_CONTROL_PDU = 0,
+  PDCP_DC_FIELD_DATA_PDU,
+  PDCP_DC_FIELD_N_ITEMS,
+};
+static const char* pdcp_dc_field_text[PDCP_DC_FIELD_N_ITEMS] = {"Control PDU", "Data PDU"};
+
 // Taken from PDCP-Config (TS 38.331 version 15.2.1)
 enum class pdcp_t_reordering_t {
   ms0    = 0,
@@ -136,6 +143,20 @@ public:
 
   // TODO: Support the following configurations
   // bool do_rohc;
+};
+
+// Specifies in which direction security (integrity and ciphering) are enabled for PDCP
+enum srslte_direction_t { DIRECTION_NONE = 0, DIRECTION_TX, DIRECTION_RX, DIRECTION_TXRX, DIRECTION_N_ITEMS };
+static const char* srslte_direction_text[DIRECTION_N_ITEMS] = {"none", "tx", "rx", "tx/rx"};
+
+// PDCP LTE internal state variables, as defined in TS 36 323, section 7.1
+struct pdcp_lte_state_t {
+  uint32_t next_pdcp_tx_sn;
+  uint32_t tx_hfn;
+  uint32_t rx_hfn;
+  uint32_t next_pdcp_rx_sn;
+  uint32_t last_submitted_pdcp_rx_sn;
+  uint32_t reordering_pdcp_rx_count;
 };
 
 } // namespace srslte

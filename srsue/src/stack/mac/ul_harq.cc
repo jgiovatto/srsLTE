@@ -101,7 +101,7 @@ void ul_harq_entity::new_grant_ul(mac_interface_phy_lte::mac_grant_ul_t  grant,
       Info("Not implemented\n");
     }
   } else {
-    Warning("Received grant for unknown rnti=0x%x\n", grant.rnti);
+    Info("Received grant for unknown rnti=0x%x\n", grant.rnti);
   }
 }
 
@@ -169,7 +169,6 @@ void ul_harq_entity::ul_harq_process::reset()
   current_irv         = 0;
   is_grant_configured = false;
   bzero(&cur_grant, sizeof(mac_interface_phy_lte::mac_grant_ul_t));
-  payload_buffer->clear();
 }
 
 void ul_harq_entity::ul_harq_process::reset_ndi()
@@ -231,10 +230,6 @@ void ul_harq_entity::ul_harq_process::new_grant_ul(mac_interface_phy_lte::mac_gr
       // New transmission
       reset();
 
-      if (grant.rnti == harq_entity->rntis->crnti && harq_entity->ra_procedure->is_contention_resolution()) {
-        harq_entity->ra_procedure->pdcch_to_crnti(true);
-      }
-
       // Check buffer size
       if (grant.tb.tbs > payload_buffer_len) {
         Error("Grant size exceeds payload buffer size (%d > %d)\n", grant.tb.tbs, payload_buffer_len);
@@ -244,7 +239,7 @@ void ul_harq_entity::ul_harq_process::new_grant_ul(mac_interface_phy_lte::mac_gr
       // Uplink dci in a RAR and there is a PDU in the Msg3 buffer
       if (grant.is_rar) {
         if (harq_entity->mux_unit->msg3_is_pending()) {
-          Debug("Getting Msg3 buffer payload, dci size=%d bytes\n", grant.tb.tbs);
+          Debug("Getting Msg3 buffer payload, grant size=%d bytes\n", grant.tb.tbs);
           pdu_ptr = harq_entity->mux_unit->msg3_get(payload_buffer.get(), grant.tb.tbs);
           if (pdu_ptr) {
             generate_new_tx(grant, action);
@@ -263,6 +258,10 @@ void ul_harq_entity::ul_harq_process::new_grant_ul(mac_interface_phy_lte::mac_gr
         } else {
           Warning("Uplink dci but no MAC PDU in Multiplex Unit buffer\n");
         }
+      }
+
+      if (grant.rnti == harq_entity->rntis->crnti && harq_entity->ra_procedure->is_contention_resolution()) {
+        harq_entity->ra_procedure->pdcch_to_crnti(true);
       }
     } else if (has_grant()) {
       // Adaptive Re-TX
@@ -367,6 +366,8 @@ void ul_harq_entity::ul_harq_process::generate_new_tx(mac_interface_phy_lte::mac
   is_grant_configured       = true;
   current_tx_nb             = 0;
   current_irv               = 0;
+
+  action->is_rar = grant.is_rar || (grant.rnti == harq_entity->rntis->temp_rnti);
 
   Info("UL %d:  New TX%s, RV=%d, TBS=%d\n",
        pid,

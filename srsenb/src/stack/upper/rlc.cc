@@ -57,7 +57,13 @@ void rlc::add_user(uint16_t rnti)
   pthread_rwlock_rdlock(&rwlock);
   if (users.count(rnti) == 0) {
     std::unique_ptr<srslte::rlc> obj(new srslte::rlc(log_h->get_service_name().c_str()));
-    obj->init(&users[rnti], &users[rnti], timers, RB_ID_SRB0);
+    obj->init(&users[rnti],
+              &users[rnti],
+              timers,
+              RB_ID_SRB0,
+              [rnti, this](uint32_t lcid, uint32_t tx_queue, uint32_t retx_queue) {
+                update_bsr(rnti, lcid, tx_queue, retx_queue);
+              });
     users[rnti].rnti   = rnti;
     users[rnti].pdcp   = pdcp;
     users[rnti].rrc    = rrc;
@@ -85,7 +91,9 @@ void rlc::clear_buffer(uint16_t rnti)
   if (users.count(rnti)) {
     users[rnti].rlc->empty_queue();
     for (int i = 0; i < SRSLTE_N_RADIO_BEARERS; i++) {
-      mac->rlc_buffer_state(rnti, i, 0, 0);
+      if (users[rnti].rlc->has_bearer(i)) {
+        mac->rlc_buffer_state(rnti, i, 0, 0);
+      }
     }
     log_h->info("Cleared buffer rnti=0x%x\n", rnti);
   }
@@ -121,6 +129,15 @@ bool rlc::has_bearer(uint16_t rnti, uint32_t lcid)
   return result;
 }
 
+void rlc::del_bearer(uint16_t rnti, uint32_t lcid)
+{
+  pthread_rwlock_rdlock(&rwlock);
+  if (users.count(rnti)) {
+    users[rnti].rlc->del_bearer(lcid);
+  }
+  pthread_rwlock_unlock(&rwlock);
+}
+
 bool rlc::suspend_bearer(uint16_t rnti, uint32_t lcid)
 {
   pthread_rwlock_rdlock(&rwlock);
@@ -145,6 +162,23 @@ bool rlc::resume_bearer(uint16_t rnti, uint32_t lcid)
   return result;
 }
 
+void rlc::reestablish(uint16_t rnti)
+{
+  pthread_rwlock_rdlock(&rwlock);
+  if (users.count(rnti)) {
+    users[rnti].rlc->reestablish();
+  }
+  pthread_rwlock_unlock(&rwlock);
+}
+
+// In the eNodeB, there is no polling for buffer state from the scheduler.
+// This function is called by UE RLC instance every time the tx/retx buffers are updated
+void rlc::update_bsr(uint32_t rnti, uint32_t lcid, uint32_t tx_queue, uint32_t retx_queue)
+{
+  log_h->debug("Buffer state: rnti=0x%x, lcid=%d, tx_queue=%d\n", rnti, lcid, tx_queue);
+  mac->rlc_buffer_state(rnti, lcid, tx_queue, retx_queue);
+}
+
 void rlc::read_pdu_pcch(uint8_t* payload, uint32_t buffer_size)
 {
   rrc->read_pdu_pcch(payload, buffer_size);
@@ -152,24 +186,15 @@ void rlc::read_pdu_pcch(uint8_t* payload, uint32_t buffer_size)
 
 int rlc::read_pdu(uint16_t rnti, uint32_t lcid, uint8_t* payload, uint32_t nof_bytes)
 {
-  int      ret;
-  uint32_t tx_queue;
+  int ret;
 
   pthread_rwlock_rdlock(&rwlock);
   if (users.count(rnti)) {
     if (rnti != SRSLTE_MRNTI) {
-      ret      = users[rnti].rlc->read_pdu(lcid, payload, nof_bytes);
-      tx_queue = users[rnti].rlc->get_buffer_state(lcid);
+      ret = users[rnti].rlc->read_pdu(lcid, payload, nof_bytes);
     } else {
-      ret      = users[rnti].rlc->read_pdu_mch(lcid, payload, nof_bytes);
-      tx_queue = users[rnti].rlc->get_total_mch_buffer_state(lcid);
+      ret = users[rnti].rlc->read_pdu_mch(lcid, payload, nof_bytes);
     }
-    // In the eNodeB, there is no polling for buffer state from the scheduler, thus
-    // communicate buffer state every time a PDU is read
-
-    uint32_t retx_queue = 0;
-    log_h->debug("Buffer state PDCP: rnti=0x%x, lcid=%d, tx_queue=%d\n", rnti, lcid, tx_queue);
-    mac->rlc_buffer_state(rnti, lcid, tx_queue, retx_queue);
   } else {
     ret = SRSLTE_ERROR;
   }
@@ -182,36 +207,19 @@ void rlc::write_pdu(uint16_t rnti, uint32_t lcid, uint8_t* payload, uint32_t nof
   pthread_rwlock_rdlock(&rwlock);
   if (users.count(rnti)) {
     users[rnti].rlc->write_pdu(lcid, payload, nof_bytes);
-
-    // In the eNodeB, there is no polling for buffer state from the scheduler, thus
-    // communicate buffer state every time a new PDU is written
-    uint32_t tx_queue   = users[rnti].rlc->get_buffer_state(lcid);
-    uint32_t retx_queue = 0;
-    log_h->debug("Buffer state PDCP: rnti=0x%x, lcid=%d, tx_queue=%d\n", rnti, lcid, tx_queue);
-    mac->rlc_buffer_state(rnti, lcid, tx_queue, retx_queue);
   }
   pthread_rwlock_unlock(&rwlock);
 }
 
 void rlc::write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu)
 {
-  uint32_t tx_queue;
-
   pthread_rwlock_rdlock(&rwlock);
   if (users.count(rnti)) {
     if (rnti != SRSLTE_MRNTI) {
-      users[rnti].rlc->write_sdu(lcid, std::move(sdu), false);
-      tx_queue = users[rnti].rlc->get_buffer_state(lcid);
+      users[rnti].rlc->write_sdu(lcid, std::move(sdu));
     } else {
       users[rnti].rlc->write_sdu_mch(lcid, std::move(sdu));
-      tx_queue = users[rnti].rlc->get_total_mch_buffer_state(lcid);
     }
-    // In the eNodeB, there is no polling for buffer state from the scheduler, thus
-    // communicate buffer state every time a new SDU is written
-
-    uint32_t retx_queue = 0;
-    mac->rlc_buffer_state(rnti, lcid, tx_queue, retx_queue);
-    log_h->info("Buffer state: rnti=0x%x, lcid=%d, tx_queue=%d\n", rnti, lcid, tx_queue);
   }
   pthread_rwlock_unlock(&rwlock);
 }
@@ -221,13 +229,6 @@ void rlc::discard_sdu(uint16_t rnti, uint32_t lcid, uint32_t discard_sn)
   pthread_rwlock_rdlock(&rwlock);
   if (users.count(rnti)) {
     users[rnti].rlc->discard_sdu(lcid, discard_sn);
-    uint32_t tx_queue = users[rnti].rlc->get_buffer_state(lcid);
-
-    // In the eNodeB, there is no polling for buffer state from the scheduler, thus
-    // communicate buffer state every time a new SDU is discarded
-    uint32_t retx_queue = 0;
-    mac->rlc_buffer_state(rnti, lcid, tx_queue, retx_queue);
-    log_h->info("Buffer state: rnti=0x%x, lcid=%d, tx_queue=%d\n", rnti, lcid, tx_queue);
   }
   pthread_rwlock_unlock(&rwlock);
 }
@@ -238,6 +239,17 @@ bool rlc::rb_is_um(uint16_t rnti, uint32_t lcid)
   pthread_rwlock_rdlock(&rwlock);
   if (users.count(rnti)) {
     ret = users[rnti].rlc->rb_is_um(lcid);
+  }
+  pthread_rwlock_unlock(&rwlock);
+  return ret;
+}
+
+bool rlc::sdu_queue_is_full(uint16_t rnti, uint32_t lcid)
+{
+  bool ret = false;
+  pthread_rwlock_rdlock(&rwlock);
+  if (users.count(rnti)) {
+    ret = users[rnti].rlc->sdu_queue_is_full(lcid);
   }
   pthread_rwlock_unlock(&rwlock);
   return ret;
@@ -274,7 +286,7 @@ void rlc::user_interface::write_pdu_pcch(srslte::unique_byte_buffer_t sdu)
 
 std::string rlc::user_interface::get_rb_name(uint32_t lcid)
 {
-  return std::string(rb_id_text[lcid]);
+  return to_string((rb_id_t)lcid);
 }
 
 } // namespace srsenb

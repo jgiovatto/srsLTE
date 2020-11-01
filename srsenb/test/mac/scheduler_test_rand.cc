@@ -112,7 +112,7 @@ struct sched_tester : public srsenb::common_sched_tester {
     bool                 has_ul_retx         = false;
     bool                 has_ul_newtx        = false; ///< *no* retx, but has tx
     bool                 ul_retx_got_delayed = false;
-    srsenb::dl_harq_proc dl_harqs[srsenb::sched_ue_carrier::SCHED_MAX_HARQ_PROC];
+    srsenb::dl_harq_proc dl_harqs[srsenb::cc_sched_ue::SCHED_MAX_HARQ_PROC];
     srsenb::ul_harq_proc ul_harq;
   };
   struct sched_tti_data {
@@ -175,7 +175,7 @@ void sched_tester::before_sched()
     tti_data.total_ues.has_dl_tx |= d.has_dl_tx;
     tti_data.total_ues.has_ul_newtx |= d.has_ul_newtx;
 
-    for (uint32_t i = 0; i < srsenb::sched_ue_carrier::SCHED_MAX_HARQ_PROC; ++i) {
+    for (uint32_t i = 0; i < srsenb::cc_sched_ue::SCHED_MAX_HARQ_PROC; ++i) {
       const srsenb::dl_harq_proc& h      = user->get_dl_harq(i, CARRIER_IDX);
       tti_data.ue_data[rnti].dl_harqs[i] = h;
     }
@@ -188,8 +188,9 @@ void sched_tester::before_sched()
 
 int sched_tester::process_results()
 {
-  const auto& sf_result = carrier_schedulers[CARRIER_IDX]->get_sf_result(tti_info.tti_params.tti_rx);
-  TESTASSERT(tti_info.tti_params.tti_rx == sf_result.tti_params.tti_rx);
+  const srsenb::cc_sched_result* cc_result =
+      sched_results.get_cc(srslte::tti_point{tti_info.tti_params.tti_rx}, CARRIER_IDX);
+  TESTASSERT(tti_info.tti_params.tti_rx == cc_result->tti_params.tti_rx);
 
   test_pdcch_collisions();
   TESTASSERT(ue_tester->test_all(0, tti_info.dl_sched_result[CARRIER_IDX], tti_info.ul_sched_result[CARRIER_IDX]) ==
@@ -255,12 +256,11 @@ int sched_tester::test_pdcch_collisions()
                  tti_info.dl_sched_result[CARRIER_IDX], tti_info.ul_sched_result[CARRIER_IDX]) == SRSLTE_SUCCESS);
 
   /* verify if sched_result "used_cce" coincide with sched "used_cce" */
-  const auto& sf_result = carrier_schedulers[CARRIER_IDX]->get_sf_result(tti_info.tti_params.tti_rx);
-  if (used_cce != sf_result.pdcch_mask) {
-    std::string mask_str = sf_result.pdcch_mask.to_string();
+  const srsenb::cc_sched_result* cc_result = sched_results.get_cc(tti_point{tti_info.tti_params.tti_rx}, CARRIER_IDX);
+  if (used_cce != cc_result->pdcch_mask) {
+    std::string mask_str = cc_result->pdcch_mask.to_string();
     TESTERROR("The used_cce do not match: (%s!=%s)\n", mask_str.c_str(), used_cce.to_string().c_str());
   }
-
   // TODO: Check postponed retxs
 
   //  typedef std::map<uint16_t, srsenb::sched_ue>::iterator it_t;
@@ -349,7 +349,7 @@ int sched_tester::test_harqs()
   // Check whether some pids got old
   if (check_old_pids) {
     for (auto& user : ue_db) {
-      for (int i = 0; i < srsenb::sched_ue_carrier::SCHED_MAX_HARQ_PROC; i++) {
+      for (int i = 0; i < srsenb::cc_sched_ue::SCHED_MAX_HARQ_PROC; i++) {
         if (not user.second.get_dl_harq(i, CARRIER_IDX).is_empty(0)) {
           if (tti_point{tti_info.tti_params.tti_tx_dl} > user.second.get_dl_harq(i, CARRIER_IDX).get_tti() + 49) {
             TESTERROR(
@@ -365,7 +365,7 @@ int sched_tester::test_harqs()
 
 int sched_tester::test_sch_collisions()
 {
-  const auto& sf_result = carrier_schedulers[CARRIER_IDX]->get_sf_result(tti_info.tti_params.tti_rx);
+  const srsenb::cc_sched_result* cc_result = sched_results.get_cc(tti_point{tti_info.tti_params.tti_rx}, CARRIER_IDX);
 
   srsenb::prbmask_t ul_allocs(sched_cell_params[CARRIER_IDX].cfg.cell.nof_prb);
 
@@ -374,7 +374,7 @@ int sched_tester::test_sch_collisions()
                  tti_info.tti_params, tti_info.ul_sched_result[CARRIER_IDX], ul_allocs) == SRSLTE_SUCCESS);
 
   /* TEST: check whether cumulative UL PRB masks coincide */
-  if (ul_allocs != sf_result.ul_mask) {
+  if (ul_allocs != cc_result->ul_mask) {
     TESTERROR("The UL PRB mask and the scheduler result UL mask are not consistent\n");
   }
 
@@ -404,10 +404,10 @@ int sched_tester::test_sch_collisions()
   }
 
   // TEST: check if resulting DL mask is equal to scheduler internal DL mask
-  if (rbgmask != sf_result.dl_mask) {
+  if (rbgmask != cc_result->dl_mask) {
     TESTERROR("The DL PRB mask and the scheduler result DL mask are not consistent (%s!=%s)\n",
               rbgmask.to_string().c_str(),
-              sf_result.dl_mask.to_string().c_str());
+              cc_result->dl_mask.to_string().c_str());
   }
   return SRSLTE_SUCCESS;
 }
@@ -426,13 +426,14 @@ void test_scheduler_rand(sched_sim_events sim)
 
 sched_sim_events rand_sim_params(uint32_t nof_ttis)
 {
-  sched_sim_events                        sim_gen;
-  uint32_t                                max_conn_dur = 10000, min_conn_dur = 500;
-  float                                   P_ul_sr = srsenb::randf() * 0.5, P_dl = srsenb::randf() * 0.5;
-  float                                   P_prach        = 0.99f;  // 0.1f + randf()*0.3f;
-  float                                   ul_sr_exps[]   = {1, 4}; // log rand
-  float                                   dl_data_exps[] = {1, 4}; // log rand
-  uint32_t                                max_nof_users  = 5;
+  auto             boolean_dist = []() { return std::uniform_int_distribution<>{0, 1}(srsenb::get_rand_gen()); };
+  sched_sim_events sim_gen;
+  uint32_t         max_conn_dur = 10000, min_conn_dur = 500;
+  float            P_ul_sr = srsenb::randf() * 0.5, P_dl = srsenb::randf() * 0.5;
+  float            P_prach        = 0.99f;  // 0.1f + randf()*0.3f;
+  float            ul_sr_exps[]   = {1, 4}; // log rand
+  float            dl_data_exps[] = {1, 4}; // log rand
+  uint32_t         max_nof_users  = 5;
   std::uniform_int_distribution<>         connection_dur_dist(min_conn_dur, max_conn_dur);
   std::uniform_int_distribution<uint32_t> dist_prb_idx(0, 5);
   uint32_t                                prb_idx = dist_prb_idx(srsenb::get_rand_gen());
@@ -440,10 +441,16 @@ sched_sim_events rand_sim_params(uint32_t nof_ttis)
 
   sched_sim_event_generator generator;
 
-  sim_gen.sim_args.cell_cfg                        = {generate_default_cell_cfg(nof_prb)};
-  sim_gen.sim_args.default_ue_sim_cfg.periodic_cqi = true;
-  sim_gen.sim_args.start_tti                       = 0;
-  sim_gen.sim_args.sim_log                         = log_global.get();
+  sim_gen.sim_args.cell_cfg                             = {generate_default_cell_cfg(nof_prb)};
+  sim_gen.sim_args.default_ue_sim_cfg.ue_cfg            = generate_default_ue_cfg();
+  sim_gen.sim_args.default_ue_sim_cfg.periodic_cqi      = true;
+  sim_gen.sim_args.default_ue_sim_cfg.ue_cfg.maxharq_tx = std::uniform_int_distribution<>{1, 5}(srsenb::get_rand_gen());
+  sim_gen.sim_args.start_tti                            = 0;
+  sim_gen.sim_args.sim_log                              = log_global.get();
+  sim_gen.sim_args.sched_args.pdsch_mcs =
+      boolean_dist() ? -1 : std::uniform_int_distribution<>{0, 24}(srsenb::get_rand_gen());
+  sim_gen.sim_args.sched_args.pusch_mcs =
+      boolean_dist() ? -1 : std::uniform_int_distribution<>{0, 24}(srsenb::get_rand_gen());
 
   generator.tti_events.resize(nof_ttis);
 
@@ -464,7 +471,8 @@ sched_sim_events rand_sim_params(uint32_t nof_ttis)
     bool is_prach_tti =
         srslte_prach_tti_opportunity_config_fdd(sim_gen.sim_args.cell_cfg[CARRIER_IDX].prach_config, tti, -1);
     if (is_prach_tti and generator.current_users.size() < max_nof_users and srsenb::randf() < P_prach) {
-      generator.add_new_default_user(connection_dur_dist(srsenb::get_rand_gen()));
+      generator.add_new_default_user(connection_dur_dist(srsenb::get_rand_gen()),
+                                     sim_gen.sim_args.default_ue_sim_cfg.ue_cfg);
     }
     generator.step_tti();
   }

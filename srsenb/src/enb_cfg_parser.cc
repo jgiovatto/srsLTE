@@ -23,6 +23,7 @@
 #include "srsenb/hdr/cfg_parser.h"
 #include "srsenb/hdr/enb.h"
 #include "srslte/asn1/rrc_asn1_utils.h"
+#include "srslte/common/multiqueue.h"
 #include "srslte/phy/common/phy_common.h"
 #include "srslte/srslte.h"
 #include <boost/algorithm/string.hpp>
@@ -358,9 +359,11 @@ int field_sf_mapping::parse(libconfig::Setting& root)
       sf_mapping[i] = root["subframe"][i];
     }
   } else {
-    *nof_subframes = root["period"];
-    for (uint32_t i = 0; i < *nof_subframes; ++i) {
-      sf_mapping[i] = i;
+    // Note: By default we evenly distribute PUCCH resources between SR/CQI.
+    // The default SR resources will be {0, 2, 4, ...}, while the CQI will be {1, 3, 5, ...}.
+    *nof_subframes = static_cast<uint32_t>(root["period"]) / 2;
+    for (uint32_t i = 0; i < *nof_subframes; i++) {
+      sf_mapping[i] = i * 2 + default_offset;
     }
   }
   return 0;
@@ -634,7 +637,7 @@ int parse_rr(all_args_t* args_, rrc_cfg_t* rrc_cfg_)
   sched_request_cnfg.add_field(make_asn1_enum_number_parser("dsr_trans_max", &rrc_cfg_->sr_cfg.dsr_max));
   sched_request_cnfg.add_field(new parser::field<uint32>("period", &rrc_cfg_->sr_cfg.period));
   sched_request_cnfg.add_field(new parser::field<uint32>("nof_prb", &rrc_cfg_->sr_cfg.nof_prb));
-  sched_request_cnfg.add_field(new field_sf_mapping(rrc_cfg_->sr_cfg.sf_mapping, &rrc_cfg_->sr_cfg.nof_subframes));
+  sched_request_cnfg.add_field(new field_sf_mapping(rrc_cfg_->sr_cfg.sf_mapping, &rrc_cfg_->sr_cfg.nof_subframes, 0));
 
   parser::section cqi_report_cnfg("cqi_report_cnfg");
   phy_cfg_.add_subsection(&cqi_report_cnfg);
@@ -645,7 +648,7 @@ int parse_rr(all_args_t* args_, rrc_cfg_t* rrc_cfg_)
   cqi_report_cnfg.add_field(new parser::field<uint32>("m_ri", &rrc_cfg_->cqi_cfg.m_ri));
   cqi_report_cnfg.add_field(new parser::field<uint32>("nof_prb", &rrc_cfg_->cqi_cfg.nof_prb));
   cqi_report_cnfg.add_field(new parser::field<bool>("simultaneousAckCQI", &rrc_cfg_->cqi_cfg.simultaneousAckCQI));
-  cqi_report_cnfg.add_field(new field_sf_mapping(rrc_cfg_->cqi_cfg.sf_mapping, &rrc_cfg_->cqi_cfg.nof_subframes));
+  cqi_report_cnfg.add_field(new field_sf_mapping(rrc_cfg_->cqi_cfg.sf_mapping, &rrc_cfg_->cqi_cfg.nof_subframes, 1));
 
   /* RRC config section */
   parser::section rrc_cnfg("cell_list");
@@ -799,11 +802,15 @@ int parse_cell_cfg(all_args_t* args_, srslte_cell_t* cell)
   cell->phich_resources = (srslte_phich_r_t)(int)phichcfg.phich_res;
 
   if (!srslte_cell_isvalid(cell)) {
-    fprintf(stderr, "Invalid cell parameters: nof_prb=%d, cell_id=%d\n", args_->enb.n_prb, args_->stack.s1ap.cell_id);
-    return -1;
+    fprintf(stderr,
+            "Invalid cell parameters: nof_prb=%d, nof_ports=%d, cell_id=%d\n",
+            cell->nof_prb,
+            cell->nof_ports,
+            cell->id);
+    return SRSLTE_ERROR;
   }
 
-  return 0;
+  return SRSLTE_SUCCESS;
 }
 
 int parse_cfg_files(all_args_t* args_, rrc_cfg_t* rrc_cfg_, phy_cfg_t* phy_cfg_)
@@ -886,6 +893,10 @@ int set_derived_args(all_args_t* args_, rrc_cfg_t* rrc_cfg_, phy_cfg_t* phy_cfg_
       cfg.dl_freq_hz = args_->rf.dl_freq;
       ERROR("Force DL freq for cell PCI=%d to %f MHz\n", cfg.pci, cfg.dl_freq_hz / 1e6f);
     }
+    if (args_->rf.ul_freq > 0) {
+      cfg.ul_freq_hz = args_->rf.ul_freq;
+      ERROR("Force UL freq for cell PCI=%d to %f MHz\n", cfg.pci, cfg.ul_freq_hz / 1e6f);
+    }
   } else {
     // If more than one cell is defined, single EARFCN or DL freq will be ignored
     if (args_->enb.dl_earfcn > 0 || args_->rf.dl_freq > 0) {
@@ -897,12 +908,13 @@ int set_derived_args(all_args_t* args_, rrc_cfg_t* rrc_cfg_, phy_cfg_t* phy_cfg_
   rrc_cfg_->cell = cell_cfg_;
 
   // Set S1AP related params from cell list
-  args_->stack.s1ap.enb_id = args_->enb.enb_id;
+  args_->stack.s1ap.enb_id  = args_->enb.enb_id;
   args_->stack.s1ap.cell_id = rrc_cfg_->cell_list.at(0).cell_id;
-  args_->stack.s1ap.tac = rrc_cfg_->cell_list.at(0).tac;
+  args_->stack.s1ap.tac     = rrc_cfg_->cell_list.at(0).tac;
 
   // Create dedicated cell configuration from RRC configuration
-  for (auto& cfg : rrc_cfg_->cell_list) {
+  for (auto it = rrc_cfg_->cell_list.begin(); it != rrc_cfg_->cell_list.end(); ++it) {
+    auto&          cfg          = *it;
     phy_cell_cfg_t phy_cell_cfg = {};
     phy_cell_cfg.cell           = cell_cfg_;
     phy_cell_cfg.cell.id        = cfg.pci;
@@ -942,6 +954,18 @@ int set_derived_args(all_args_t* args_, rrc_cfg_t* rrc_cfg_, phy_cfg_t* phy_cfg_
       }
     }
 
+    // Check if the enb cells PCIs won't lead to PSS detection issues
+    auto is_pss_collision = [&cfg](const cell_cfg_t& c) {
+      return c.pci % 3 == cfg.pci % 3 and c.dl_earfcn == cfg.dl_earfcn;
+    };
+    auto collision_it = std::find_if(it + 1, rrc_cfg_->cell_list.end(), is_pss_collision);
+    if (collision_it != rrc_cfg_->cell_list.end()) {
+      ERROR("The cells pci1=%d and pci2=%d will have the same PSS. Consider changing one of the cells' PCI values, "
+            "otherwise a UE may fail to correctly detect and distinguish them\n",
+            it->pci,
+            collision_it->pci);
+    }
+
     phy_cfg_->phy_cell_cfg.push_back(phy_cell_cfg);
   }
 
@@ -953,8 +977,18 @@ int set_derived_args(all_args_t* args_, rrc_cfg_t* rrc_cfg_, phy_cfg_t* phy_cfg_
     rrc_cfg_->sibs[1].sib2().rr_cfg_common.pdsch_cfg_common.p_b = 1;
   }
 
-  rrc_cfg_->inactivity_timeout_ms = args_->general.rrc_inactivity_timer;
-  rrc_cfg_->enable_mbsfn          = args_->stack.embms.enable;
+  rrc_cfg_->inactivity_timeout_ms   = args_->general.rrc_inactivity_timer;
+  uint32_t t310                     = rrc_cfg_->sibs[1].sib2().ue_timers_and_consts.t310.to_number();
+  uint32_t t311                     = rrc_cfg_->sibs[1].sib2().ue_timers_and_consts.t311.to_number();
+  uint32_t n310                     = rrc_cfg_->sibs[1].sib2().ue_timers_and_consts.n310.to_number();
+  uint32_t min_rrc_inactivity_timer = t310 + t311 + n310 + 50;
+  if (args_->general.rrc_inactivity_timer < min_rrc_inactivity_timer) {
+    ERROR("rrc_inactivity_timer=%d is too low. Consider setting it to a value equal or above %d\n",
+          args_->general.rrc_inactivity_timer,
+          min_rrc_inactivity_timer);
+  }
+  rrc_cfg_->enable_mbsfn = args_->stack.embms.enable;
+  rrc_cfg_->mbms_mcs     = args_->stack.embms.mcs;
 
   // Check number of control symbols
   if (args_->stack.mac.sched.min_nof_ctrl_symbols > args_->stack.mac.sched.max_nof_ctrl_symbols) {
@@ -1062,6 +1096,15 @@ int set_derived_args(all_args_t* args_, rrc_cfg_t* rrc_cfg_, phy_cfg_t* phy_cfg_
 
   // RRC needs eNB id for SIB1 packing
   rrc_cfg_->enb_id = args_->stack.s1ap.enb_id;
+
+  // Set sync queue capacity to 1 for ZMQ
+  if (args_->rf.device_name == "zmq") {
+    srslte::logmap::get("ENB")->info("Using sync queue size of one for ZMQ based radio.");
+    args_->stack.sync_queue_size = 1;
+  } else {
+    // use default size
+    args_->stack.sync_queue_size = MULTIQUEUE_DEFAULT_CAPACITY;
+  }
 
   return SRSLTE_SUCCESS;
 }

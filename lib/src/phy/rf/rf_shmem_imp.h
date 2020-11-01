@@ -59,9 +59,9 @@ SRSLTE_API   int    rf_shmem_close(void *h);
 
 SRSLTE_API   double rf_shmem_set_rx_srate(void *h, double freq);
 
-SRSLTE_API   double rf_shmem_set_rx_gain(void *h, double gain);
+SRSLTE_API   int    rf_shmem_set_rx_gain(void *h, double gain);
 
-SRSLTE_API   double rf_shmem_set_tx_gain(void *h, double gain);
+SRSLTE_API   int    rf_shmem_set_tx_gain(void *h, double gain);
 
 SRSLTE_API   double rf_shmem_get_rx_gain(void *h);
 

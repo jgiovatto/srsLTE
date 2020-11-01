@@ -111,7 +111,7 @@ cf_t* sf_worker::get_buffer_rx(uint32_t cc_idx, uint32_t antenna_idx)
   return cc_workers[cc_idx]->get_buffer_rx(antenna_idx);
 }
 
-void sf_worker::set_time(uint32_t tti_, uint32_t tx_worker_cnt_, srslte_timestamp_t tx_time_)
+void sf_worker::set_time(uint32_t tti_, uint32_t tx_worker_cnt_, const srslte::rf_timestamp_t& tx_time_)
 {
   tti_rx    = tti_;
   tti_tx_dl = TTI_ADD(tti_rx, FDD_HARQ_DELAY_UL_MS);
@@ -122,19 +122,29 @@ void sf_worker::set_time(uint32_t tti_, uint32_t tx_worker_cnt_, srslte_timestam
   t_tx_ul = TTIMOD(tti_tx_ul);
 
   tx_worker_cnt = tx_worker_cnt_;
-  srslte_timestamp_copy(&tx_time, &tx_time_);
+  tx_time.copy(tx_time_);
 
   for (auto& w : cc_workers) {
     w->set_tti(tti_);
   }
 }
 
-int sf_worker::add_rnti(uint16_t rnti, uint32_t cc_idx, bool is_pcell, bool is_temporal)
+int sf_worker::pregen_sequences(uint16_t rnti)
+{
+  for (auto& w : cc_workers) {
+    if (w->pregen_sequences(rnti)) {
+      return SRSLTE_ERROR;
+    }
+  }
+  return SRSLTE_SUCCESS;
+}
+
+int sf_worker::add_rnti(uint16_t rnti, uint32_t cc_idx)
 {
   int ret = SRSLTE_ERROR;
 
   if (cc_idx < cc_workers.size()) {
-    cc_workers[cc_idx]->add_rnti(rnti, is_pcell, is_temporal);
+    cc_workers[cc_idx]->add_rnti(rnti);
     ret = SRSLTE_SUCCESS;
   }
 
@@ -169,7 +179,7 @@ void sf_worker::work_imp()
   }
 
   if (!running) {
-    phy->worker_end(this, tx_buffer, 0, tx_time);
+    phy->worker_end(this, tx_buffer, tx_time);
     return;
   }
 
@@ -193,6 +203,9 @@ void sf_worker::work_imp()
   // Configure UL subframe
   ul_sf.tti = tti_rx;
 
+  // Set UL grant availability prior to any UL processing
+  phy->ue_db.set_ul_grant_available(tti_rx, ul_grants);
+
   // Process UL
   for (uint32_t cc = 0; cc < cc_workers.size(); cc++) {
     cc_workers[cc]->work_ul(ul_sf, ul_grants[cc]);
@@ -202,14 +215,14 @@ void sf_worker::work_imp()
   if (sf_type == SRSLTE_SF_NORM) {
     if (stack->get_dl_sched(tti_tx_dl, dl_grants) < 0) {
       Error("Getting DL scheduling from MAC\n");
-      phy->worker_end(this, tx_buffer, 0, tx_time);
+      phy->worker_end(this, tx_buffer, tx_time);
       return;
     }
   } else {
     dl_grants[0].cfi = mbsfn_cfg.non_mbsfn_region_length;
     if (stack->get_mch_sched(tti_tx_dl, mbsfn_cfg.is_mcch, dl_grants)) {
       Error("Getting MCH packets from MAC\n");
-      phy->worker_end(this, tx_buffer, 0, tx_time);
+      phy->worker_end(this, tx_buffer, tx_time);
       return;
     }
   }
@@ -221,7 +234,7 @@ void sf_worker::work_imp()
   // Get UL scheduling for the TX TTI from MAC
   if (stack->get_ul_sched(tti_tx_ul, ul_grants_tx) < 0) {
     Error("Getting UL scheduling from MAC\n");
-    phy->worker_end(this, tx_buffer, 0, tx_time);
+    phy->worker_end(this, tx_buffer, tx_time);
     return;
   }
 
@@ -244,7 +257,8 @@ void sf_worker::work_imp()
   phy->set_ul_grants(t_rx, ul_grants);
 
   Debug("Sending to radio\n");
-  phy->worker_end(this, tx_buffer, SRSLTE_SF_LEN_PRB(phy->get_nof_prb(0)), tx_time);
+  tx_buffer.set_nof_samples(SRSLTE_SF_LEN_PRB(phy->get_nof_prb(0)));
+  phy->worker_end(this, tx_buffer, tx_time);
 
 #ifdef DEBUG_WRITE_FILE
   fwrite(signal_buffer_tx, SRSLTE_SF_LEN_PRB(phy->cell.nof_prb) * sizeof(cf_t), 1, f);
@@ -293,34 +307,42 @@ void sf_worker::start_plot()
 #ifdef ENABLE_GUI
   if (plot_worker_id == -1) {
     plot_worker_id = get_id();
-    log_h->console("Starting plot for worker_id=%d\n", plot_worker_id);
+    srslte::console("Starting plot for worker_id=%d\n", plot_worker_id);
     init_plots(this);
   } else {
-    log_h->console("Trying to start a plot but already started by worker_id=%d\n", plot_worker_id);
+    srslte::console("Trying to start a plot but already started by worker_id=%d\n", plot_worker_id);
   }
 #else
-  log_h->console("Trying to start a plot but plots are disabled (ENABLE_GUI constant in sf_worker.cc)\n");
+  srslte::console("Trying to start a plot but plots are disabled (ENABLE_GUI constant in sf_worker.cc)\n");
 #endif
 }
 
-int sf_worker::read_ce_abs(float* ce_abs)
+uint32_t sf_worker::get_nof_carriers()
 {
-  return cc_workers[0]->read_ce_abs(ce_abs);
+  return phy->get_nof_carriers();
+}
+int sf_worker::get_carrier_pci(uint32_t cc_idx)
+{
+  return phy->get_cell(cc_idx).id;
+}
+int sf_worker::read_ce_abs(uint32_t cc_idx, float* ce_abs)
+{
+  return cc_workers[cc_idx]->read_ce_abs(ce_abs);
 }
 
-int sf_worker::read_ce_arg(float* ce_arg)
+int sf_worker::read_ce_arg(uint32_t cc_idx, float* ce_arg)
 {
-  return cc_workers[0]->read_ce_arg(ce_arg);
+  return cc_workers[cc_idx]->read_ce_arg(ce_arg);
 }
 
-int sf_worker::read_pusch_d(cf_t* pdsch_d)
+int sf_worker::read_pusch_d(uint32_t cc_idx, cf_t* pdsch_d)
 {
-  return cc_workers[0]->read_pusch_d(pdsch_d);
+  return cc_workers[cc_idx]->read_pusch_d(pdsch_d);
 }
 
-int sf_worker::read_pucch_d(cf_t* pdsch_d)
+int sf_worker::read_pucch_d(uint32_t cc_idx, cf_t* pdsch_d)
 {
-  return cc_workers[0]->read_pucch_d(pdsch_d);
+  return cc_workers[cc_idx]->read_pucch_d(pdsch_d);
 }
 
 sf_worker::~sf_worker()
@@ -337,59 +359,76 @@ sf_worker::~sf_worker()
  ***********************************************************/
 
 #ifdef ENABLE_GUI
-plot_real_t    pce, pce_arg;
-plot_scatter_t pconst;
-plot_scatter_t pconst2;
+struct plot_cc_s {
+  plot_real_t    pce, pce_arg;
+  plot_scatter_t pconst;
+  plot_scatter_t pconst2;
+};
+static std::map<uint32_t, plot_cc_s> plots;
 #define SCATTER_PUSCH_BUFFER_LEN (20 * 6 * SRSLTE_SF_LEN_RE(SRSLTE_MAX_PRB, SRSLTE_CP_NORM))
-float tmp_plot[SCATTER_PUSCH_BUFFER_LEN];
-float tmp_plot_arg[SCATTER_PUSCH_BUFFER_LEN];
-cf_t  tmp_plot2[SRSLTE_SF_LEN_RE(SRSLTE_MAX_PRB, SRSLTE_CP_NORM)];
-cf_t  tmp_pucch_plot[SRSLTE_PUCCH_MAX_BITS / 2];
+static float tmp_plot[SCATTER_PUSCH_BUFFER_LEN];
+static float tmp_plot_arg[SCATTER_PUSCH_BUFFER_LEN];
+static cf_t  tmp_plot2[SRSLTE_SF_LEN_RE(SRSLTE_MAX_PRB, SRSLTE_CP_NORM)];
+static cf_t  tmp_pucch_plot[SRSLTE_PUCCH_MAX_BITS / 2];
 
 void* plot_thread_run(void* arg)
 {
   auto worker = (srsenb::sf_worker*)arg;
 
-  sdrgui_init_title("srsENB");
-  plot_real_init(&pce);
-  plot_real_setTitle(&pce, (char*)"Channel Response - Magnitude");
-  plot_real_setLabels(&pce, (char*)"Index", (char*)"dB");
-  plot_real_setYAxisScale(&pce, -40, 40);
+  for (uint32_t cc_idx = 0; cc_idx < worker->get_nof_carriers(); cc_idx++) {
+    plot_cc_s& p = plots[cc_idx];
 
-  plot_real_init(&pce_arg);
-  plot_real_setTitle(&pce_arg, (char*)"Channel Response - Argument");
-  plot_real_setLabels(&pce_arg, (char*)"Angle", (char*)"deg");
-  plot_real_setYAxisScale(&pce_arg, -180, 180);
+    char title[32] = {};
+    snprintf(title, sizeof(title), "srsENB PCI %d", worker->get_carrier_pci(cc_idx));
 
-  plot_scatter_init(&pconst);
-  plot_scatter_setTitle(&pconst, (char*)"PUSCH - Equalized Symbols");
-  plot_scatter_setXAxisScale(&pconst, -4, 4);
-  plot_scatter_setYAxisScale(&pconst, -4, 4);
+    printf("Creating plot window '%s'...\n", title);
 
-  plot_scatter_init(&pconst2);
-  plot_scatter_setTitle(&pconst2, (char*)"PUCCH - Equalized Symbols");
-  plot_scatter_setXAxisScale(&pconst2, -4, 4);
-  plot_scatter_setYAxisScale(&pconst2, -4, 4);
+    sdrgui_init_title(title);
 
-  plot_real_addToWindowGrid(&pce, (char*)"srsenb", 0, 0);
-  plot_real_addToWindowGrid(&pce_arg, (char*)"srsenb", 1, 0);
-  plot_scatter_addToWindowGrid(&pconst, (char*)"srsenb", 0, 1);
-  plot_scatter_addToWindowGrid(&pconst2, (char*)"srsenb", 1, 1);
+    plot_real_init(&p.pce);
+    plot_real_setTitle(&p.pce, (char*)"Channel Response - Magnitude");
+    plot_real_setLabels(&p.pce, (char*)"Index", (char*)"dB");
+    plot_real_setYAxisScale(&p.pce, -40, 40);
+    plot_real_addToWindowGrid(&p.pce, title, 0, 0);
+
+    plot_real_init(&p.pce_arg);
+    plot_real_setTitle(&p.pce_arg, (char*)"Channel Response - Argument");
+    plot_real_setLabels(&p.pce_arg, (char*)"Angle", (char*)"deg");
+    plot_real_setYAxisScale(&p.pce_arg, -180, 180);
+    plot_real_addToWindowGrid(&p.pce_arg, title, 1, 0);
+
+    plot_scatter_init(&p.pconst);
+    plot_scatter_setTitle(&p.pconst, (char*)"PUSCH - Equalized Symbols");
+    plot_scatter_setXAxisScale(&p.pconst, -4, 4);
+    plot_scatter_setYAxisScale(&p.pconst, -4, 4);
+    plot_scatter_addToWindowGrid(&p.pconst, title, 0, 1);
+
+    plot_scatter_init(&p.pconst2);
+    plot_scatter_setTitle(&p.pconst2, (char*)"PUCCH - Equalized Symbols");
+    plot_scatter_setXAxisScale(&p.pconst2, -4, 4);
+    plot_scatter_setYAxisScale(&p.pconst2, -4, 4);
+    plot_scatter_addToWindowGrid(&p.pconst2, title, 1, 1);
+  }
 
   int n, n_arg, n_pucch;
   while (true) {
     sem_wait(&plot_sem);
 
-    n       = worker->read_pusch_d(tmp_plot2);
-    n_pucch = worker->read_pucch_d(tmp_pucch_plot);
-    plot_scatter_setNewData(&pconst, tmp_plot2, n);
-    plot_scatter_setNewData(&pconst2, tmp_pucch_plot, n_pucch);
+    for (auto& e : plots) {
+      uint32_t   cc_idx = e.first;
+      plot_cc_s& p      = e.second;
 
-    n = worker->read_ce_abs(tmp_plot);
-    plot_real_setNewData(&pce, tmp_plot, n);
+      n       = worker->read_pusch_d(cc_idx, tmp_plot2);
+      n_pucch = worker->read_pucch_d(cc_idx, tmp_pucch_plot);
+      plot_scatter_setNewData(&p.pconst, tmp_plot2, n);
+      plot_scatter_setNewData(&p.pconst2, tmp_pucch_plot, n_pucch);
 
-    n_arg = worker->read_ce_arg(tmp_plot_arg);
-    plot_real_setNewData(&pce_arg, tmp_plot_arg, n_arg);
+      n = worker->read_ce_abs(cc_idx, tmp_plot);
+      plot_real_setNewData(&p.pce, tmp_plot, n);
+
+      n_arg = worker->read_ce_arg(cc_idx, tmp_plot_arg);
+      plot_real_setNewData(&p.pce_arg, tmp_plot_arg, n_arg);
+    }
   }
   return nullptr;
 }

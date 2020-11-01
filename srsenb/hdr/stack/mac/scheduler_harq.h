@@ -22,7 +22,7 @@
 #ifndef SRSENB_SCHEDULER_HARQ_H
 #define SRSENB_SCHEDULER_HARQ_H
 
-#include "srslte/common/bounded_bitset.h"
+#include "srslte/adt/bounded_bitset.h"
 #include "srslte/common/log.h"
 #include "srslte/common/tti_point.h"
 #include "srslte/interfaces/sched_interface.h"
@@ -90,24 +90,13 @@ private:
 class ul_harq_proc : public harq_proc
 {
 public:
-  struct ul_alloc_t {
-    uint32_t RB_start;
-    uint32_t L;
-    void     set(uint32_t start, uint32_t len)
-    {
-      RB_start = start;
-      L        = len;
-    }
-    uint32_t RB_end() const { return RB_start + L; }
-  };
-
-  void new_tx(uint32_t tti, int mcs, int tbs, ul_alloc_t alloc, uint32_t max_retx_);
-  void new_retx(uint32_t tb_idx, uint32_t tti_, int* mcs, int* tbs, ul_alloc_t alloc);
+  void new_tx(uint32_t tti, int mcs, int tbs, prb_interval alloc, uint32_t max_retx_);
+  void new_retx(uint32_t tb_idx, uint32_t tti_, int* mcs, int* tbs, prb_interval alloc);
   bool set_ack(uint32_t tb_idx, bool ack);
 
-  ul_alloc_t get_alloc() const;
-  bool       has_pending_retx() const;
-  bool       is_adaptive_retx() const;
+  prb_interval get_alloc() const;
+  bool         has_pending_retx() const;
+  bool         is_adaptive_retx() const;
 
   void     reset_pending_data();
   bool     has_pending_ack() const;
@@ -115,10 +104,10 @@ public:
   uint32_t get_pending_data() const;
 
 private:
-  ul_alloc_t allocation;
-  int        pending_data;
-  bool       is_adaptive;
-  ack_t      pending_ack;
+  prb_interval allocation;
+  int          pending_data;
+  bool         is_adaptive;
+  ack_t        pending_ack;
 };
 
 class harq_entity
@@ -167,7 +156,7 @@ public:
   std::pair<bool, uint32_t> set_ul_crc(srslte::tti_point tti_tx_ul, uint32_t tb_idx, bool ack_);
 
   //! Resets pending harq ACKs and cleans UL Harqs with maxretx == 0
-  void reset_pending_data(uint32_t tti_rx);
+  void reset_pending_data(srslte::tti_point tti_rx);
 
 private:
   dl_harq_proc* get_oldest_dl_harq(uint32_t tti_tx_dl);

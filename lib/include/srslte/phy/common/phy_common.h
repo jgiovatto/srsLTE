@@ -64,6 +64,10 @@ extern "C" {
 
 #define SRSLTE_MAX_CODEBOOKS 4
 
+#define SRSLTE_NOF_CFI 3
+#define SRSLTE_CFI_ISVALID(x) ((x >= 1 && x <= 3))
+#define SRSLTE_CFI_IDX(x) ((x - 1) % SRSLTE_NOF_CFI)
+
 #define SRSLTE_LTE_CRC24A 0x1864CFB
 #define SRSLTE_LTE_CRC24B 0X1800063
 #define SRSLTE_LTE_CRC16 0x11021
@@ -180,17 +184,40 @@ typedef enum SRSLTE_API {
   SRSLTE_PHICH_R_2
 } srslte_phich_r_t;
 
-typedef enum SRSLTE_API { SRSLTE_FDD = 0, SRSLTE_TDD = 1 } srslte_frame_type_t;
+/// LTE duplex modes.
+typedef enum SRSLTE_API
+{
+  /// FDD uses frame structure type 1.
+  SRSLTE_FDD = 0,
+  /// TDD uses frame structure type 2.
+  SRSLTE_TDD = 1
+} srslte_frame_type_t;
 
+/// Maximum number of TDD special subframe configurations.
+#define SRSLTE_MAX_TDD_SS_CONFIGS (10u)
+
+/// Maximum number of TDD uplink-downlink subframe configurations.
+#define SRSLTE_MAX_TDD_SF_CONFIGS (7u)
+
+/// Configuration fields for operating in TDD mode.
 typedef struct SRSLTE_API {
+  /// Uplink-downlink configuration, valid range is [0,SRSLTE_MAX_TDD_SF_CONFIGS[.
+  /// TS 36.211 v8.9.0 Table 4.2-2.
   uint32_t sf_config;
+  /// Special subframe symbol length configuration, valid range is [0,SRSLTE_MAX_TDD_SS_CONFIGS[.
+  /// TS 36.211 v13.13.0 Table 4.2-1.
   uint32_t ss_config;
+  /// Set to true when the fields have been configured, otherwise false.
   bool     configured;
 } srslte_tdd_config_t;
 
+/// TDD uplink-downlink subframe types.
 typedef enum SRSLTE_API {
+  /// Subframe is reserved for downlink transmissions.
   SRSLTE_TDD_SF_D = 0,
+  /// Subframe is reserved for uplink transmissions.
   SRSLTE_TDD_SF_U = 1,
+  /// Special subframe.
   SRSLTE_TDD_SF_S = 2,
 } srslte_tdd_sf_t;
 
@@ -352,15 +379,44 @@ SRSLTE_API bool srslte_cellid_isvalid(uint32_t cell_id);
 
 SRSLTE_API bool srslte_nofprb_isvalid(uint32_t nof_prb);
 
+/**
+ * Returns the subframe type for a given subframe number and a TDD configuration.
+ * Check TS 36.211 v8.9.0 Table 4.2-2.
+ *
+ * @param tdd_config TDD configuration.
+ * @param sf_idx Subframe number, must be in range [0,SRSLTE_NOF_SF_X_FRAME[.
+ * @return Returns the subframe type.
+ */
 SRSLTE_API srslte_tdd_sf_t srslte_sfidx_tdd_type(srslte_tdd_config_t tdd_config, uint32_t sf_idx);
 
-SRSLTE_API uint32_t srslte_tdd_nof_harq(srslte_tdd_config_t tdd_config);
-
+/**
+ * Returns the number of UpPTS symbols in a subframe.
+ * Check TS 36.211 v13.13.0 Table 4.2-1.
+ *
+ * @param tdd_config TDD configuration.
+ * @return Returns the number of UpPTS symbols.
+ */
 SRSLTE_API uint32_t srslte_sfidx_tdd_nof_up(srslte_tdd_config_t tdd_config);
 
+/**
+ * Returns the number of GP symbols in a subframe.
+ * Check TS 36.211 v13.13.0 Table 4.2-1.
+ *
+ * @param tdd_config TDD configuration.
+ * @return Returns the number of GP symbols.
+ */
 SRSLTE_API uint32_t srslte_sfidx_tdd_nof_gp(srslte_tdd_config_t tdd_config);
 
+/**
+ * Returns the number of DwPTS symbols in a subframe.
+ * Check TS 36.211 v13.13.0 Table 4.2-1.
+ *
+ * @param tdd_config TDD configuration.
+ * @return Returns the number of DwPTS symbols.
+ */
 SRSLTE_API uint32_t srslte_sfidx_tdd_nof_dw(srslte_tdd_config_t tdd_config);
+
+SRSLTE_API uint32_t srslte_tdd_nof_harq(srslte_tdd_config_t tdd_config);
 
 SRSLTE_API uint32_t srslte_sfidx_tdd_nof_dw_slot(srslte_tdd_config_t tdd_config, uint32_t slot, srslte_cp_t cp);
 

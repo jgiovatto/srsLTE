@@ -31,7 +31,6 @@
 namespace srsue {
 
 const char* state_str[] = {"RA:    INIT:   ",
-                           "RA:    INIT:   ",
                            "RA:    PDCCH:  ",
                            "RA:    Rx:     ",
                            "RA:    Backoff: ",
@@ -56,17 +55,17 @@ void ra_proc::init(phy_interface_mac_lte*               phy_h_,
                    mac_interface_rrc::ue_rnti_t*        rntis_,
                    srslte::timer_handler::unique_timer* time_alignment_timer_,
                    mux*                                 mux_unit_,
-                   srslte::task_handler_interface*      stack_)
+                   srslte::ext_task_sched_handle*       task_sched_)
 {
-  phy_h    = phy_h_;
-  log_h    = log_h_;
-  rntis    = rntis_;
-  mux_unit = mux_unit_;
-  rrc      = rrc_;
-  stack    = stack_;
+  phy_h      = phy_h_;
+  log_h      = log_h_;
+  rntis      = rntis_;
+  mux_unit   = mux_unit_;
+  rrc        = rrc_;
+  task_sched = task_sched_;
 
   time_alignment_timer        = time_alignment_timer_;
-  contention_resolution_timer = stack->get_unique_timer();
+  contention_resolution_timer = task_sched->get_unique_timer();
 
   srslte_softbuffer_rx_init(&softbuffer_rar, 10);
 
@@ -95,6 +94,14 @@ void ra_proc::set_config(srslte::rach_cfg_t& rach_cfg_)
 {
   std::unique_lock<std::mutex> ul(mutex);
   new_cfg = rach_cfg_;
+}
+
+void ra_proc::set_config_ded(uint32_t preamble_index, uint32_t prach_mask)
+{
+  std::unique_lock<std::mutex> ul(mutex);
+  next_preamble_idx     = preamble_index;
+  next_prach_mask       = prach_mask;
+  noncontention_enabled = true;
 }
 
 /* Reads the configuration and configures internal variables */
@@ -148,7 +155,6 @@ void ra_proc::step(uint32_t tti_)
     case START_WAIT_COMPLETION:
       state_completition();
       break;
-    case WAITING_PHY_CONFIG:
     case WAITING_COMPLETION:
       // do nothing, bc we are waiting for the phy to finish
       break;
@@ -162,9 +168,9 @@ void ra_proc::state_pdcch_setup()
   phy_interface_mac_lte::prach_info_t info = phy_h->prach_get_info();
   if (info.is_transmitted) {
     ra_tti  = info.tti_ra;
-    ra_rnti = 1 + (ra_tti % 10) + info.f_id;
+    ra_rnti = 1 + (ra_tti % 10) + (10 * info.f_id);
     rInfo("seq=%d, ra-rnti=0x%x, ra-tti=%d, f_id=%d\n", sel_preamble, ra_rnti, info.tti_ra, info.f_id);
-    log_h->console("Random Access Transmission: seq=%d, ra-rnti=0x%x\n", sel_preamble, ra_rnti);
+    srslte::console("Random Access Transmission: seq=%d, ra-rnti=0x%x\n", sel_preamble, ra_rnti);
     rar_window_st   = ra_tti + 3;
     rntis->rar_rnti = ra_rnti;
     state           = RESPONSE_RECEPTION;
@@ -232,28 +238,11 @@ void ra_proc::state_completition()
   state            = WAITING_COMPLETION;
   uint16_t rnti    = rntis->crnti;
   uint32_t task_id = current_task_id;
-  stack->enqueue_background_task([this, rnti, task_id](uint32_t worker_id) {
-    phy_h->set_crnti(rnti);
-    // signal MAC RA proc to go back to idle
-    notify_ra_completed(task_id);
-  });
-}
 
-void ra_proc::notify_phy_config_completed(uint32_t task_id)
-{
-  if (current_task_id == task_id) {
-    if (state != WAITING_PHY_CONFIG) {
-      rError("Received unexpected notification of PHY configuration completed\n");
-    } else {
-      rDebug("RA waiting PHY configuration completed\n");
-    }
-    // Jump directly to Resource selection
-    resource_selection();
-  } else {
-    rError("Received old notification of PHY configuration (old task_id=%d, current_task_id=%d)\n",
-           task_id,
-           current_task_id);
-  }
+  phy_h->set_crnti(rnti);
+
+  // signal MAC RA proc to go back to idle
+  notify_ra_completed(task_id);
 }
 
 void ra_proc::notify_ra_completed(uint32_t task_id)
@@ -281,15 +270,7 @@ void ra_proc::initialization()
   preambleTransmissionCounter = 1;
   mux_unit->msg3_flush();
   backoff_param_ms = 0;
-
-  // Instruct phy to configure PRACH
-  state            = WAITING_PHY_CONFIG;
-  uint32_t task_id = current_task_id;
-  stack->enqueue_background_task([this, task_id](uint32_t worker_id) {
-    phy_h->configure_prach_params();
-    // notify back MAC
-    stack->notify_background_task_result([this, task_id]() { notify_phy_config_completed(task_id); });
-  });
+  resource_selection();
 }
 
 /* Resource selection as defined in 5.1.2 */
@@ -500,13 +481,11 @@ void ra_proc::response_error()
 {
   rntis->temp_rnti = 0;
   preambleTransmissionCounter++;
+  contention_resolution_timer.stop();
   if (preambleTransmissionCounter >= rach_cfg.preambleTransMax + 1) {
     rError("Maximum number of transmissions reached (%d)\n", rach_cfg.preambleTransMax);
     rrc->ra_problem();
     state = IDLE;
-    if (ra_is_ho) {
-      rrc->ho_ra_completed(false);
-    }
   } else {
     backoff_interval_start = -1;
     if (backoff_param_ms) {
@@ -518,7 +497,7 @@ void ra_proc::response_error()
       rDebug("Backoff wait interval %d\n", backoff_interval);
       state = BACKOFF_WAIT;
     } else {
-      rDebug("Transmitting immediately (%d/%d)\n", preambleTransmissionCounter, rach_cfg.preambleTransMax);
+      rInfo("Transmitting new preamble immediately (%d/%d)\n", preambleTransmissionCounter, rach_cfg.preambleTransMax);
       resource_selection();
     }
   }
@@ -540,27 +519,17 @@ void ra_proc::complete()
 
   mux_unit->msg3_flush();
 
-  if (ra_is_ho) {
-    rrc->ho_ra_completed(true);
-  }
-  log_h->console("Random Access Complete.     c-rnti=0x%x, ta=%d\n", rntis->crnti, current_ta);
+  rrc->ra_completed();
+
+  srslte::console("Random Access Complete.     c-rnti=0x%x, ta=%d\n", rntis->crnti, current_ta);
   rInfo("Random Access Complete.     c-rnti=0x%x, ta=%d\n", rntis->crnti, current_ta);
 
   state = START_WAIT_COMPLETION;
 }
 
-void ra_proc::start_noncont(uint32_t preamble_index, uint32_t prach_mask)
-{
-  next_preamble_idx     = preamble_index;
-  next_prach_mask       = prach_mask;
-  noncontention_enabled = true;
-  start_mac_order(56, true);
-}
-
-void ra_proc::start_mac_order(uint32_t msg_len_bits, bool is_ho)
+void ra_proc::start_mac_order(uint32_t msg_len_bits)
 {
   if (state == IDLE) {
-    ra_is_ho         = is_ho;
     started_by_pdcch = false;
     new_ra_msg_len   = msg_len_bits;
     rInfo("Starting PRACH by MAC order\n");
@@ -626,6 +595,7 @@ bool ra_proc::contention_resolution_id_received(uint64_t rx_contention_id)
 
 void ra_proc::pdcch_to_crnti(bool is_new_uplink_transmission)
 {
+  // TS 36.321 Section 5.1.5
   rDebug("PDCCH to C-RNTI received %s new UL transmission\n", is_new_uplink_transmission ? "with" : "without");
   if ((!started_by_pdcch && is_new_uplink_transmission) || started_by_pdcch) {
     rDebug("PDCCH for C-RNTI received\n");

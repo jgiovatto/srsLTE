@@ -93,8 +93,7 @@ public:
     ptr(start_ptr_),
     start_ptr(start_ptr_),
     max_ptr(max_size_ + start_ptr_)
-  {
-  }
+  {}
 
   int distance(const bit_ref_impl<Ptr>& other) const;
   int distance(const uint8_t* ref_ptr) const;
@@ -143,7 +142,7 @@ template <class T>
 class dyn_array
 {
 public:
-  typedef T item_type;
+  typedef T value_type;
   using iterator       = T*;
   using const_iterator = const T*;
 
@@ -200,6 +199,18 @@ public:
       delete[] old_data;
     }
   }
+  iterator erase(iterator it)
+  {
+    if (it < begin() or it >= end()) {
+      log_warning("Trying to access out-of-bounds iterator.\n");
+      return end();
+    }
+
+    std::copy(it + 1, end(), it);
+    size_--;
+
+    return it + 1;
+  }
   bool operator==(const dyn_array<T>& other) const
   {
     return size() == other.size() and std::equal(data_, data_ + size(), other.data_);
@@ -209,6 +220,7 @@ public:
     resize(size() + 1, size() * 2);
     data_[size() - 1] = elem;
   }
+  void           clear() { resize(0); }
   T&             back() { return data_[size() - 1]; }
   const T&       back() const { return data_[size() - 1]; }
   T*             data() { return &data_[0]; }
@@ -792,8 +804,12 @@ public:
   uint64_t   to_number() const { return bitstring_utils::to_number(data(), length()); }
   this_type& from_number(uint64_t val)
   {
-    auto nof_bits_ = (uint32_t)ceilf(log2(val));
-    resize(std::max(nof_bits_, LB));
+    auto nof_bits_ = std::max((uint32_t)ceilf(log2(std::max(val, (uint64_t)1u))), LB);
+    if (nof_bits_ > UB) {
+      log_error("The provided bitstring value %ld does not fit the bounds [%d, %d]\n", val, lb, ub);
+      return *this;
+    }
+    resize(nof_bits_);
     bitstring_utils::from_number(data(), val, length());
     return *this;
   }
@@ -1142,8 +1158,7 @@ struct choice_buffer_base_t {
 
 template <typename... Ts>
 struct choice_buffer_t : public choice_buffer_base_t<static_max<sizeof(alignment_t), sizeof(Ts)...>::value,
-                                                     static_max<alignof(alignment_t), alignof(Ts)...>::value> {
-};
+                                                     static_max<alignof(alignment_t), alignof(Ts)...>::value> {};
 
 using pod_choice_buffer_t = choice_buffer_t<>;
 

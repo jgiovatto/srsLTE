@@ -48,12 +48,9 @@ class mac : public mac_interface_phy_lte,
             public mac_interface_demux
 {
 public:
-  mac(const char* logname);
+  mac(const char* logname, ext_task_sched_handle task_sched_);
   ~mac();
-  bool init(phy_interface_mac_lte*          phy,
-            rlc_interface_mac*              rlc,
-            rrc_interface_mac*              rrc,
-            srslte::task_handler_interface* stack_);
+  bool init(phy_interface_mac_lte* phy, rlc_interface_mac* rlc, rrc_interface_mac* rrc);
   void stop();
 
   void get_metrics(mac_metrics_t m[SRSLTE_MAX_CARRIERS]);
@@ -84,18 +81,17 @@ public:
   void mch_start_rx(uint32_t lcid);
   void reconfiguration(const uint32_t& cc_idx, const bool& enable);
   void reset();
-  void wait_uplink();
 
   /******** set/get MAC configuration  ****************/
   void set_config(mac_cfg_t& mac_cfg);
+  void set_config(sr_cfg_t& sr_cfg);
   void set_contention_id(uint64_t uecri);
 
   /******* interface from demux object ****************/
   void reset_harq(uint32_t cc_idx);
   bool contention_resolution_id_rcv(uint64_t id);
 
-  void start_noncont_ho(uint32_t preamble_index, uint32_t prach_mask);
-  void start_cont_ho();
+  void set_rach_ded_cfg(uint32_t preamble_index, uint32_t prach_mask);
 
   void get_rntis(ue_rnti_t* rntis);
   void set_ho_rnti(uint16_t crnti, uint16_t target_pci);
@@ -115,14 +111,11 @@ private:
 
   bool is_in_window(uint32_t tti, int* start, int* len);
 
-  static const int MAC_MAIN_THREAD_PRIO = -1; // Use default high-priority below UHD
-  static const int MAC_PDU_THREAD_PRIO  = 5;
-
   // Interaction with PHY
-  phy_interface_mac_lte*                     phy_h   = nullptr;
-  rlc_interface_mac*                         rlc_h   = nullptr;
-  rrc_interface_mac*                         rrc_h   = nullptr;
-  srslte::task_handler_interface*            stack_h = nullptr;
+  phy_interface_mac_lte*                     phy_h = nullptr;
+  rlc_interface_mac*                         rlc_h = nullptr;
+  rrc_interface_mac*                         rrc_h = nullptr;
+  srslte::ext_task_sched_handle              task_sched;
   srslte::log_ref                            log_h;
   mac_interface_phy_lte::mac_phy_cfg_mbsfn_t phy_mbsfn_cfg = {};
 
@@ -139,8 +132,8 @@ private:
   demux demux_unit;
 
   /* DL/UL HARQ */
-  dl_harq_entity_vector dl_harq;
-  ul_harq_entity_vector ul_harq;
+  dl_harq_entity_vector dl_harq = {};
+  ul_harq_entity_vector ul_harq = {};
   ul_harq_cfg_t         ul_harq_cfg;
 
   /* MAC Uplink-related Procedures */
@@ -166,8 +159,8 @@ private:
   void                                timer_alignment_expire();
 
   /* Queue to dispatch stack tasks */
-  srslte::task_multiqueue::queue_handler stack_task_dispatch_queue;
-  srslte::byte_buffer_pool*              pool = nullptr;
+  srslte::task_multiqueue::queue_handle stack_task_dispatch_queue;
+  srslte::byte_buffer_pool*             pool = nullptr;
 
   // pointer to MAC PCAP object
   srslte::mac_pcap* pcap              = nullptr;

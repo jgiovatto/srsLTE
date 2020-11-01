@@ -108,30 +108,11 @@ typedef struct {
 } rlc_um_nr_pdu_header_t;
 
 // AMD PDU Header
-struct rlc_amd_pdu_header_t {
-  rlc_dc_field_t dc;                     // Data or control
-  uint8_t        rf;                     // Resegmentation flag
-  uint8_t        p;                      // Polling bit
-  uint8_t        fi;                     // Framing info
-  uint16_t       sn;                     // Sequence number
-  uint8_t        lsf;                    // Last segment flag
-  uint16_t       so;                     // Segment offset
-  uint32_t       N_li;                   // Number of length indicators
-  uint16_t       li[RLC_AM_WINDOW_SIZE]; // Array of length indicators
+class rlc_amd_pdu_header_t
+{
+public:
+  rlc_amd_pdu_header_t() {}
 
-  rlc_amd_pdu_header_t()
-  {
-    dc   = RLC_DC_FIELD_CONTROL_PDU;
-    rf   = 0;
-    p    = 0;
-    fi   = 0;
-    sn   = 0;
-    lsf  = 0;
-    so   = 0;
-    N_li = 0;
-    for (int i = 0; i < RLC_AM_WINDOW_SIZE; i++)
-      li[i] = 0;
-  }
   rlc_amd_pdu_header_t(const rlc_amd_pdu_header_t& h) { copy(h); }
   rlc_amd_pdu_header_t& operator=(const rlc_amd_pdu_header_t& h)
   {
@@ -152,6 +133,16 @@ struct rlc_amd_pdu_header_t {
       li[i] = h.li[i];
     }
   }
+
+  rlc_dc_field_t dc                     = RLC_DC_FIELD_CONTROL_PDU;           // Data or control
+  uint8_t        rf                     = 0;                                  // Resegmentation flag
+  uint8_t        p                      = 0;                                  // Polling bit
+  uint8_t        fi                     = RLC_FI_FIELD_START_AND_END_ALIGNED; // Framing info
+  uint16_t       sn                     = 0;                                  // Sequence number
+  uint8_t        lsf                    = 0;                                  // Last segment flag
+  uint16_t       so                     = 0;                                  // Segment offset
+  uint32_t       N_li                   = 0;                                  // Number of length indicators
+  uint16_t       li[RLC_AM_WINDOW_SIZE] = {0};                                // Array of length indicators
 };
 
 // NACK helper (for LTE and NR)
@@ -204,6 +195,8 @@ typedef struct {
   rlc_status_nack_t nacks[RLC_AM_WINDOW_SIZE];
 } rlc_am_nr_status_pdu_t;
 
+typedef std::function<void(uint32_t, uint32_t, uint32_t)> bsr_callback_t;
+
 /****************************************************************************
  * RLC Common interface
  * Common interface for all RLC entities
@@ -211,9 +204,6 @@ typedef struct {
 class rlc_common
 {
 public:
-  // Size of the Uplink buffer in number of PDUs
-  const static int RLC_BUFFER_NOF_PDU = 128;
-
   virtual ~rlc_common()                            = default;
   virtual bool configure(const rlc_config_t& cnfg) = 0;
   virtual void stop()                              = 0;
@@ -244,7 +234,7 @@ public:
 
     unique_byte_buffer_t s;
     while (tx_sdu_resume_queue.try_pop(&s)) {
-      write_sdu(std::move(s), false);
+      write_sdu(std::move(s));
     }
     suspended = false;
     return true;
@@ -259,12 +249,12 @@ public:
     }
   }
 
-  void write_sdu_s(unique_byte_buffer_t sdu, bool blocking)
+  void write_sdu_s(unique_byte_buffer_t sdu)
   {
     if (suspended) {
       queue_tx_sdu(std::move(sdu));
     } else {
-      write_sdu(std::move(sdu), blocking);
+      write_sdu(std::move(sdu));
     }
   }
 
@@ -275,8 +265,9 @@ public:
   virtual void                 reset_metrics() = 0;
 
   // PDCP interface
-  virtual void write_sdu(unique_byte_buffer_t sdu, bool blocking) = 0;
+  virtual void write_sdu(unique_byte_buffer_t sdu)                = 0;
   virtual void discard_sdu(uint32_t discard_sn)                   = 0;
+  virtual bool sdu_queue_is_full()                                = 0;
 
   // MAC interface
   virtual bool     has_data() = 0;
@@ -284,6 +275,8 @@ public:
   virtual uint32_t get_buffer_state()                              = 0;
   virtual int      read_pdu(uint8_t* payload, uint32_t nof_bytes)  = 0;
   virtual void     write_pdu(uint8_t* payload, uint32_t nof_bytes) = 0;
+
+  virtual void set_bsr_callback(bsr_callback_t callback) = 0;
 
 private:
   bool suspended = false;
@@ -307,7 +300,7 @@ private:
   void queue_tx_sdu(unique_byte_buffer_t sdu)
   {
     // Do not block ever
-    if (!tx_sdu_resume_queue.try_push(std::move(sdu)).first) {
+    if (not tx_sdu_resume_queue.try_push(std::move(sdu))) {
       srslte::logmap::get("RLC ")->warning("Dropping SDUs while bearer suspended.\n");
       return;
     }

@@ -21,6 +21,7 @@
 
 #include "srsenb/hdr/stack/upper/s1ap.h"
 #include "srsenb/hdr/stack/upper/common_enb.h"
+#include "srslte/adt/scope_exit.h"
 #include "srslte/common/bcd_helpers.h"
 #include "srslte/common/int_helpers.h"
 #include "srslte/common/logmap.h"
@@ -45,6 +46,17 @@ using srslte::uint32_to_uint8;
 using namespace asn1::s1ap;
 
 namespace srsenb {
+
+asn1::bounded_bitstring<1, 160, true, true> addr_to_asn1(const char* addr_str)
+{
+  asn1::bounded_bitstring<1, 160, true, true> transport_layer_addr(32);
+  uint8_t                                     addr[4];
+  inet_pton(AF_INET, addr_str, addr);
+  for (uint32_t j = 0; j < 4; ++j) {
+    transport_layer_addr.data()[j] = addr[3 - j];
+  }
+  return transport_layer_addr;
+}
 
 /*********************************************************
  * TS 36.413 - Section 8.4.1 - "Handover Preparation"
@@ -81,7 +93,7 @@ srslte::proc_outcome_t s1ap::ue::ho_prep_proc_t::react(const ho_prep_fail_s& msg
 
   std::string cause = s1ap_ptr->get_cause(msg.protocol_ies.cause.value);
   procError("HO preparation Failure. Cause: %s\n", cause.c_str());
-  s1ap_ptr->s1ap_log->console("HO preparation Failure. Cause: %s\n", cause.c_str());
+  srslte::console("HO preparation Failure. Cause: %s\n", cause.c_str());
 
   return srslte::proc_outcome_t::error;
 }
@@ -173,17 +185,17 @@ srslte::proc_outcome_t s1ap::s1_setup_proc_t::start_mme_connection()
   }
 
   if (not s1ap_ptr->connect_mme()) {
-    procError("Failed to initiate SCTP socket. Attempting reconnection in %d seconds\n",
-              s1ap_ptr->mme_connect_timer.duration() / 1000);
-    s1ap_ptr->s1ap_log->console("Failed to initiate SCTP socket. Attempting reconnection in %d seconds\n",
-                                s1ap_ptr->mme_connect_timer.duration() / 1000);
+    procInfo("Failed to initiate SCTP socket. Attempting reconnection in %d seconds\n",
+             s1ap_ptr->mme_connect_timer.duration() / 1000);
+    srslte::console("Failed to initiate SCTP socket. Attempting reconnection in %d seconds\n",
+                       s1ap_ptr->mme_connect_timer.duration() / 1000);
     s1ap_ptr->mme_connect_timer.run();
     return srslte::proc_outcome_t::error;
   }
 
   if (not s1ap_ptr->setup_s1()) {
     procError("S1 setup failed. Exiting...\n");
-    s1ap_ptr->s1ap_log->console("S1 setup failed\n");
+    srslte::console("S1 setup failed\n");
     s1ap_ptr->running = false;
     return srslte::proc_outcome_t::error;
   }
@@ -203,7 +215,7 @@ srslte::proc_outcome_t s1ap::s1_setup_proc_t::react(const srsenb::s1ap::s1_setup
     return srslte::proc_outcome_t::success;
   }
   procError("S1Setup failed. Exiting...\n");
-  s1ap_ptr->s1ap_log->console("S1setup failed\n");
+  srslte::console("S1setup failed\n");
   return srslte::proc_outcome_t::error;
 }
 
@@ -219,24 +231,20 @@ void s1ap::s1_setup_proc_t::then(const srslte::proc_state_t& result) const
  *                     S1AP class
  *********************************************************/
 
-s1ap::s1ap() : s1setup_proc(this) {}
+s1ap::s1ap(srslte::task_sched_handle task_sched_) : s1setup_proc(this), task_sched(task_sched_) {}
 
-int s1ap::init(s1ap_args_t                       args_,
-               rrc_interface_s1ap*               rrc_,
-               srslte::timer_handler*            timers_,
-               srsenb::stack_interface_s1ap_lte* stack_)
+int s1ap::init(s1ap_args_t args_, rrc_interface_s1ap* rrc_, srsenb::stack_interface_s1ap_lte* stack_)
 {
   rrc      = rrc_;
   args     = args_;
   s1ap_log = srslte::logmap::get("S1AP");
-  timers   = timers_;
   stack    = stack_;
   pool     = srslte::byte_buffer_pool::get_instance();
 
   build_tai_cgi();
 
   // Setup MME reconnection timer
-  mme_connect_timer    = timers->get_unique_timer();
+  mme_connect_timer    = task_sched.get_unique_timer();
   auto mme_connect_run = [this](uint32_t tid) {
     if (not s1setup_proc.launch()) {
       s1ap_log->error("Failed to initiate S1Setup procedure.\n");
@@ -244,7 +252,7 @@ int s1ap::init(s1ap_args_t                       args_,
   };
   mme_connect_timer.set(10000, mme_connect_run);
   // Setup S1Setup timeout
-  s1setup_timeout              = timers->get_unique_timer();
+  s1setup_timeout              = task_sched.get_unique_timer();
   uint32_t s1setup_timeout_val = 5000;
   s1setup_timeout.set(s1setup_timeout_val, [this](uint32_t tid) {
     s1_setup_proc_t::s1setupresult res;
@@ -371,6 +379,20 @@ bool s1ap::user_exists(uint16_t rnti)
   return users.find_ue_rnti(rnti) != nullptr;
 }
 
+void s1ap::user_mod(uint16_t old_rnti, uint16_t new_rnti)
+{
+  s1ap_log->info("Modifying user context. Old rnti: 0x%x, new rnti: 0x%x\n", old_rnti, new_rnti);
+  if (not user_exists(old_rnti)) {
+    s1ap_log->error("Old rnti does not exist, aborting.\n");
+    return;
+  }
+  if (user_exists(new_rnti)) {
+    s1ap_log->error("New rnti already exists, aborting.\n");
+    return;
+  }
+  users.find_ue_rnti(old_rnti)->ctxt.rnti = new_rnti;
+}
+
 void s1ap::ue_ctxt_setup_complete(uint16_t rnti, const asn1::s1ap::init_context_setup_resp_s& res)
 {
   ue* u = users.find_ue_rnti(rnti);
@@ -482,7 +504,7 @@ bool s1ap::handle_mme_rx_msg(srslte::unique_byte_buffer_t pdu,
     s1ap_log->debug("SCTP Notification %d\n", notification->sn_header.sn_type);
     if (notification->sn_header.sn_type == SCTP_SHUTDOWN_EVENT) {
       s1ap_log->info("SCTP Association Shutdown. Association: %d\n", sri.sinfo_assoc_id);
-      s1ap_log->console("SCTP Association Shutdown. Association: %d\n", sri.sinfo_assoc_id);
+      srslte::console("SCTP Association Shutdown. Association: %d\n", sri.sinfo_assoc_id);
       s1ap_socket.reset();
     }
   } else if (pdu->N_bytes == 0) {
@@ -549,6 +571,10 @@ bool s1ap::handle_initiatingmessage(const init_msg_s& msg)
       return handle_erabsetuprequest(msg.value.erab_setup_request());
     case s1ap_elem_procs_o::init_msg_c::types_opts::ue_context_mod_request:
       return handle_uecontextmodifyrequest(msg.value.ue_context_mod_request());
+    case s1ap_elem_procs_o::init_msg_c::types_opts::ho_request:
+      return handle_ho_request(msg.value.ho_request());
+    case s1ap_elem_procs_o::init_msg_c::types_opts::mme_status_transfer:
+      return handle_mme_status_transfer(msg.value.mme_status_transfer());
     default:
       s1ap_log->error("Unhandled initiating message: %s\n", msg.value.type().to_string().c_str());
   }
@@ -562,6 +588,9 @@ bool s1ap::handle_successfuloutcome(const successful_outcome_s& msg)
       return handle_s1setupresponse(msg.value.s1_setup_resp());
     case s1ap_elem_procs_o::successful_outcome_c::types_opts::ho_cmd:
       return handle_s1hocommand(msg.value.ho_cmd());
+    case s1ap_elem_procs_o::successful_outcome_c::types_opts::ho_cancel_ack:
+      s1ap_log->info("Received %s\n", msg.value.type().to_string().c_str());
+      return true;
     default:
       s1ap_log->error("Unhandled successful outcome message: %s\n", msg.value.type().to_string().c_str());
   }
@@ -754,7 +783,7 @@ bool s1ap::handle_s1setupfailure(const asn1::s1ap::s1_setup_fail_s& msg)
 {
   std::string cause = get_cause(msg.protocol_ies.cause.value);
   s1ap_log->error("S1 Setup Failure. Cause: %s\n", cause.c_str());
-  s1ap_log->console("S1 Setup Failure. Cause: %s\n", cause.c_str());
+  srslte::console("S1 Setup Failure. Cause: %s\n", cause.c_str());
   return true;
 }
 
@@ -778,6 +807,181 @@ bool s1ap::handle_s1hocommand(const asn1::s1ap::ho_cmd_s& msg)
   }
   u->ho_prep_proc.trigger(msg);
   return true;
+}
+
+/**************************************************************
+ * TS 36.413 - Section 8.4.2 - "Handover Resource Allocation"
+ *************************************************************/
+
+bool s1ap::handle_ho_request(const asn1::s1ap::ho_request_s& msg)
+{
+  uint16_t rnti = SRSLTE_INVALID_RNTI;
+
+  s1ap_log->info("Received S1 HO Request\n");
+  srslte::console("Received S1 HO Request\n");
+
+  auto on_scope_exit = srslte::make_scope_exit([this, &rnti, msg]() {
+    // If rnti is not allocated successfully, remove from s1ap and send handover failure
+    if (rnti == SRSLTE_INVALID_RNTI) {
+      send_ho_failure(msg.protocol_ies.mme_ue_s1ap_id.value.value);
+    }
+  });
+
+  if (msg.ext or msg.protocol_ies.ho_restrict_list_present or
+      msg.protocol_ies.handov_type.value.value != handov_type_opts::intralte) {
+    s1ap_log->error("Not handling S1AP non-intra LTE handovers and extensions\n");
+    return false;
+  }
+
+  // Confirm the UE does not exist in TeNB
+  if (users.find_ue_mmeid(msg.protocol_ies.mme_ue_s1ap_id.value.value) != nullptr) {
+    s1ap_log->error("The provided MME_UE_S1AP_ID=%" PRIu64 " is already connected to the cell\n",
+                    msg.protocol_ies.mme_ue_s1ap_id.value.value);
+    return false;
+  }
+
+  // Create user ctxt object and associated MME context
+  std::unique_ptr<ue> ue_ptr{new ue{this}};
+  ue_ptr->ctxt.mme_ue_s1ap_id_present = true;
+  ue_ptr->ctxt.mme_ue_s1ap_id         = msg.protocol_ies.mme_ue_s1ap_id.value.value;
+  if (users.add_user(std::move(ue_ptr)) == nullptr) {
+    return false;
+  }
+
+  // Unpack Transparent Container
+  sourceenb_to_targetenb_transparent_container_s container;
+  asn1::cbit_ref bref{msg.protocol_ies.source_to_target_transparent_container.value.data(),
+                      msg.protocol_ies.source_to_target_transparent_container.value.size()};
+  if (container.unpack(bref) != asn1::SRSASN_SUCCESS) {
+    s1ap_log->error("Failed to unpack SourceToTargetTransparentContainer\n");
+    return false;
+  }
+
+  // Handle Handover Resource Allocation
+  rnti = rrc->start_ho_ue_resource_alloc(msg, container);
+  return rnti != SRSLTE_INVALID_RNTI;
+}
+
+bool s1ap::send_ho_failure(uint32_t mme_ue_s1ap_id)
+{
+  // Remove created s1ap user
+  ue* u = users.find_ue_mmeid(mme_ue_s1ap_id);
+  if (u != nullptr) {
+    users.erase(u);
+  }
+
+  s1ap_pdu_c tx_pdu;
+  tx_pdu.set_unsuccessful_outcome().load_info_obj(ASN1_S1AP_ID_HO_RES_ALLOC);
+  ho_fail_ies_container& container = tx_pdu.unsuccessful_outcome().value.ho_fail().protocol_ies;
+
+  container.mme_ue_s1ap_id.value = mme_ue_s1ap_id;
+  // TODO: Setup cause
+  container.cause.value.set_radio_network().value = cause_radio_network_opts::ho_target_not_allowed;
+
+  return sctp_send_s1ap_pdu(tx_pdu, SRSLTE_INVALID_RNTI, "HandoverFailure");
+}
+
+bool s1ap::send_ho_req_ack(const asn1::s1ap::ho_request_s&               msg,
+                           uint16_t                                      rnti,
+                           srslte::unique_byte_buffer_t                  ho_cmd,
+                           srslte::span<asn1::fixed_octstring<4, true> > admitted_bearers)
+{
+  s1ap_pdu_c tx_pdu;
+  tx_pdu.set_successful_outcome().load_info_obj(ASN1_S1AP_ID_HO_RES_ALLOC);
+  ho_request_ack_ies_container& container = tx_pdu.successful_outcome().value.ho_request_ack().protocol_ies;
+
+  ue* ue_ptr        = users.find_ue_mmeid(msg.protocol_ies.mme_ue_s1ap_id.value.value);
+  ue_ptr->ctxt.rnti = rnti;
+
+  container.mme_ue_s1ap_id.value = msg.protocol_ies.mme_ue_s1ap_id.value.value;
+  container.enb_ue_s1ap_id.value = ue_ptr->ctxt.enb_ue_s1ap_id;
+
+  // TODO: Add admitted E-RABs
+  for (uint32_t i = 0; i < msg.protocol_ies.erab_to_be_setup_list_ho_req.value.size(); ++i) {
+    const auto&                           erab      = msg.protocol_ies.erab_to_be_setup_list_ho_req.value[i];
+    const erab_to_be_setup_item_ho_req_s& erabsetup = erab.value.erab_to_be_setup_item_ho_req();
+    container.erab_admitted_list.value.push_back({});
+    container.erab_admitted_list.value.back().load_info_obj(ASN1_S1AP_ID_ERAB_ADMITTED_ITEM);
+    auto& c                   = container.erab_admitted_list.value.back().value.erab_admitted_item();
+    c.erab_id                 = erabsetup.erab_id;
+    c.gtp_teid                = admitted_bearers[i];
+    c.transport_layer_address = addr_to_asn1(args.gtp_bind_addr.c_str());
+    //    c.dl_transport_layer_address_present = true;
+    //    c.dl_transport_layer_address         = c.transport_layer_address;
+    //    c.ul_transport_layer_address_present = true;
+    //    c.ul_transport_layer_address         = c.transport_layer_address;
+  }
+  asn1::s1ap::targetenb_to_sourceenb_transparent_container_s transparent_container;
+  transparent_container.rrc_container.resize(ho_cmd->N_bytes);
+  memcpy(transparent_container.rrc_container.data(), ho_cmd->msg, ho_cmd->N_bytes);
+
+  auto&         pdu = ho_cmd; // reuse pdu
+  asn1::bit_ref bref{pdu->msg, pdu->get_tailroom()};
+  if (transparent_container.pack(bref) != asn1::SRSASN_SUCCESS) {
+    s1ap_log->error("Failed to pack TargeteNBToSourceeNBTransparentContainer\n");
+    return false;
+  }
+  container.target_to_source_transparent_container.value.resize(bref.distance_bytes());
+  memcpy(container.target_to_source_transparent_container.value.data(), pdu->msg, bref.distance_bytes());
+
+  return sctp_send_s1ap_pdu(tx_pdu, rnti, "HandoverRequestAcknowledge");
+}
+
+bool s1ap::handle_mme_status_transfer(const asn1::s1ap::mme_status_transfer_s& msg)
+{
+  s1ap_log->info("Received S1 MMEStatusTransfer\n");
+  srslte::console("Received S1 MMEStatusTransfer\n");
+
+  ue* u = find_s1apmsg_user(msg.protocol_ies.enb_ue_s1ap_id.value.value, msg.protocol_ies.mme_ue_s1ap_id.value.value);
+  if (u == nullptr) {
+    return false;
+  }
+
+  rrc->set_erab_status(
+      u->ctxt.rnti,
+      msg.protocol_ies.enb_status_transfer_transparent_container.value.bearers_subject_to_status_transfer_list);
+  return true;
+}
+
+void s1ap::send_ho_notify(uint16_t rnti, uint64_t target_eci)
+{
+  ue* user_ptr = users.find_ue_rnti(rnti);
+  if (user_ptr == nullptr) {
+    return;
+  }
+
+  s1ap_pdu_c tx_pdu;
+
+  tx_pdu.set_init_msg().load_info_obj(ASN1_S1AP_ID_HO_NOTIF);
+  ho_notify_ies_container& container = tx_pdu.init_msg().value.ho_notify().protocol_ies;
+
+  container.mme_ue_s1ap_id.value = user_ptr->ctxt.mme_ue_s1ap_id;
+  container.enb_ue_s1ap_id.value = user_ptr->ctxt.enb_ue_s1ap_id;
+
+  container.eutran_cgi.value = eutran_cgi;
+  container.eutran_cgi.value.cell_id.from_number(target_eci);
+  container.tai.value = tai;
+
+  sctp_send_s1ap_pdu(tx_pdu, rnti, "HandoverNotify");
+}
+
+void s1ap::send_ho_cancel(uint16_t rnti)
+{
+  ue* user_ptr = users.find_ue_rnti(rnti);
+  if (user_ptr == nullptr) {
+    return;
+  }
+
+  s1ap_pdu_c tx_pdu;
+
+  tx_pdu.set_init_msg().load_info_obj(ASN1_S1AP_ID_HO_CANCEL);
+  ho_cancel_ies_container& container = tx_pdu.init_msg().value.ho_cancel().protocol_ies;
+
+  container.mme_ue_s1ap_id.value                  = user_ptr->ctxt.mme_ue_s1ap_id;
+  container.enb_ue_s1ap_id.value                  = user_ptr->ctxt.enb_ue_s1ap_id;
+  container.cause.value.set_radio_network().value = cause_radio_network_opts::ho_cancelled;
+
+  sctp_send_s1ap_pdu(tx_pdu, rnti, "HandoverCancel");
 }
 
 /*******************************************************************************
@@ -1156,12 +1360,12 @@ bool s1ap::sctp_send_s1ap_pdu(const asn1::s1ap::s1ap_pdu_c& tx_pdu, uint32_t rnt
     pcap->write_s1ap(buf->msg, buf->N_bytes);
   }
 
-  if (rnti > 0) {
+  if (rnti != SRSLTE_INVALID_RNTI) {
     s1ap_log->info_hex(buf->msg, buf->N_bytes, "Sending %s for rnti=0x%x", procedure_name, rnti);
   } else {
     s1ap_log->info_hex(buf->msg, buf->N_bytes, "Sending %s to MME", procedure_name);
   }
-  uint16_t streamid = rnti == 0 ? NONUE_STREAM_ID : users.find_ue_rnti(rnti)->stream_id;
+  uint16_t streamid = rnti == SRSLTE_INVALID_RNTI ? NONUE_STREAM_ID : users.find_ue_rnti(rnti)->stream_id;
 
   ssize_t n_sent = sctp_sendmsg(s1ap_socket.fd(),
                                 buf->msg,
@@ -1248,10 +1452,10 @@ s1ap::ue::ue(s1ap* s1ap_ptr_) : s1ap_ptr(s1ap_ptr_), s1ap_log(s1ap_ptr_->s1ap_lo
   stream_id = s1ap_ptr->next_ue_stream_id;
 
   // initialize timers
-  ts1_reloc_prep = s1ap_ptr->timers->get_unique_timer();
+  ts1_reloc_prep = s1ap_ptr->task_sched.get_unique_timer();
   ts1_reloc_prep.set(ts1_reloc_prep_timeout_ms,
                      [this](uint32_t tid) { ho_prep_proc.trigger(ho_prep_proc_t::ts1_reloc_prep_expired{}); });
-  ts1_reloc_overall = s1ap_ptr->timers->get_unique_timer();
+  ts1_reloc_overall = s1ap_ptr->task_sched.get_unique_timer();
   ts1_reloc_overall.set(ts1_reloc_overall_timeout_ms, [](uint32_t tid) { /* TODO */ });
 }
 
@@ -1355,6 +1559,10 @@ bool s1ap::ue::send_enb_status_transfer_proc(std::vector<bearer_status_info>& be
     asn1bearer.ul_coun_tvalue.pdcp_sn = item.pdcp_ul_sn;
     asn1bearer.ul_coun_tvalue.hfn     = item.ul_hfn;
     // TODO: asn1bearer.receiveStatusofULPDCPSDUs_present
+
+    //    asn1::json_writer jw;
+    //    asn1bearer.to_json(jw);
+    //    printf("Bearer to add %s\n", jw.to_string().c_str());
   }
 
   return s1ap_ptr->sctp_send_s1ap_pdu(tx_pdu, ctxt.rnti, "ENBStatusTransfer");

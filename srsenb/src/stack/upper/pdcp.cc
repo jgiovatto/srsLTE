@@ -24,12 +24,11 @@
 
 namespace srsenb {
 
-pdcp::pdcp(srslte::task_handler_interface* task_executor_, const char* logname) :
-  task_executor(task_executor_),
+pdcp::pdcp(srslte::task_sched_handle task_sched_, const char* logname) :
+  task_sched(task_sched_),
   log_h(logname),
   pool(srslte::byte_buffer_pool::get_instance())
-{
-}
+{}
 
 void pdcp::init(rlc_interface_pdcp* rlc_, rrc_interface_pdcp* rrc_, gtpu_interface_pdcp* gtpu_)
 {
@@ -49,7 +48,7 @@ void pdcp::stop()
 void pdcp::add_user(uint16_t rnti)
 {
   if (users.count(rnti) == 0) {
-    srslte::pdcp* obj = new srslte::pdcp(task_executor, log_h->get_service_name().c_str());
+    srslte::pdcp* obj = new srslte::pdcp(task_sched, log_h->get_service_name().c_str());
     obj->init(&users[rnti].rlc_itf, &users[rnti].rrc_itf, &users[rnti].gtpu_itf);
     users[rnti].rlc_itf.rnti  = rnti;
     users[rnti].gtpu_itf.rnti = rnti;
@@ -89,6 +88,13 @@ void pdcp::add_bearer(uint16_t rnti, uint32_t lcid, srslte::pdcp_config_t cfg)
   }
 }
 
+void pdcp::del_bearer(uint16_t rnti, uint32_t lcid)
+{
+  if (users.count(rnti)) {
+    users[rnti].pdcp->del_bearer(lcid);
+  }
+}
+
 void pdcp::reset(uint16_t rnti)
 {
   if (users.count(rnti)) {
@@ -113,17 +119,28 @@ void pdcp::enable_encryption(uint16_t rnti, uint32_t lcid)
   users[rnti].pdcp->enable_encryption(lcid, srslte::DIRECTION_TXRX);
 }
 
-bool pdcp::get_bearer_status(uint16_t  rnti,
-                             uint32_t  lcid,
-                             uint16_t* dlsn,
-                             uint16_t* dlhfn,
-                             uint16_t* ulsn,
-                             uint16_t* ulhfn)
+bool pdcp::get_bearer_state(uint16_t rnti, uint32_t lcid, srslte::pdcp_lte_state_t* state)
 {
   if (users.count(rnti) == 0) {
     return false;
   }
-  return users[rnti].pdcp->get_bearer_status(lcid, dlsn, dlhfn, ulsn, ulhfn);
+  return users[rnti].pdcp->get_bearer_state(lcid, state);
+}
+
+bool pdcp::set_bearer_state(uint16_t rnti, uint32_t lcid, const srslte::pdcp_lte_state_t& state)
+{
+  if (users.count(rnti) == 0) {
+    return false;
+  }
+  return users[rnti].pdcp->set_bearer_state(lcid, state);
+}
+
+void pdcp::reestablish(uint16_t rnti)
+{
+  if (users.count(rnti) == 0) {
+    return;
+  }
+  users[rnti].pdcp->reestablish();
 }
 
 void pdcp::write_pdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t sdu)
@@ -137,8 +154,7 @@ void pdcp::write_sdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t 
 {
   if (users.count(rnti)) {
     if (rnti != SRSLTE_MRNTI) {
-      // TODO: expose blocking mode as function param
-      users[rnti].pdcp->write_sdu(lcid, std::move(sdu), false);
+      users[rnti].pdcp->write_sdu(lcid, std::move(sdu));
     } else {
       users[rnti].pdcp->write_sdu_mch(lcid, std::move(sdu));
     }
@@ -150,7 +166,7 @@ void pdcp::user_interface_gtpu::write_pdu(uint32_t lcid, srslte::unique_byte_buf
   gtpu->write_pdu(rnti, lcid, std::move(pdu));
 }
 
-void pdcp::user_interface_rlc::write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu, bool blocking)
+void pdcp::user_interface_rlc::write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu)
 {
   rlc->write_sdu(rnti, lcid, std::move(sdu));
 }
@@ -163,6 +179,11 @@ void pdcp::user_interface_rlc::discard_sdu(uint32_t lcid, uint32_t discard_sn)
 bool pdcp::user_interface_rlc::rb_is_um(uint32_t lcid)
 {
   return rlc->rb_is_um(rnti, lcid);
+}
+
+bool pdcp::user_interface_rlc::sdu_queue_is_full(uint32_t lcid)
+{
+  return rlc->sdu_queue_is_full(rnti, lcid);
 }
 
 void pdcp::user_interface_rrc::write_pdu(uint32_t lcid, srslte::unique_byte_buffer_t pdu)
@@ -187,7 +208,7 @@ void pdcp::user_interface_rrc::write_pdu_pcch(srslte::unique_byte_buffer_t pdu)
 
 std::string pdcp::user_interface_rrc::get_rb_name(uint32_t lcid)
 {
-  return std::string(rb_id_text[lcid]);
+  return to_string((rb_id_t)lcid);
 }
 
 } // namespace srsenb

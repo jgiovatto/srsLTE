@@ -27,12 +27,12 @@
 #include <string.h>
 
 #define CURRENT_FFTSIZE srslte_symbol_sz(q->cell.nof_prb)
-#define CURRENT_SFLEN SRSLTE_SF_LEN(CURRENT_FFTSIZE)
-
-#define CURRENT_SLOTLEN_RE SRSLTE_SLOT_LEN_RE(q->cell.nof_prb, q->cell.cp)
 #define CURRENT_SFLEN_RE SRSLTE_NOF_RE(q->cell)
 
-#define SRSLTE_ENB_RF_AMP 0.1
+static float enb_dl_get_norm_factor(uint32_t nof_prb)
+{
+  return 0.05f / sqrtf(nof_prb);
+}
 
 int srslte_enb_dl_init(srslte_enb_dl_t* q, cf_t* out_buffer[SRSLTE_MAX_PORTS], uint32_t max_prb)
 {
@@ -217,6 +217,12 @@ int srslte_enb_dl_set_cell(srslte_enb_dl_t* q, srslte_cell_t cell)
       /* Generate PSS/SSS signals */
       srslte_pss_generate(q->pss_signal, cell.id % 3);
       srslte_sss_generate(q->sss_signal0, q->sss_signal5, cell.id);
+
+      // Calculate common DCI locations
+      for (int32_t cfi = 1; cfi <= 3; cfi++) {
+        q->nof_common_locations[SRSLTE_CFI_IDX(cfi)] = srslte_pdcch_common_locations(
+            &q->pdcch, q->common_locations[SRSLTE_CFI_IDX(cfi)], SRSLTE_MAX_CANDIDATES_COM, cfi);
+      }
     }
     ret = SRSLTE_SUCCESS;
 
@@ -363,6 +369,16 @@ void srslte_enb_dl_put_phich(srslte_enb_dl_t* q, srslte_phich_grant_t* grant, bo
   srslte_phich_encode(&q->phich, &q->dl_sf, resource, ack, q->sf_symbols);
 }
 
+bool srslte_enb_dl_location_is_common_ncce(srslte_enb_dl_t* q, uint32_t ncce)
+{
+  if (SRSLTE_CFI_ISVALID(q->dl_sf.cfi)) {
+    return srslte_location_find_ncce(
+        q->common_locations[SRSLTE_CFI_IDX(q->dl_sf.cfi)], q->nof_common_locations[SRSLTE_CFI_IDX(q->dl_sf.cfi)], ncce);
+  } else {
+    return false;
+  }
+}
+
 int srslte_enb_dl_put_pdcch_dl(srslte_enb_dl_t* q, srslte_dci_cfg_t* dci_cfg, srslte_dci_dl_t* dci_dl)
 {
   srslte_dci_msg_t dci_msg;
@@ -408,7 +424,7 @@ int srslte_enb_dl_put_pmch(srslte_enb_dl_t* q, srslte_pmch_cfg_t* pmch_cfg, uint
 void srslte_enb_dl_gen_signal(srslte_enb_dl_t* q)
 {
   // TODO: PAPR control
-  float norm_factor = 0.05f / sqrtf(q->cell.nof_prb);
+  float norm_factor = enb_dl_get_norm_factor(q->cell.nof_prb);
 
   if (q->dl_sf.sf_type == SRSLTE_SF_MBSFN) {
     srslte_ofdm_tx_sf(&q->ifft_mbsfn);
@@ -513,12 +529,10 @@ static void enb_dl_get_ack_fdd_all_spatial_bundling(const srslte_uci_value_t* uc
 {
   for (uint32_t cc_idx = 0; cc_idx < pdsch_ack->nof_cc; cc_idx++) {
     if (pdsch_ack->cc[cc_idx].m[0].present) {
-      if (uci_value->ack.ack_value[cc_idx] == 1) {
-        for (uint32_t tb = 0; tb < nof_tb; tb++) {
-          // Check that TB was transmitted
-          if (pdsch_ack->cc[cc_idx].m[0].value[tb] != 2) {
-            pdsch_ack->cc[cc_idx].m[0].value[tb] = uci_value->ack.ack_value[cc_idx];
-          }
+      for (uint32_t tb = 0; tb < nof_tb; tb++) {
+        // Check that TB was transmitted
+        if (pdsch_ack->cc[cc_idx].m[0].value[tb] != 2) {
+          pdsch_ack->cc[cc_idx].m[0].value[tb] = uci_value->ack.ack_value[cc_idx];
         }
       }
     }
@@ -528,12 +542,15 @@ static void enb_dl_get_ack_fdd_all_spatial_bundling(const srslte_uci_value_t* uc
 static void
 enb_dl_get_ack_fdd_pcell_skip_drx(const srslte_uci_value_t* uci_value, srslte_pdsch_ack_t* pdsch_ack, uint32_t nof_tb)
 {
+  uint32_t ack_idx = 0;
   if (pdsch_ack->cc[0].m[0].present) {
-    if (uci_value->ack.ack_value[0] == 1) {
-      for (uint32_t tb = 0; tb < nof_tb; tb++) {
-        // Check that TB was transmitted
-        if (pdsch_ack->cc[0].m[0].value[tb] != 2) {
-          pdsch_ack->cc[0].m[0].value[tb] = uci_value->ack.ack_value[0];
+    for (uint32_t tb = 0; tb < nof_tb; tb++) {
+      // Check that TB was transmitted
+      if (pdsch_ack->cc[0].m[0].value[tb] != 2) {
+        if (uci_value->ack.valid) {
+          pdsch_ack->cc[0].m[0].value[tb] = uci_value->ack.ack_value[ack_idx++];
+        } else {
+          pdsch_ack->cc[0].m[0].value[tb] = 0;
         }
       }
     }
@@ -545,11 +562,13 @@ enb_dl_get_ack_fdd_all_keep_drx(const srslte_uci_value_t* uci_value, srslte_pdsc
 {
   for (uint32_t cc_idx = 0; cc_idx < pdsch_ack->nof_cc; cc_idx++) {
     if (pdsch_ack->cc[cc_idx].m[0].present) {
-      if (uci_value->ack.ack_value[cc_idx] == 1) {
-        for (uint32_t tb = 0; tb < nof_tb; tb++) {
-          // Check that TB was transmitted
-          if (pdsch_ack->cc[cc_idx].m[0].value[tb] != 2) {
+      for (uint32_t tb = 0; tb < nof_tb; tb++) {
+        // Check that TB was transmitted
+        if (pdsch_ack->cc[cc_idx].m[0].value[tb] != 2) {
+          if (uci_value->ack.valid) {
             pdsch_ack->cc[cc_idx].m[0].value[tb] = uci_value->ack.ack_value[cc_idx * nof_tb + tb];
+          } else {
+            pdsch_ack->cc[cc_idx].m[0].value[tb] = 0;
           }
         }
       }
@@ -638,4 +657,10 @@ void srslte_enb_dl_get_ack(const srslte_cell_t*      cell,
   } else {
     ERROR("Not implemented for TDD\n");
   }
+}
+
+float srslte_enb_dl_get_maximum_signal_power_dBfs(uint32_t nof_prb)
+{
+  return srslte_convert_amplitude_to_dB(enb_dl_get_norm_factor(nof_prb)) +
+         srslte_convert_power_to_dB((float)nof_prb * SRSLTE_NRE) + 3.0f;
 }

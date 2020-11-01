@@ -33,9 +33,6 @@ class cc_worker
 public:
   cc_worker(uint32_t cc_idx, uint32_t max_prb, phy_common* phy, srslte::log* log);
   ~cc_worker();
-  void reset();
-
-  bool set_cell(srslte_cell_t cell);
 
   /* Functions used by main PHY thread */
   cf_t*    get_rx_buffer(uint32_t antenna_idx);
@@ -43,14 +40,20 @@ public:
   uint32_t get_buffer_len();
 
   void  set_tti(uint32_t tti);
-  void  set_cfo(float cfo);
-  float get_ref_cfo();
+  void  set_cfo_unlocked(float cfo);
+  float get_ref_cfo() const;
 
-  void set_tdd_config(srslte_tdd_config_t config);
-  void set_config(srslte::phy_cfg_t& phy_cfg);
-  void upd_config_dci(srslte_dci_cfg_t& dci_cfg);
-  void set_crnti(uint16_t rnti);
-  void enable_pregen_signals(bool enabled);
+  // Functions to set configuration.
+  // Warning: all these functions are unlocked and must be called while the worker is not processing data
+  void reset_cell_unlocked();
+  bool set_cell_unlocked(srslte_cell_t cell_);
+  void set_tdd_config_unlocked(srslte_tdd_config_t config);
+  void set_config_unlocked(srslte::phy_cfg_t& phy_cfg);
+  void upd_config_dci_unlocked(srslte_dci_cfg_t& dci_cfg);
+  void set_crnti_unlocked(uint16_t rnti);
+  void enable_pregen_signals_unlocked(bool enabled);
+
+  void set_uci_periodic_cqi(srslte_uci_data_t* uci_data);
 
   bool work_dl_regular();
   bool work_dl_mbsfn(srslte_mbsfn_cfg_t mbsfn_cfg);
@@ -59,9 +62,12 @@ public:
   int read_ce_abs(float* ce_abs, uint32_t tx_antenna, uint32_t rx_antenna);
   int read_pdsch_d(cf_t* pdsch_d);
 
-  void update_measurements();
+  void update_measurements(std::vector<rrc_interface_phy_lte::phy_meas_t>& serving_cells,
+                           cf_t*                                           rssi_power_buffer = nullptr);
 
 private:
+  void reset();
+
   void dl_phy_to_mac_grant(srslte_pdsch_grant_t*                  phy_grant,
                            srslte_dci_dl_t*                       dl_dci,
                            mac_interface_phy_lte::mac_grant_dl_t* mac_grant);
@@ -84,7 +90,6 @@ private:
   /* Methods for UL */
   bool     encode_uplink(mac_interface_phy_lte::tb_action_ul_t* action, srslte_uci_data_t* uci_data);
   void     set_uci_sr(srslte_uci_data_t* uci_data);
-  void     set_uci_periodic_cqi(srslte_uci_data_t* uci_data);
   void     set_uci_aperiodic_cqi(srslte_uci_data_t* uci_data);
   void     set_uci_ack(srslte_uci_data_t* uci_data, bool is_grant_available, uint32_t dai_ul, bool is_pusch_available);
   uint32_t get_wideband_cqi();
@@ -115,10 +120,6 @@ private:
   /* Objects for UL */
   srslte_ue_ul_t     ue_ul     = {};
   srslte_ue_ul_cfg_t ue_ul_cfg = {};
-
-  // Metrics
-  dl_metrics_t dl_metrics = {};
-  ul_metrics_t ul_metrics = {};
 };
 
 } // namespace srsue

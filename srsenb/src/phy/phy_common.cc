@@ -70,6 +70,7 @@ bool phy_common::init(const phy_cell_cfg_list_t&   cell_list_,
   if (params.dl_channel_args.enable) {
     dl_channel = srslte::channel_ptr(new srslte::channel(params.dl_channel_args, get_nof_rf_channels()));
     dl_channel->set_srate((uint32_t)srslte_sampling_freq_hz(cell_list[0].cell.nof_prb));
+    dl_channel->set_signal_power_dBfs(srslte_enb_dl_get_maximum_signal_power_dBfs(cell_list[0].cell.nof_prb));
   }
 
   // Create grants
@@ -108,13 +109,13 @@ void phy_common::clear_grants(uint16_t rnti)
 const stack_interface_phy_lte::ul_sched_list_t& phy_common::get_ul_grants(uint32_t tti)
 {
   std::lock_guard<std::mutex> lock(grant_mutex);
-  return ul_grants[tti % TTIMOD_SZ];
+  return ul_grants[tti];
 }
 
 void phy_common::set_ul_grants(uint32_t tti, const stack_interface_phy_lte::ul_sched_list_t& ul_grant_list)
 {
   std::lock_guard<std::mutex> lock(grant_mutex);
-  ul_grants[tti % TTIMOD_SZ] = ul_grant_list;
+  ul_grants[tti] = ul_grant_list;
 }
 
 /* The transmission of UL subframes must be in sequence. The correct sequence is guaranteed by a chain of N semaphores,
@@ -124,24 +125,18 @@ void phy_common::set_ul_grants(uint32_t tti, const stack_interface_phy_lte::ul_s
  * Each worker uses this function to indicate that all processing is done and data is ready for transmission or
  * there is no transmission at all (tx_enable). In that case, the end of burst message will be sent to the radio
  */
-void phy_common::worker_end(void*                tx_sem_id,
-                            srslte::rf_buffer_t& buffer,
-                            uint32_t             nof_samples,
-                            srslte_timestamp_t   tx_time)
+void phy_common::worker_end(void* tx_sem_id, srslte::rf_buffer_t& buffer, srslte::rf_timestamp_t& tx_time)
 {
   // Wait for the green light to transmit in the current TTI
   semaphore.wait(tx_sem_id);
 
   // Run DL channel emulator if created
   if (dl_channel) {
-    dl_channel->run(buffer.to_cf_t(), buffer.to_cf_t(), nof_samples, tx_time);
+    dl_channel->run(buffer.to_cf_t(), buffer.to_cf_t(), buffer.get_nof_samples(), tx_time.get(0));
   }
 
   // Always transmit on single radio
-  radio->tx(buffer, nof_samples, tx_time);
-
-  // Trigger MAC clock
-  stack->tti_clock();
+  radio->tx(buffer, tx_time);
 
   // Allow next TTI to transmit
   semaphore.release();

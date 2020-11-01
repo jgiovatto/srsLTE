@@ -19,20 +19,25 @@
  *
  */
 
+#include <poll.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "srslte/common/common_helper.h"
 #include "srslte/common/config_file.h"
 #include "srslte/common/crash_handler.h"
+#include "srslte/common/logger_srslog_wrapper.h"
 #include "srslte/common/signal_handler.h"
+#include "srslte/srslog/srslog.h"
 
 #include <boost/program_options.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <iostream>
 #include <memory>
+#include <srslte/common/string_helpers.h>
 #include <string>
 
 #include "srsenb/hdr/enb.h"
@@ -66,6 +71,7 @@ void parse_args(all_args_t* args, int argc, char* argv[])
   bpo::options_description common("Configuration options");
   common.add_options()
 
+    ("enb.stack", bpo::value<string>(&args->stack.type)->default_value("lte"), "Type of the upper stack [lte, nr]")
     ("enb.enb_id",        bpo::value<string>(&enb_id)->default_value("0x0"),                       "eNodeB ID")
     ("enb.name",          bpo::value<string>(&args->stack.s1ap.enb_name)->default_value("srsenb01"), "eNodeB Name")
     ("enb.mcc",           bpo::value<string>(&mcc)->default_value("001"),                          "Mobile Country Code")
@@ -82,9 +88,15 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     ("enb_files.rr_config",  bpo::value<string>(&args->enb_files.rr_config)->default_value("rr.conf"),   "RR configuration files")
     ("enb_files.drb_config", bpo::value<string>(&args->enb_files.drb_config)->default_value("drb.conf"), "DRB configuration files")
 
-    ("rf.dl_earfcn",      bpo::value<uint32_t>(&args->enb.dl_earfcn)->default_value(0), "Force Downlink EARFCN for single cell")
+    ("rf.dl_earfcn",      bpo::value<uint32_t>(&args->enb.dl_earfcn)->default_value(0),   "Force Downlink EARFCN for single cell")
+    ("rf.srate",          bpo::value<double>(&args->rf.srate_hz)->default_value(0.0),     "Force Tx and Rx sampling rate in Hz")
     ("rf.rx_gain",        bpo::value<float>(&args->rf.rx_gain)->default_value(50),        "Front-end receiver gain")
     ("rf.tx_gain",        bpo::value<float>(&args->rf.tx_gain)->default_value(70),        "Front-end transmitter gain")
+    ("rf.tx_gain[0]",     bpo::value<float>(&args->rf.tx_gain_ch[0])->default_value(-1),  "Front-end transmitter gain CH0")
+    ("rf.tx_gain[1]",     bpo::value<float>(&args->rf.tx_gain_ch[1])->default_value(-1),  "Front-end transmitter gain CH1")
+    ("rf.tx_gain[2]",     bpo::value<float>(&args->rf.tx_gain_ch[2])->default_value(-1),  "Front-end transmitter gain CH2")
+    ("rf.tx_gain[3]",     bpo::value<float>(&args->rf.tx_gain_ch[3])->default_value(-1),  "Front-end transmitter gain CH3")
+    ("rf.tx_gain[4]",     bpo::value<float>(&args->rf.tx_gain_ch[4])->default_value(-1),  "Front-end transmitter gain CH4")
     ("rf.dl_freq",        bpo::value<float>(&args->rf.dl_freq)->default_value(-1),        "Downlink Frequency (if positive overrides EARFCN)")
     ("rf.ul_freq",        bpo::value<float>(&args->rf.ul_freq)->default_value(-1),        "Uplink Frequency (if positive overrides EARFCN)")
 
@@ -125,7 +137,7 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     ("pcap.filename",  bpo::value<string>(&args->stack.mac_pcap.filename)->default_value("enb_mac.pcap"), "MAC layer capture filename")
     ("pcap.s1ap_enable",   bpo::value<bool>(&args->stack.s1ap_pcap.enable)->default_value(false),         "Enable S1AP packet captures for wireshark")
     ("pcap.s1ap_filename", bpo::value<string>(&args->stack.s1ap_pcap.filename)->default_value("enb_s1ap.pcap"), "S1AP layer capture filename")
-   
+
     /* MCS section */
     ("scheduler.pdsch_mcs", bpo::value<int>(&args->stack.mac.sched.pdsch_mcs)->default_value(-1), "Optional fixed PDSCH MCS (ignores reported CQIs if specified)")
     ("scheduler.pdsch_max_mcs", bpo::value<int>(&args->stack.mac.sched.pdsch_max_mcs)->default_value(-1), "Optional PDSCH MCS limit")
@@ -136,42 +148,43 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     ("scheduler.min_nof_ctrl_symbols", bpo::value<uint32_t>(&args->stack.mac.sched.min_nof_ctrl_symbols)->default_value(1), "Minimum number of control symbols")
 
     /* Downlink Channel emulator section */
-    ("channel.dl.enable", bpo::value<bool>(&args->phy.dl_channel_args.enable)->default_value(false), "Enable/Disable internal Downlink channel emulator")
-    ("channel.dl.awgn.enable", bpo::value<bool>(&args->phy.dl_channel_args.awgn_enable)->default_value(false), "Enable/Disable AWGN simulator")
-    ("channel.dl.awgn.n0", bpo::value<float>(&args->phy.dl_channel_args.awgn_n0_dBfs)->default_value(-30.0f), "Noise level in decibels full scale (dBfs)")
-    ("channel.dl.fading.enable", bpo::value<bool>(&args->phy.dl_channel_args.fading_enable)->default_value(false), "Enable/Disable Fading model")
-    ("channel.dl.fading.model", bpo::value<std::string>(&args->phy.dl_channel_args.fading_model)->default_value("none"), "Fading model + maximum doppler (E.g. none, epa5, eva70, etu300, etc)")
-    ("channel.dl.delay.enable", bpo::value<bool>(&args->phy.dl_channel_args.delay_enable)->default_value(false), "Enable/Disable Delay simulator")
-    ("channel.dl.delay.period_s", bpo::value<float>(&args->phy.dl_channel_args.delay_period_s)->default_value(3600), "Delay period in seconds (integer)")
-    ("channel.dl.delay.init_time_s", bpo::value<float>(&args->phy.dl_channel_args.delay_init_time_s)->default_value(0), "Initial time in seconds")
-    ("channel.dl.delay.maximum_us", bpo::value<float>(&args->phy.dl_channel_args.delay_max_us)->default_value(100.0f), "Maximum delay in microseconds")
-    ("channel.dl.delay.minimum_us", bpo::value<float>(&args->phy.dl_channel_args.delay_min_us)->default_value(10.0f), "Minimum delay in microseconds")
-    ("channel.dl.rlf.enable", bpo::value<bool>(&args->phy.dl_channel_args.rlf_enable)->default_value(false), "Enable/Disable Radio-Link Failure simulator")
-    ("channel.dl.rlf.t_on_ms", bpo::value<uint32_t >(&args->phy.dl_channel_args.rlf_t_on_ms)->default_value(10000), "Time for On state of the channel (ms)")
-    ("channel.dl.rlf.t_off_ms", bpo::value<uint32_t >(&args->phy.dl_channel_args.rlf_t_off_ms)->default_value(2000), "Time for Off state of the channel (ms)")
-    ("channel.dl.hst.enable", bpo::value<bool>(&args->phy.dl_channel_args.hst_enable)->default_value(false), "Enable/Disable HST simulator")
-    ("channel.dl.hst.period_s", bpo::value<float>(&args->phy.dl_channel_args.hst_period_s)->default_value(7.2f), "HST simulation period in seconds")
-    ("channel.dl.hst.fd_hz", bpo::value<float>(&args->phy.dl_channel_args.hst_fd_hz)->default_value(+750.0f), "Doppler frequency in Hz")
-    ("channel.dl.hst.init_time_s", bpo::value<float>(&args->phy.dl_channel_args.hst_init_time_s)->default_value(0), "Initial time in seconds")
+    ("channel.dl.enable",            bpo::value<bool>(&args->phy.dl_channel_args.enable)->default_value(false),               "Enable/Disable internal Downlink channel emulator")
+    ("channel.dl.awgn.enable",       bpo::value<bool>(&args->phy.dl_channel_args.awgn_enable)->default_value(false),          "Enable/Disable AWGN simulator")
+    ("channel.dl.awgn.snr",          bpo::value<float>(&args->phy.dl_channel_args.awgn_snr_dB)->default_value(30.0f),         "Target SNR in dB")
+    ("channel.dl.fading.enable",     bpo::value<bool>(&args->phy.dl_channel_args.fading_enable)->default_value(false),        "Enable/Disable Fading model")
+    ("channel.dl.fading.model",      bpo::value<string>(&args->phy.dl_channel_args.fading_model)->default_value("none"),      "Fading model + maximum doppler (E.g. none, epa5, eva70, etu300, etc)")
+    ("channel.dl.delay.enable",      bpo::value<bool>(&args->phy.dl_channel_args.delay_enable)->default_value(false),         "Enable/Disable Delay simulator")
+    ("channel.dl.delay.period_s",    bpo::value<float>(&args->phy.dl_channel_args.delay_period_s)->default_value(3600),       "Delay period in seconds (integer)")
+    ("channel.dl.delay.init_time_s", bpo::value<float>(&args->phy.dl_channel_args.delay_init_time_s)->default_value(0),       "Initial time in seconds")
+    ("channel.dl.delay.maximum_us",  bpo::value<float>(&args->phy.dl_channel_args.delay_max_us)->default_value(100.0f),       "Maximum delay in microseconds")
+    ("channel.dl.delay.minimum_us",  bpo::value<float>(&args->phy.dl_channel_args.delay_min_us)->default_value(10.0f),        "Minimum delay in microseconds")
+    ("channel.dl.rlf.enable",        bpo::value<bool>(&args->phy.dl_channel_args.rlf_enable)->default_value(false),           "Enable/Disable Radio-Link Failure simulator")
+    ("channel.dl.rlf.t_on_ms",       bpo::value<uint32_t >(&args->phy.dl_channel_args.rlf_t_on_ms)->default_value(10000),     "Time for On state of the channel (ms)")
+    ("channel.dl.rlf.t_off_ms",      bpo::value<uint32_t >(&args->phy.dl_channel_args.rlf_t_off_ms)->default_value(2000),     "Time for Off state of the channel (ms)")
+    ("channel.dl.hst.enable",        bpo::value<bool>(&args->phy.dl_channel_args.hst_enable)->default_value(false),           "Enable/Disable HST simulator")
+    ("channel.dl.hst.period_s",      bpo::value<float>(&args->phy.dl_channel_args.hst_period_s)->default_value(7.2f),         "HST simulation period in seconds")
+    ("channel.dl.hst.fd_hz",         bpo::value<float>(&args->phy.dl_channel_args.hst_fd_hz)->default_value(+750.0f),         "Doppler frequency in Hz")
+    ("channel.dl.hst.init_time_s",   bpo::value<float>(&args->phy.dl_channel_args.hst_init_time_s)->default_value(0),         "Initial time in seconds")
 
     /* Uplink Channel emulator section */
-    ("channel.ul.enable", bpo::value<bool>(&args->phy.ul_channel_args.enable)->default_value(false), "Enable/Disable internal Uplink channel emulator")
-    ("channel.ul.awgn.enable", bpo::value<bool>(&args->phy.ul_channel_args.awgn_enable)->default_value(false), "Enable/Disable AWGN simulator")
-    ("channel.ul.awgn.n0", bpo::value<float>(&args->phy.ul_channel_args.awgn_n0_dBfs)->default_value(-30.0f), "Noise level in decibels full scale (dBfs)")
-    ("channel.ul.fading.enable", bpo::value<bool>(&args->phy.ul_channel_args.fading_enable)->default_value(false), "Enable/Disable Fading model")
-    ("channel.ul.fading.model", bpo::value<std::string>(&args->phy.ul_channel_args.fading_model)->default_value("none"), "Fading model + maximum doppler (E.g. none, epa5, eva70, etu300, etc)")
-    ("channel.ul.delay.enable", bpo::value<bool>(&args->phy.ul_channel_args.delay_enable)->default_value(false), "Enable/Disable Delay simulator")
-    ("channel.ul.delay.period_s", bpo::value<float>(&args->phy.ul_channel_args.delay_period_s)->default_value(3600), "Delay period in seconds (integer)")
-    ("channel.ul.delay.init_time_s", bpo::value<float>(&args->phy.ul_channel_args.delay_init_time_s)->default_value(0), "Initial time in seconds")
-    ("channel.ul.delay.maximum_us", bpo::value<float>(&args->phy.ul_channel_args.delay_max_us)->default_value(100.0f), "Maximum delay in microseconds")
-    ("channel.ul.delay.minimum_us", bpo::value<float>(&args->phy.ul_channel_args.delay_min_us)->default_value(10.0f), "Minimum delay in microseconds")
-    ("channel.ul.rlf.enable", bpo::value<bool>(&args->phy.ul_channel_args.rlf_enable)->default_value(false), "Enable/Disable Radio-Link Failure simulator")
-    ("channel.ul.rlf.t_on_ms", bpo::value<uint32_t >(&args->phy.ul_channel_args.rlf_t_on_ms)->default_value(10000), "Time for On state of the channel (ms)")
-    ("channel.ul.rlf.t_off_ms", bpo::value<uint32_t >(&args->phy.ul_channel_args.rlf_t_off_ms)->default_value(2000), "Time for Off state of the channel (ms)")
-    ("channel.ul.hst.enable", bpo::value<bool>(&args->phy.ul_channel_args.hst_enable)->default_value(false), "Enable/Disable HST simulator")
-    ("channel.ul.hst.period_s", bpo::value<float>(&args->phy.ul_channel_args.hst_period_s)->default_value(7.2f), "HST simulation period in seconds")
-    ("channel.ul.hst.fd_hz", bpo::value<float>(&args->phy.ul_channel_args.hst_fd_hz)->default_value(-750.0f), "Doppler frequency in Hz")
-    ("channel.ul.hst.init_time_s", bpo::value<float>(&args->phy.ul_channel_args.hst_init_time_s)->default_value(0), "Initial time in seconds")
+    ("channel.ul.enable",            bpo::value<bool>(&args->phy.ul_channel_args.enable)->default_value(false),                  "Enable/Disable internal Downlink channel emulator")
+    ("channel.ul.awgn.enable",       bpo::value<bool>(&args->phy.ul_channel_args.awgn_enable)->default_value(false),             "Enable/Disable AWGN simulator")
+    ("channel.ul.awgn.signal_power", bpo::value<float>(&args->phy.ul_channel_args.awgn_signal_power_dBfs)->default_value(30.0f), "Received signal power in decibels full scale (dBfs)")
+    ("channel.ul.awgn.snr",          bpo::value<float>(&args->phy.ul_channel_args.awgn_snr_dB)->default_value(30.0f),            "Noise level in decibels full scale (dBfs)")
+    ("channel.ul.fading.enable",     bpo::value<bool>(&args->phy.ul_channel_args.fading_enable)->default_value(false),           "Enable/Disable Fading model")
+    ("channel.ul.fading.model",      bpo::value<string>(&args->phy.ul_channel_args.fading_model)->default_value("none"),         "Fading model + maximum doppler (E.g. none, epa5, eva70, etu300, etc)")
+    ("channel.ul.delay.enable",      bpo::value<bool>(&args->phy.ul_channel_args.delay_enable)->default_value(false),            "Enable/Disable Delay simulator")
+    ("channel.ul.delay.period_s",    bpo::value<float>(&args->phy.ul_channel_args.delay_period_s)->default_value(3600),          "Delay period in seconds (integer)")
+    ("channel.ul.delay.init_time_s", bpo::value<float>(&args->phy.ul_channel_args.delay_init_time_s)->default_value(0),          "Initial time in seconds")
+    ("channel.ul.delay.maximum_us",  bpo::value<float>(&args->phy.ul_channel_args.delay_max_us)->default_value(100.0f),          "Maximum delay in microseconds")
+    ("channel.ul.delay.minimum_us",  bpo::value<float>(&args->phy.ul_channel_args.delay_min_us)->default_value(10.0f),           "Minimum delay in microseconds")
+    ("channel.ul.rlf.enable",        bpo::value<bool>(&args->phy.ul_channel_args.rlf_enable)->default_value(false),              "Enable/Disable Radio-Link Failure simulator")
+    ("channel.ul.rlf.t_on_ms",       bpo::value<uint32_t >(&args->phy.ul_channel_args.rlf_t_on_ms)->default_value(10000),        "Time for On state of the channel (ms)")
+    ("channel.ul.rlf.t_off_ms",      bpo::value<uint32_t >(&args->phy.ul_channel_args.rlf_t_off_ms)->default_value(2000),        "Time for Off state of the channel (ms)")
+    ("channel.ul.hst.enable",        bpo::value<bool>(&args->phy.ul_channel_args.hst_enable)->default_value(false),              "Enable/Disable HST simulator")
+    ("channel.ul.hst.period_s",      bpo::value<float>(&args->phy.ul_channel_args.hst_period_s)->default_value(7.2f),            "HST simulation period in seconds")
+    ("channel.ul.hst.fd_hz",         bpo::value<float>(&args->phy.ul_channel_args.hst_fd_hz)->default_value(+750.0f),            "Doppler frequency in Hz")
+    ("channel.ul.hst.init_time_s",   bpo::value<float>(&args->phy.ul_channel_args.hst_init_time_s)->default_value(0),            "Initial time in seconds")
 
       /* Expert section */
     ("expert.metrics_period_secs", bpo::value<float>(&args->general.metrics_period_secs)->default_value(1.0), "Periodicity for metrics in seconds")
@@ -182,11 +195,10 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     ("expert.pusch_meas_evm", bpo::value<bool>(&args->phy.pusch_meas_evm)->default_value(false), "Enable/Disable PUSCH EVM measure")
     ("expert.tx_amplitude", bpo::value<float>(&args->phy.tx_amplitude)->default_value(0.6), "Transmit amplitude factor")
     ("expert.nof_phy_threads", bpo::value<int>(&args->phy.nof_phy_threads)->default_value(3), "Number of PHY threads")
-    ("expert.link_failure_nof_err", bpo::value<int>(&args->stack.mac.link_failure_nof_err)->default_value(100), "Number of PUSCH failures after which a radio-link failure is triggered")
     ("expert.max_prach_offset_us", bpo::value<float>(&args->phy.max_prach_offset_us)->default_value(30), "Maximum allowed RACH offset (in us)")
     ("expert.equalizer_mode", bpo::value<string>(&args->phy.equalizer_mode)->default_value("mmse"), "Equalizer mode")
     ("expert.estimator_fil_w", bpo::value<float>(&args->phy.estimator_fil_w)->default_value(0.1), "Chooses the coefficients for the 3-tap channel estimator centered filter.")
-    ("expert.rrc_inactivity_timer", bpo::value<uint32_t>(&args->general.rrc_inactivity_timer)->default_value(60000), "Inactivity timer in ms")
+    ("expert.rrc_inactivity_timer", bpo::value<uint32_t>(&args->general.rrc_inactivity_timer)->default_value(30000), "Inactivity timer in ms.")
     ("expert.print_buffer_state", bpo::value<bool>(&args->general.print_buffer_state)->default_value(false), "Prints on the console the buffer state every 10 seconds")
     ("expert.eea_pref_list", bpo::value<string>(&args->general.eea_pref_list)->default_value("EEA0, EEA2, EEA1"), "Ordered preference list for the selection of encryption algorithm (EEA) (default: EEA0, EEA2, EEA1).")
     ("expert.eia_pref_list", bpo::value<string>(&args->general.eia_pref_list)->default_value("EIA2, EIA1, EIA0"), "Ordered preference list for the selection of integrity algorithm (EIA) (default: EIA2, EIA1, EIA0).")
@@ -195,6 +207,24 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     ("embms.enable", bpo::value<bool>(&args->stack.embms.enable)->default_value(false), "Enables MBMS in the eNB")
     ("embms.m1u_multiaddr", bpo::value<string>(&args->stack.embms.m1u_multiaddr)->default_value("239.255.0.1"), "M1-U Multicast address the eNB joins.")
     ("embms.m1u_if_addr", bpo::value<string>(&args->stack.embms.m1u_if_addr)->default_value("127.0.1.201"), "IP address of the interface the eNB will listen for M1-U traffic.")
+    ("embms.mcs", bpo::value<uint16_t>(&args->stack.embms.mcs)->default_value(20), "Modulation and Coding scheme of MBMS traffic.")
+
+    // NR section
+    ("scheduler.tb_len", bpo::value<int>(&args->stack.mac.nr_tb_size)->default_value(1520), "Default TB size")
+
+    // VNF params
+    ("vnf.type", bpo::value<string>(&args->phy.vnf_args.type)->default_value("gnb"), "VNF instance type [gnb,ue]")
+    ("vnf.addr", bpo::value<string>(&args->phy.vnf_args.bind_addr)->default_value("localhost"), "Address to bind VNF interface")
+    ("vnf.port", bpo::value<uint16_t>(&args->phy.vnf_args.bind_port)->default_value(3333), "Bind port")
+    ("log.vnf_level",     bpo::value<string>(&args->phy.vnf_args.log_level),   "VNF log level")
+    ("log.vnf_hex_limit", bpo::value<int>(&args->phy.vnf_args.log_hex_limit),  "VNF log hex dump limit")
+
+    // Arguments for coreless operation
+    ("coreless.ip_devname", bpo::value<string>(&args->stack.coreless.gw_args.tun_dev_name)->default_value("tun1"), "Name of the TUN device")
+    ("coreless.ip_address", bpo::value<string>(&args->stack.coreless.ip_addr)->default_value("192.168.1.1"), "IP address of the TUN device")
+    ("coreless.ip_netmask", bpo::value<string>(&args->stack.coreless.gw_args.tun_dev_netmask)->default_value("255.255.255.0"), "Netmask of the TUN device")
+    ("coreless.drb_lcid", bpo::value<uint8_t>(&args->stack.coreless.drb_lcid)->default_value(4), "LCID of the dummy DRB")
+    ("coreless.rnti", bpo::value<uint16_t >(&args->stack.coreless.rnti)->default_value(1234), "RNTI of the dummy user")
     ;
 
   // Positional options - config file location
@@ -276,7 +306,7 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     }
   }
 
-  // Covert eNB Id
+  // Convert eNB Id
   std::size_t pos = {};
   try {
     args->enb.enb_id = std::stoi(enb_id, &pos, 0);
@@ -370,30 +400,60 @@ void parse_args(all_args_t* args, int argc, char* argv[])
 
 static bool do_metrics = false;
 
-void* input_loop(void* m)
+static void* input_loop(metrics_stdout* metrics, srsenb::enb_command_interface* control)
 {
-  metrics_stdout* metrics = (metrics_stdout*)m;
-  char            key;
+  struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
+  string        input_line;
   while (running) {
-    cin >> key;
-    if (cin.eof() || cin.bad()) {
-      cout << "Closing stdin thread." << endl;
-      break;
-    } else {
-      if ('t' == key) {
-        do_metrics = !do_metrics;
-        if (do_metrics) {
-          cout << "Enter t to stop trace." << endl;
+    int ret = poll(&pfd, 1, 1000); // query stdin with a timeout of 1000ms
+    if (ret == 1) {
+      // there is user input to read
+      getline(cin, input_line);
+      if (cin.eof() || cin.bad()) {
+        cout << "Closing stdin thread." << endl;
+        break;
+      } else if (not input_line.empty()) {
+        vector<string> cmd;
+        srslte::string_parse_list(input_line, ' ', cmd);
+        if (cmd[0] == "t") {
+          do_metrics = !do_metrics;
+          if (do_metrics) {
+            cout << "Enter t to stop trace." << endl;
+          } else {
+            cout << "Enter t to restart trace." << endl;
+          }
+          metrics->toggle_print(do_metrics);
+        } else if (cmd[0] == "q") {
+          raise(SIGTERM);
+        } else if (cmd[0] == "cell_gain") {
+          if (cmd.size() != 3) {
+            cout << "Usage: " << cmd[0] << " [cell identifier] [gain in dB]" << endl;
+            continue;
+          }
+
+          // Parse command arguments
+          uint32_t cell_id  = srslte::string_cast<uint32_t>(cmd[1]);
+          float    gain_db  = srslte::string_cast<float>(cmd[2]);
+
+          // Set cell gain
+          control->cmd_cell_gain(cell_id, gain_db);
         } else {
-          cout << "Enter t to restart trace." << endl;
+          cout << "Available commands: " << endl;
+          cout << "          t: starts console trace" << endl;
+          cout << "          q: quit srsenb" << endl;
+          cout << "  cell_gain: set relative cell gain" << endl;
+          cout << endl;
         }
-        metrics->toggle_print(do_metrics);
-      } else if ('q' == key) {
-        raise(SIGTERM);
       }
     }
   }
   return nullptr;
+}
+
+/// Adjusts the input value in args from kbytes to bytes.
+static size_t fixup_log_file_maxsize(int x)
+{
+  return (x < 0) ? 0 : size_t(x) * 1024u;
 }
 
 int main(int argc, char* argv[])
@@ -408,22 +468,32 @@ int main(int argc, char* argv[])
   srslte_debug_handle_crash(argc, argv);
   parse_args(&args, argc, argv);
 
-  srslte::logger_stdout logger_stdout;
-
-  // Set logger
-  srslte::logger* logger = nullptr;
-  if (args.log.filename == "stdout") {
-    logger = &logger_stdout;
-  } else {
-    logger_file.init(args.log.filename, args.log.file_max_size);
-    logger = &logger_file;
+  // Setup logging.
+  log_sink = (args.log.filename == "stdout")
+                 ? srslog::create_stdout_sink()
+                 : srslog::create_file_sink(args.log.filename, fixup_log_file_maxsize(args.log.file_max_size));
+  if (!log_sink) {
+    return SRSLTE_ERROR;
   }
-  srslte::logmap::set_default_logger(logger);
+
+  srslog::log_channel* chan = srslog::create_log_channel("main_channel", *log_sink);
+  if (!chan) {
+    return SRSLTE_ERROR;
+  }
+  srslte::srslog_wrapper log_wrapper(*chan);
+
+  // Start the log backend.
+  srslog::init();
+
+  srslte::logmap::set_default_logger(&log_wrapper);
   srslte::logmap::get("COMMON")->set_level(srslte::LOG_LEVEL_INFO);
+  srslte::log_args(argc, argv, "ENB");
+
+  srslte::check_scaling_governor(args.rf.device_name);
 
   // Create eNB
   unique_ptr<srsenb::enb> enb{new srsenb::enb};
-  if (enb->init(args, logger) != SRSLTE_SUCCESS) {
+  if (enb->init(args, &log_wrapper) != SRSLTE_SUCCESS) {
     enb->stop();
     return SRSLTE_ERROR;
   }
@@ -440,10 +510,8 @@ int main(int argc, char* argv[])
   }
 
   // create input thread
-  pthread_t input;
-  pthread_create(&input, nullptr, &input_loop, &metrics_screen);
+  std::thread input(&input_loop, &metrics_screen, (enb_command_interface*)enb.get());
 
-  bool signals_pregenerated = false;
   if (running) {
     if (args.gui.enable) {
       enb->start_plot();
@@ -458,10 +526,9 @@ int main(int argc, char* argv[])
         enb->print_pool();
       }
     }
-    usleep(10000);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  pthread_cancel(input);
-  pthread_join(input, NULL);
+  input.join();
   metricshub.stop();
   enb->stop();
   cout << "---  exiting  ---" << endl;

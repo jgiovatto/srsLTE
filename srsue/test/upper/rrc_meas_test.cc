@@ -43,21 +43,21 @@ public:
   }
 
   // Not implemented methods
-  void set_config(srslte::phy_cfg_t& config,
-                  uint32_t           cc_idx    = 0,
-                  uint32_t           earfcn    = 0,
-                  srslte_cell_t*     cell_info = nullptr) override
+  bool set_config(srslte::phy_cfg_t config, uint32_t cc_idx) override { return true; }
+  bool set_scell(srslte_cell_t cell_info, uint32_t cc_idx, uint32_t earfcn) override { return true; }
+  void set_config_tdd(srslte_tdd_config_t& tdd_config) override {}
+  void set_config_mbsfn_sib2(srslte::mbsfn_sf_cfg_t* cfg_list, uint32_t nof_cfgs) override {}
+  void set_config_mbsfn_sib13(const srslte::sib13_t& sib13) override {}
+  void set_config_mbsfn_mcch(const srslte::mcch_msg_t& mcch) override {}
+  bool cell_search() override { return true; }
+  bool cell_is_camping() override { return true; }
+  void set_activation_deactivation_scell(uint32_t cmd) override {}
+  bool cell_select(phy_cell_t cell) override
   {
+    last_selected_cell = cell;
+    return true;
   }
-  void              set_config_tdd(srslte_tdd_config_t& tdd_config) override {}
-  void              set_config_mbsfn_sib2(srslte::mbsfn_sf_cfg_t* cfg_list, uint32_t nof_cfgs) override {}
-  void              set_config_mbsfn_sib13(const srslte::sib13_t& sib13) override {}
-  void              set_config_mbsfn_mcch(const srslte::mcch_msg_t& mcch) override {}
-  cell_search_ret_t cell_search(phy_cell_t* cell) override { return {}; }
-  bool              cell_is_camping() override { return false; }
-  bool              cell_select(const phy_cell_t* cell = nullptr) override { return false; }
-  void              reset() override {}
-  void              enable_pregen_signals(bool enable) override {}
+  void enable_pregen_signals(bool enable) override {}
 
   void set_cells_to_meas(uint32_t earfcn, const std::set<uint32_t>& pci) override
   {
@@ -97,6 +97,8 @@ public:
     }
   }
 
+  phy_cell_t last_selected_cell = {};
+
 private:
   bool                                    meas_reset_called = false;
   std::set<uint32_t>                      freqs_started;
@@ -105,18 +107,81 @@ private:
   uint32_t                                serving_earfcn = 0;
 };
 
+class mac_test : public srsue::mac_interface_rrc
+{
+public:
+  srslte::task_sched_handle task_sched;
+  rrc*                      rrc_ptr;
+
+  mac_test(rrc* rrc_, srslte::task_sched_handle task_sched_) : rrc_ptr(rrc_), task_sched(task_sched_) {}
+
+  int get_dlsch_with_sib1(bcch_dl_sch_msg_s& dlsch_msg)
+  {
+    sib_type1_s    sib1;
+    uint8_t        asn1_msg[] = {0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    asn1::cbit_ref bref{asn1_msg, sizeof(asn1_msg)};
+    return dlsch_msg.unpack(bref);
+  }
+  int get_dlsch_with_sys_info(bcch_dl_sch_msg_s& dlsch_msg)
+  {
+    sib_type1_s sib1;
+    uint8_t     asn1_msg[] = {0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00};
+    asn1::cbit_ref bref{asn1_msg, sizeof(asn1_msg)};
+    return dlsch_msg.unpack(bref);
+  }
+
+  void bcch_start_rx(int si_window_start, int si_window_length) override
+  {
+    task_sched.defer_task([this]() {
+      srslte::unique_byte_buffer_t pdu;
+      for (uint32_t i = 0; i < 2; ++i) {
+        bcch_dl_sch_msg_s dlsch_msg;
+        if (i == 0) {
+          get_dlsch_with_sib1(dlsch_msg);
+        } else {
+          get_dlsch_with_sys_info(dlsch_msg);
+        }
+
+        pdu = srslte::allocate_unique_buffer(*srslte::byte_buffer_pool::get_instance());
+        asn1::bit_ref bref(pdu->msg, pdu->get_tailroom());
+        dlsch_msg.pack(bref);
+        pdu->N_bytes = bref.distance_bytes();
+        rrc_ptr->write_pdu_bcch_dlsch(std::move(pdu));
+      }
+    });
+  }
+  void bcch_stop_rx() override {}
+  void pcch_start_rx() override {}
+
+  void setup_lcid(uint32_t lcid, uint32_t lcg, uint32_t priority, int PBR_x_tti, uint32_t BSD) override {}
+
+  void mch_start_rx(uint32_t lcid) override {}
+
+  void set_config(srslte::mac_cfg_t& mac_cfg) override {}
+  void set_config(srslte::sr_cfg_t& sr_cfg) override {}
+  void set_rach_ded_cfg(uint32_t preamble_index, uint32_t prach_mask) override {}
+
+  void get_rntis(ue_rnti_t* rntis) override {}
+  void set_contention_id(uint64_t uecri) override {}
+  void set_ho_rnti(uint16_t crnti, uint16_t target_pci) override {}
+
+  void reconfiguration(const uint32_t& cc_idx, const bool& enable) override {}
+  void reset() override {}
+};
+
 class nas_test : public srsue::nas
 {
 public:
-  nas_test(srslte::task_handler_interface* t) : srsue::nas(t) {}
+  nas_test(srslte::task_sched_handle t) : srsue::nas(t) {}
   bool is_attached() override { return false; }
 };
 
 class pdcp_test : public srslte::pdcp
 {
 public:
-  pdcp_test(const char* logname, srslte::task_handler_interface* t) : srslte::pdcp(t, logname) {}
-  void write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu, bool blocking = false) override
+  pdcp_test(const char* logname, srslte::task_sched_handle t) : srslte::pdcp(t, logname) {}
+  void write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu) override
   {
     ul_dcch_msg_s  ul_dcch_msg;
     asn1::cbit_ref bref(sdu->msg, sdu->N_bytes);
@@ -167,20 +232,24 @@ private:
 
 class rrc_test : public rrc
 {
-  srsue::stack_test_dummy* stack = nullptr;
+  stack_test_dummy* stack = nullptr;
 
 public:
-  rrc_test(srslte::log_ref log_, stack_test_dummy* stack_) : rrc(stack_), stack(stack_)
+  rrc_test(srslte::log_ref log_, stack_test_dummy* stack_) :
+    rrc(stack_, &stack_->task_sched),
+    stack(stack_),
+    mactest(this, &stack_->task_sched)
   {
     pool     = srslte::byte_buffer_pool::get_instance();
-    nastest  = std::unique_ptr<nas_test>(new nas_test(stack));
-    pdcptest = std::unique_ptr<pdcp_test>(new pdcp_test(log_->get_service_name().c_str(), stack));
-  };
-  void init() { rrc::init(&phytest, nullptr, nullptr, pdcptest.get(), nastest.get(), nullptr, nullptr, {}); }
+    nastest  = std::unique_ptr<nas_test>(new nas_test(&stack->task_sched));
+    pdcptest = std::unique_ptr<pdcp_test>(new pdcp_test(log_->get_service_name().c_str(), &stack->task_sched));
+  }
+  void init() { rrc::init(&phytest, &mactest, nullptr, pdcptest.get(), nastest.get(), nullptr, nullptr, {}); }
 
   void run_tti(uint32_t tti_)
   {
-    stack->timers.step_all();
+    stack->task_sched.tic();
+    stack->task_sched.run_pending_tasks();
     rrc::run_tti();
   }
 
@@ -207,6 +276,8 @@ public:
     dl_dcch_msg.msg.c1().rrc_conn_recfg().crit_exts.c1().rrc_conn_recfg_r8() = rrc_conn_recfg;
     pdcptest->expecting_reconf_complete                                      = true;
     send_dcch_msg(dl_dcch_msg);
+    stack->task_sched.run_pending_tasks();
+    set_config_complete(true);
     pdcptest->expecting_reconf_complete = false;
 
     return !pdcptest->get_error() && pdcptest->received_reconf_complete;
@@ -238,22 +309,33 @@ public:
 
   void set_serving_cell(uint32_t pci, uint32_t earfcn)
   {
-    std::vector<rrc_interface_phy_lte::phy_meas_t> phy_meas = {};
-    rrc_interface_phy_lte::phy_meas_t              meas     = {};
-    meas.pci                                                = pci;
-    meas.earfcn                                             = earfcn;
-    phy_meas.push_back(meas); // neighbour cell
-    new_cell_meas(phy_meas);
-    run_tti(1);
+    if (not has_neighbour_cell(earfcn, pci)) {
+      add_neighbour_cell(pci, earfcn);
+    }
     phytest.set_serving_cell(pci, earfcn);
     rrc::set_serving_cell({pci, earfcn}, false);
   }
 
-  bool has_neighbour_cell(const uint32_t earfcn, const uint32_t pci) { return rrc::has_neighbour_cell(earfcn, pci); }
+  void add_neighbour_cell(uint32_t pci, uint32_t earfcn, float rsrp = 0)
+  {
+    std::vector<rrc_interface_phy_lte::phy_meas_t> phy_meas = {};
+    rrc_interface_phy_lte::phy_meas_t              meas     = {};
+    meas.pci                                                = pci;
+    meas.earfcn                                             = earfcn;
+    meas.rsrp                                               = rsrp;
+    phy_meas.push_back(meas); // neighbour cell
+    new_cell_meas(phy_meas);
+    run_tti(1);
+  }
+
+  using rrc::has_neighbour_cell;
+  using rrc::is_serving_cell;
+  using rrc::start_cell_select;
 
   bool get_meas_res(meas_results_s& meas_res) { return pdcptest->get_meas_res(meas_res); }
 
   phy_test phytest;
+  mac_test mactest;
 
 private:
   std::unique_ptr<pdcp_test> pdcptest;
@@ -262,32 +344,107 @@ private:
   srslte::byte_buffer_pool*  pool = nullptr;
 };
 
-// Test Cell sear
+// Test Cell select
 int cell_select_test()
 {
-  srslte::log_ref log1("RRC_MEAS");
+  srslte::log_ref log1("RRC_MEAS"), rrc_log("RRC");
   log1->set_level(srslte::LOG_LEVEL_DEBUG);
   log1->set_hex_limit(-1);
+  rrc_log->set_level(srslte::LOG_LEVEL_DEBUG);
+  rrc_log->set_hex_limit(-1);
 
   printf("==========================================================\n");
   printf("======            Cell Select Testing      ===============\n");
   printf("==========================================================\n");
 
-  stack_test_dummy stack;
-  rrc_test         rrctest(log1, &stack);
-  rrctest.init();
-  rrctest.connect();
+  {
+    // CHECK: The starting serving cell pci=2 is the weakest, and cell selection procedure chooses pci=1
+    // CHECK: phy cell selection is successful, and rrc remains in pci=1
+    stack_test_dummy stack;
+    rrc_test         rrctest(log1, &stack);
+    rrctest.init();
+    rrctest.connect();
 
-  // Add a first serving cell
-  rrctest.set_serving_cell(1, 1);
+    // Add a first serving cell
+    rrctest.add_neighbour_cell(1, 1, 2.0);
+    rrctest.set_serving_cell(1, 1);
+    TESTASSERT(!rrctest.has_neighbour_cell(1, 1));
+    TESTASSERT(!rrctest.has_neighbour_cell(2, 2));
 
-  // Add a second serving cell
-  rrctest.set_serving_cell(2, 2);
+    // Add a second serving cell
+    rrctest.add_neighbour_cell(2, 2, 1.0);
+    rrctest.set_serving_cell(2, 2);
+    TESTASSERT(rrctest.has_neighbour_cell(1, 1));
+    TESTASSERT(!rrctest.has_neighbour_cell(2, 2));
 
-  // Select the second serving cell
-  rrctest.set_serving_cell(2, 2);
+    // Start cell selection procedure. The RRC will start with strongest cell
+    TESTASSERT(rrctest.start_cell_select() == SRSLTE_SUCCESS);
+    stack.run_pending_tasks();
+    TESTASSERT(rrctest.phytest.last_selected_cell.earfcn == 2);
+    TESTASSERT(rrctest.phytest.last_selected_cell.pci == 2);
+    TESTASSERT(!rrctest.has_neighbour_cell(2, 2));
+    TESTASSERT(rrctest.has_neighbour_cell(1, 1));
+    // Note: cell selection procedure is not done yet at this point.
+  }
 
-  TESTASSERT(!rrctest.has_neighbour_cell(2, 2));
+  {
+    // CHECK: The starting serving cell pci=1 is the strongest, and the cell selection procedure calls phy_cell_select
+    // for pci=1.
+    // CHECK: Cell selection fails in the phy, and rrc moves to pci=2
+    stack_test_dummy stack;
+    rrc_test         rrctest(log1, &stack);
+    rrctest.init();
+    rrctest.connect();
+
+    rrctest.add_neighbour_cell(1, 1, 2.0);
+    rrctest.add_neighbour_cell(2, 2, 1.1);
+    rrctest.add_neighbour_cell(3, 2, 1.0);
+    rrctest.set_serving_cell(1, 1);
+    TESTASSERT(not rrctest.has_neighbour_cell(1, 1));
+    TESTASSERT(rrctest.has_neighbour_cell(2, 2));
+    TESTASSERT(rrctest.has_neighbour_cell(2, 3));
+
+    // Start cell selection procedure. The RRC will start with strongest cell
+    TESTASSERT(rrctest.start_cell_select() == SRSLTE_SUCCESS);
+    TESTASSERT(rrctest.phytest.last_selected_cell.earfcn == 1);
+    TESTASSERT(rrctest.phytest.last_selected_cell.pci == 1);
+    stack.run_pending_tasks();
+    rrctest.cell_select_complete(false); // it will fail to select pci=1
+    stack.run_pending_tasks();
+    rrctest.cell_select_complete(true); // it will select pci=2
+    rrctest.in_sync();
+    stack.run_pending_tasks(); // it will select pci=2
+    rrctest.run_tti(0);        // Needed to advance si acquisition procedure
+    TESTASSERT(rrctest.phytest.last_selected_cell.earfcn == 2);
+    TESTASSERT(rrctest.phytest.last_selected_cell.pci == 2);
+    TESTASSERT(rrctest.has_neighbour_cell(1, 1));
+    TESTASSERT(rrctest.has_neighbour_cell(2, 3));
+    TESTASSERT(not rrctest.has_neighbour_cell(2, 2));
+
+    // CHECK: UE moves to stronger intra-freq neighbor
+    // CHECK: Cell Selection fails, make sure it goes to Cell Search
+    rrctest.add_neighbour_cell(4, 2, 100);
+
+    phy_cell_t                               cell_search_cell = {};
+    rrc_interface_phy_lte::cell_search_ret_t cell_search_ret  = {};
+    cell_search_cell.pci                                      = 5;
+    cell_search_cell.earfcn                                   = 5;
+    cell_search_ret.found = srsue::rrc_interface_phy_lte::cell_search_ret_t::CELL_FOUND;
+    TESTASSERT(rrctest.start_cell_select() == SRSLTE_SUCCESS);
+    rrctest.cell_select_complete(false); // it will fail to select pci=2
+    stack.run_pending_tasks();
+    rrctest.cell_select_complete(false); // it will fail to select pci=3
+    stack.run_pending_tasks();
+    rrctest.cell_search_complete(cell_search_ret, cell_search_cell);
+    stack.run_pending_tasks();
+    TESTASSERT(rrctest.phytest.last_selected_cell.earfcn == 5);
+    TESTASSERT(rrctest.phytest.last_selected_cell.pci == 5);
+    rrctest.cell_select_complete(true);
+    rrctest.in_sync();
+    stack.run_pending_tasks();
+    TESTASSERT(not rrctest.has_neighbour_cell(5, 5));
+    TESTASSERT(rrctest.is_serving_cell(5, 5));
+  }
 
   return SRSLTE_SUCCESS;
 }
@@ -720,9 +877,11 @@ int a1event_report_test(uint32_t                             a1_rsrp_th,
                         report_interv_e                      report_interv)
 {
 
-  srslte::log_ref log1("RRC_MEAS");
+  srslte::log_ref log1("RRC_MEAS"), rrc_log("RRC");
   log1->set_level(srslte::LOG_LEVEL_DEBUG);
   log1->set_hex_limit(-1);
+  rrc_log->set_level(srslte::LOG_LEVEL_DEBUG);
+  rrc_log->set_hex_limit(-1);
 
   printf("==========================================================\n");
   printf("============       Report Testing  A1      ===============\n");
@@ -854,9 +1013,11 @@ int a1event_report_test(uint32_t                             a1_rsrp_th,
 int a3event_report_test(uint32_t a3_offset, uint32_t hyst, bool report_on_leave)
 {
 
-  srslte::log_ref log1("RRC_MEAS");
+  srslte::log_ref log1("RRC_MEAS"), rrc_log("RRC");
   log1->set_level(srslte::LOG_LEVEL_DEBUG);
   log1->set_hex_limit(-1);
+  rrc_log->set_level(srslte::LOG_LEVEL_DEBUG);
+  rrc_log->set_hex_limit(-1);
 
   printf("==========================================================\n");
   printf("============       Report Testing A3       ===============\n");

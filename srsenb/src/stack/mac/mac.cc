@@ -36,11 +36,11 @@ using namespace asn1::rrc;
 
 namespace srsenb {
 
-mac::mac() :
-  last_rnti(0),
+mac::mac(srslte::ext_task_sched_handle task_sched_) :
   rar_pdu_msg(sched_interface::MAX_RAR_LIST),
   rar_payload(),
-  common_buffers(SRSLTE_MAX_CARRIERS)
+  common_buffers(SRSLTE_MAX_CARRIERS),
+  task_sched(task_sched_)
 {
   pthread_rwlock_init(&rwlock, nullptr);
 }
@@ -56,7 +56,6 @@ bool mac::init(const mac_args_t&        args_,
                phy_interface_stack_lte* phy,
                rlc_interface_mac*       rlc,
                rrc_interface_mac*       rrc,
-               stack_interface_mac_lte* stack_,
                srslte::log_ref          log_h_)
 {
   started = false;
@@ -65,13 +64,12 @@ bool mac::init(const mac_args_t&        args_,
     phy_h = phy;
     rlc_h = rlc;
     rrc_h = rrc;
-    stack = stack_;
     log_h = log_h_;
 
     args  = args_;
     cells = cells_;
 
-    stack_task_queue = stack->make_task_queue();
+    stack_task_queue = task_sched.make_task_queue();
 
     scheduler.init(rrc);
 
@@ -92,6 +90,9 @@ bool mac::init(const mac_args_t&        args_,
     }
 
     reset();
+
+    // Pre-alloc UE objects for first attaching users
+    prealloc_ue(10);
 
     started = true;
   }
@@ -166,8 +167,6 @@ int mac::bearer_ue_cfg(uint16_t rnti, uint32_t lc_id, sched_interface::ue_bearer
   int                       ret = -1;
   srslte::rwlock_read_guard lock(rwlock);
   if (ue_db.count(rnti)) {
-    // configure BSR group in UE
-    ue_db[rnti]->set_lcg(lc_id, (uint32_t)cfg->group);
     ret = scheduler.bearer_ue_cfg(rnti, lc_id, cfg);
   } else {
     Error("User rnti=0x%x not found\n", rnti);
@@ -212,8 +211,8 @@ int mac::ue_cfg(uint16_t rnti, sched_interface::ue_cfg_t* cfg)
   if (not ue_ptr->is_phy_added) {
     Info("Registering RNTI=0x%X to PHY...\n", rnti);
     // Register new user in PHY with first CC index
-    if (phy_h->add_rnti(rnti, (SRSLTE_MRNTI) ? 0 : cfg->supported_cc_list.front().enb_cc_idx, false) == SRSLTE_ERROR) {
-      Error("Registering new UE RNTI=0x%X to PHY\n", rnti);
+    if (phy_h->pregen_sequences(rnti) == SRSLTE_ERROR) {
+      Error("Generating sequences for UE RNTI=0x%X\n", rnti);
     }
     Info("Done registering RNTI=0x%X to PHY...\n", rnti);
     ue_ptr->is_phy_added = true;
@@ -230,46 +229,43 @@ int mac::ue_cfg(uint16_t rnti, sched_interface::ue_cfg_t* cfg)
 // Removes UE from DB
 int mac::ue_rem(uint16_t rnti)
 {
-  int ret = -1;
+  // Remove UE from the perspective of L2/L3
   {
-    srslte::rwlock_read_guard lock(rwlock);
+    srslte::rwlock_write_guard lock(rwlock);
     if (ue_db.count(rnti)) {
-      phy_h->rem_rnti(rnti);
-      scheduler.ue_rem(rnti);
-      ret = 0;
+      ues_to_rem[rnti] = std::move(ue_db[rnti]);
+      ue_db.erase(rnti);
     } else {
       Error("User rnti=0x%x not found\n", rnti);
+      return SRSLTE_ERROR;
     }
   }
-  if (ret) {
-    return ret;
-  }
-  srslte::rwlock_write_guard lock(rwlock);
-  if (ue_db.count(rnti)) {
-    ue_db.erase(rnti);
+  scheduler.ue_rem(rnti);
+
+  // Remove UE from the perspective of L1
+  // Note: Let any pending retx ACK to arrive, so that PHY recognizes rnti
+  task_sched.defer_callback(FDD_HARQ_DELAY_DL_MS + FDD_HARQ_DELAY_UL_MS, [this, rnti]() {
+    phy_h->rem_rnti(rnti);
+    ues_to_rem.erase(rnti);
     Info("User rnti=0x%x removed from MAC/PHY\n", rnti);
-  } else {
-    Error("User rnti=0x%x already removed\n", rnti);
-  }
-  return 0;
+  });
+  return SRSLTE_SUCCESS;
 }
 
 // Called after Msg3
 int mac::ue_set_crnti(uint16_t temp_crnti, uint16_t crnti, sched_interface::ue_cfg_t* cfg)
 {
+  srslte::rwlock_read_guard lock(rwlock);
+  if (temp_crnti != crnti) {
+    // if C-RNTI is changed, it corresponds to older user. Handover scenario.
+    ue_db[crnti]->reset();
+  } else {
+    // Schedule ConRes Msg4
+    scheduler.dl_mac_buffer_state(crnti, (uint32_t)srslte::dl_sch_lcid::CON_RES_ID);
+  }
   int ret = ue_cfg(crnti, cfg);
   if (ret != SRSLTE_SUCCESS) {
     return ret;
-  }
-  srslte::rwlock_read_guard lock(rwlock);
-  if (temp_crnti == crnti) {
-    // if RNTI is maintained, Msg3 contained a RRC Setup Request
-    scheduler.dl_mac_buffer_state(crnti, (uint32_t)srslte::dl_sch_lcid::CON_RES_ID);
-  } else {
-    // C-RNTI corresponds to older user. Handover scenario.
-    phy_h->rem_rnti(crnti);
-    phy_h->add_rnti(crnti, cfg->supported_cc_list[0].enb_cc_idx, false);
-    scheduler.dl_mac_buffer_state(crnti, (uint32_t)srslte::dl_sch_lcid::CON_RES_ID);
   }
   return ret;
 }
@@ -296,44 +292,22 @@ void mac::get_metrics(mac_metrics_t metrics[ENB_METRICS_MAX_USERS])
  *
  *******************************************************/
 
-void mac::rl_failure(uint16_t rnti)
-{
-  srslte::rwlock_read_guard lock(rwlock);
-  if (ue_db.count(rnti)) {
-    uint32_t nof_fails = ue_db[rnti]->rl_failure();
-    if (nof_fails >= (uint32_t)args.link_failure_nof_err && args.link_failure_nof_err > 0) {
-      Info("Detected Uplink failure for rnti=0x%x\n", rnti);
-      rrc_h->rl_failure(rnti);
-      ue_db[rnti]->rl_failure_reset();
-    }
-  } else {
-    Error("User rnti=0x%x not found\n", rnti);
-  }
-}
-
-void mac::rl_ok(uint16_t rnti)
-{
-  srslte::rwlock_read_guard lock(rwlock);
-  if (ue_db.count(rnti)) {
-    ue_db[rnti]->rl_failure_reset();
-  } else {
-    Error("User rnti=0x%x not found\n", rnti);
-  }
-}
-
 int mac::ack_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, uint32_t tb_idx, bool ack)
 {
-  srslte::rwlock_read_guard lock(rwlock);
   log_h->step(tti);
-  if (ue_db.count(rnti)) {
-    uint32_t nof_bytes = scheduler.dl_ack_info(tti, rnti, enb_cc_idx, tb_idx, ack);
-    ue_db[rnti]->metrics_tx(ack, nof_bytes);
+  srslte::rwlock_read_guard lock(rwlock);
 
-    if (ack) {
-      if (nof_bytes > 64) { // do not count RLC status messages only
-        rrc_h->set_activity_user(rnti);
-        log_h->debug("DL activity rnti=0x%x, n_bytes=%d\n", rnti, nof_bytes);
-      }
+  if (not check_ue_exists(rnti)) {
+    return SRSLTE_ERROR;
+  }
+
+  uint32_t nof_bytes = scheduler.dl_ack_info(tti, rnti, enb_cc_idx, tb_idx, ack);
+  ue_db[rnti]->metrics_tx(ack, nof_bytes);
+
+  if (ack) {
+    if (nof_bytes > 64) { // do not count RLC status messages only
+      rrc_h->set_activity_user(rnti);
+      log_h->info("DL activity rnti=0x%x, n_bytes=%d\n", rnti, nof_bytes);
     }
   }
   return SRSLTE_SUCCESS;
@@ -341,115 +315,105 @@ int mac::ack_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, uint32_t tb_
 
 int mac::crc_info(uint32_t tti_rx, uint16_t rnti, uint32_t enb_cc_idx, uint32_t nof_bytes, bool crc)
 {
-  int ret = SRSLTE_ERROR;
   log_h->step(tti_rx);
   srslte::rwlock_read_guard lock(rwlock);
 
-  if (ue_db.count(rnti)) {
-    ue_db[rnti]->set_tti(tti_rx);
-    ue_db[rnti]->metrics_rx(crc, nof_bytes);
-
-    std::array<int, SRSLTE_MAX_CARRIERS> enb_ue_cc_map = scheduler.get_enb_ue_cc_map(rnti);
-    if (enb_ue_cc_map[enb_cc_idx] < 0) {
-      Error("User rnti=0x%x is not activated for carrier %d\n", rnti, enb_cc_idx);
-      return ret;
-    }
-    uint32_t ue_cc_idx = enb_ue_cc_map[enb_cc_idx];
-
-    // push the pdu through the queue if received correctly
-    if (crc) {
-      Info("Pushing PDU rnti=0x%x, tti_rx=%d, nof_bytes=%d\n", rnti, tti_rx, nof_bytes);
-      ue_db[rnti]->push_pdu(ue_cc_idx, tti_rx, nof_bytes);
-      stack_task_queue.push([this]() { process_pdus(); });
-    } else {
-      ue_db[rnti]->deallocate_pdu(ue_cc_idx, tti_rx);
-    }
-
-    // Scheduler uses eNB's CC mapping
-    ret = scheduler.ul_crc_info(tti_rx, rnti, enb_cc_idx, crc);
-  } else {
-    Error("User rnti=0x%x not found\n", rnti);
+  if (not check_ue_exists(rnti)) {
+    return SRSLTE_ERROR;
   }
 
-  return ret;
+  ue_db[rnti]->set_tti(tti_rx);
+  ue_db[rnti]->metrics_rx(crc, nof_bytes);
+
+  std::array<int, SRSLTE_MAX_CARRIERS> enb_ue_cc_map = scheduler.get_enb_ue_cc_map(rnti);
+  if (enb_ue_cc_map[enb_cc_idx] < 0) {
+    Error("User rnti=0x%x is not activated for carrier %d\n", rnti, enb_cc_idx);
+    return SRSLTE_ERROR;
+  }
+  uint32_t ue_cc_idx = enb_ue_cc_map[enb_cc_idx];
+
+  // push the pdu through the queue if received correctly
+  if (crc) {
+    Info("Pushing PDU rnti=0x%x, tti_rx=%d, nof_bytes=%d\n", rnti, tti_rx, nof_bytes);
+    ue_db[rnti]->push_pdu(ue_cc_idx, tti_rx, nof_bytes);
+    stack_task_queue.push([this]() { process_pdus(); });
+  } else {
+    ue_db[rnti]->deallocate_pdu(ue_cc_idx, tti_rx);
+  }
+
+  // Scheduler uses eNB's CC mapping
+  return scheduler.ul_crc_info(tti_rx, rnti, enb_cc_idx, crc);
 }
 
 int mac::ri_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, uint32_t ri_value)
 {
-  int ret = SRSLTE_ERROR;
   log_h->step(tti);
   srslte::rwlock_read_guard lock(rwlock);
 
-  if (ue_db.count(rnti)) {
-    scheduler.dl_ri_info(tti, rnti, enb_cc_idx, ri_value);
-    ue_db[rnti]->metrics_dl_ri(ri_value);
-    ret = SRSLTE_SUCCESS;
-  } else {
-    Error("User rnti=0x%x not found\n", rnti);
+  if (not check_ue_exists(rnti)) {
+    return SRSLTE_ERROR;
   }
 
-  return ret;
+  scheduler.dl_ri_info(tti, rnti, enb_cc_idx, ri_value);
+  ue_db[rnti]->metrics_dl_ri(ri_value);
+
+  return SRSLTE_SUCCESS;
 }
 
 int mac::pmi_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, uint32_t pmi_value)
 {
-  int ret = SRSLTE_ERROR;
   log_h->step(tti);
   srslte::rwlock_read_guard lock(rwlock);
 
-  if (ue_db.count(rnti)) {
-    scheduler.dl_pmi_info(tti, rnti, enb_cc_idx, pmi_value);
-    ue_db[rnti]->metrics_dl_pmi(pmi_value);
-    ret = SRSLTE_SUCCESS;
-  } else {
-    Error("User rnti=0x%x not found\n", rnti);
+  if (not check_ue_exists(rnti)) {
+    return SRSLTE_ERROR;
   }
 
-  return ret;
+  scheduler.dl_pmi_info(tti, rnti, enb_cc_idx, pmi_value);
+  ue_db[rnti]->metrics_dl_pmi(pmi_value);
+
+  return SRSLTE_SUCCESS;
 }
 
 int mac::cqi_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, uint32_t cqi_value)
 {
-  int ret = SRSLTE_ERROR;
   log_h->step(tti);
   srslte::rwlock_read_guard lock(rwlock);
 
-  if (ue_db.count(rnti)) {
-    scheduler.dl_cqi_info(tti, rnti, enb_cc_idx, cqi_value);
-    ue_db[rnti]->metrics_dl_cqi(cqi_value);
-    ret = SRSLTE_SUCCESS;
-  } else {
-    Error("User rnti=0x%x not found\n", rnti);
+  if (not check_ue_exists(rnti)) {
+    return SRSLTE_ERROR;
   }
 
-  return ret;
+  scheduler.dl_cqi_info(tti, rnti, enb_cc_idx, cqi_value);
+  ue_db[rnti]->metrics_dl_cqi(cqi_value);
+
+  return SRSLTE_SUCCESS;
 }
 
 int mac::snr_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, float snr)
 {
-  int ret = SRSLTE_ERROR;
   log_h->step(tti);
   srslte::rwlock_read_guard lock(rwlock);
 
-  if (ue_db.count(rnti)) {
-    uint32_t cqi = srslte_cqi_from_snr(snr);
-    scheduler.ul_cqi_info(tti, rnti, enb_cc_idx, cqi, 0);
-    ret = SRSLTE_SUCCESS;
-  } else {
-    Error("User rnti=0x%x not found\n", rnti);
+  if (not check_ue_exists(rnti)) {
+    return SRSLTE_ERROR;
   }
 
-  return ret;
+  uint32_t cqi = srslte_cqi_from_snr(snr);
+  return scheduler.ul_cqi_info(tti, rnti, enb_cc_idx, cqi, 0);
 }
 
 int mac::ta_info(uint32_t tti, uint16_t rnti, float ta_us)
 {
   srslte::rwlock_read_guard lock(rwlock);
-  if (ue_db.count(rnti)) {
-    uint32_t nof_ta_count = ue_db[rnti]->set_ta_us(ta_us);
-    if (nof_ta_count) {
-      scheduler.dl_mac_buffer_state(rnti, (uint32_t)srslte::dl_sch_lcid::TA_CMD, nof_ta_count);
-    }
+
+  if (not check_ue_exists(rnti)) {
+    return SRSLTE_ERROR;
+  }
+
+  uint32_t nof_ta_count = ue_db[rnti]->set_ta_us(ta_us);
+  if (nof_ta_count) {
+    scheduler.dl_mac_buffer_state(rnti, (uint32_t)srslte::dl_sch_lcid::TA_CMD, nof_ta_count);
   }
   return SRSLTE_SUCCESS;
 }
@@ -457,15 +421,13 @@ int mac::ta_info(uint32_t tti, uint16_t rnti, float ta_us)
 int mac::sr_detected(uint32_t tti, uint16_t rnti)
 {
   log_h->step(tti);
-  int                       ret = -1;
   srslte::rwlock_read_guard lock(rwlock);
-  if (ue_db.count(rnti)) {
-    scheduler.ul_sr_info(tti, rnti);
-    ret = 0;
-  } else {
-    Error("User rnti=0x%x not found\n", rnti);
+
+  if (not check_ue_exists(rnti)) {
+    return SRSLTE_ERROR;
   }
-  return ret;
+
+  return scheduler.ul_sr_info(tti, rnti);
 }
 
 uint16_t mac::allocate_rnti()
@@ -481,16 +443,49 @@ uint16_t mac::allocate_rnti()
   return rnti;
 }
 
+uint16_t mac::reserve_new_crnti(const sched_interface::ue_cfg_t& ue_cfg)
+{
+  // Get pre-allocated UE object
+  if (ue_pool.empty()) {
+    Error("Ignoring RACH attempt. UE pool empty.\n");
+    return SRSLTE_INVALID_RNTI;
+  }
+  auto     ue_ptr = ue_pool.wait_pop();
+  uint16_t rnti   = ue_ptr->get_rnti();
+
+  // Set PCAP if available
+  if (pcap != nullptr) {
+    ue_ptr->start_pcap(pcap);
+  }
+
+  {
+    srslte::rwlock_write_guard lock(rwlock);
+    ue_db[rnti] = std::move(ue_ptr);
+  }
+
+  // Add new user to the scheduler so that it can RX/TX SRB0
+  if (scheduler.ue_cfg(rnti, ue_cfg) != SRSLTE_SUCCESS) {
+    Error("Registering new user rnti=0x%x to SCHED\n", rnti);
+    return SRSLTE_INVALID_RNTI;
+  }
+
+  // Allocate one new UE object in advance
+  prealloc_ue(1);
+  return rnti;
+}
+
 void mac::rach_detected(uint32_t tti, uint32_t enb_cc_idx, uint32_t preamble_idx, uint32_t time_adv)
 {
   static srslte::mutexed_tprof<srslte::avg_time_stats> rach_tprof("rach_tprof", "MAC", 1);
   log_h->step(tti);
   auto rach_tprof_meas = rach_tprof.start();
 
-  uint16_t rnti = allocate_rnti();
-
-  // Create new UE
-  std::unique_ptr<ue> ue_ptr{new ue(rnti, args.nof_prb, &scheduler, rrc_h, rlc_h, phy_h, log_h, cells.size())};
+  // Get pre-allocated UE object
+  if (ue_pool.empty()) {
+    Error("Ignoring RACH attempt. UE pool empty.\n");
+  }
+  auto     ue_ptr = ue_pool.wait_pop();
+  uint16_t rnti   = ue_ptr->get_rnti();
 
   // Set PCAP if available
   if (pcap != nullptr) {
@@ -518,7 +513,7 @@ void mac::rach_detected(uint32_t tti, uint32_t enb_cc_idx, uint32_t preamble_idx
     ue_cfg.supported_cc_list.back().active     = true;
     ue_cfg.supported_cc_list.back().enb_cc_idx = enb_cc_idx;
     ue_cfg.ue_bearers[0].direction             = srsenb::sched_interface::ue_bearer_cfg_t::BOTH;
-    ue_cfg.dl_cfg.tm                           = SRSLTE_TM1;
+    ue_cfg.supported_cc_list[0].dl_cfg.tm      = SRSLTE_TM1;
     if (scheduler.ue_cfg(rnti, ue_cfg) != SRSLTE_SUCCESS) {
       Error("Registering new user rnti=0x%x to SCHED\n", rnti);
       return;
@@ -527,18 +522,34 @@ void mac::rach_detected(uint32_t tti, uint32_t enb_cc_idx, uint32_t preamble_idx
     // Register new user in RRC
     rrc_h->add_user(rnti, ue_cfg);
 
-    // Add temporal rnti to the PHY
-    if (phy_h->add_rnti(rnti, enb_cc_idx, true) != SRSLTE_SUCCESS) {
-      Error("Registering temporal-rnti=0x%x to PHY\n", rnti);
-      return;
-    }
-
     // Trigger scheduler RACH
     scheduler.dl_rach_info(enb_cc_idx, rar_info);
 
-    log_h->info("RACH:  tti=%d, preamble=%d, offset=%d, temp_crnti=0x%x\n", tti, preamble_idx, time_adv, rnti);
-    log_h->console("RACH:  tti=%d, preamble=%d, offset=%d, temp_crnti=0x%x\n", tti, preamble_idx, time_adv, rnti);
+    log_h->info("RACH:  tti=%d, cc=%d, preamble=%d, offset=%d, temp_crnti=0x%x\n",
+                tti,
+                enb_cc_idx,
+                preamble_idx,
+                time_adv,
+                rnti);
+    srslte::console("RACH:  tti=%d, cc=%d, preamble=%d, offset=%d, temp_crnti=0x%x\n",
+                       tti,
+                       enb_cc_idx,
+                       preamble_idx,
+                       time_adv,
+                       rnti);
   });
+
+  // Allocate one new UE object in advance
+  prealloc_ue(1);
+}
+
+void mac::prealloc_ue(uint32_t nof_ue)
+{
+  for (uint32_t i = 0; i < nof_ue; i++) {
+    std::unique_ptr<ue> ptr = std::unique_ptr<ue>(
+        new ue(allocate_rnti(), args.nof_prb, &scheduler, rrc_h, rlc_h, phy_h, log_h, cells.size()));
+    ue_pool.push(std::move(ptr));
+  }
 }
 
 int mac::get_dl_sched(uint32_t tti_tx_dl, dl_sched_list_t& dl_sched_res_list)
@@ -565,6 +576,7 @@ int mac::get_dl_sched(uint32_t tti_tx_dl, dl_sched_list_t& dl_sched_res_list)
 
       // Copy data grants
       for (uint32_t i = 0; i < sched_result.nof_data_elems; i++) {
+        uint32_t tb_count = 0;
 
         // Get UE
         uint16_t rnti = sched_result.data[i].dci.rnti;
@@ -576,6 +588,11 @@ int mac::get_dl_sched(uint32_t tti_tx_dl, dl_sched_list_t& dl_sched_res_list)
           for (uint32_t tb = 0; tb < SRSLTE_MAX_TB; tb++) {
             dl_sched_res->pdsch[n].softbuffer_tx[tb] =
                 ue_db[rnti]->get_tx_softbuffer(sched_result.data[i].dci.ue_cc_idx, sched_result.data[i].dci.pid, tb);
+
+            // If the Rx soft-buffer is not given, abort transmission
+            if (dl_sched_res->pdsch[n].softbuffer_tx[tb] == nullptr) {
+              continue;
+            }
 
             if (sched_result.data[i].nof_pdu_elems[tb] > 0) {
               /* Get PDU if it's a new transmission */
@@ -594,13 +611,18 @@ int mac::get_dl_sched(uint32_t tti_tx_dl, dl_sched_list_t& dl_sched_res_list)
                 pcap->write_dl_crnti(
                     dl_sched_res->pdsch[n].data[tb], sched_result.data[i].tbs[tb], rnti, true, tti_tx_dl, enb_cc_idx);
               }
-
             } else {
               /* TB not enabled OR no data to send: set pointers to NULL  */
               dl_sched_res->pdsch[n].data[tb] = nullptr;
             }
+
+            tb_count++;
           }
-          n++;
+
+          // Count transmission if at least one TB has succesfully added
+          if (tb_count > 0) {
+            n++;
+          }
         } else {
           Warning("Invalid DL scheduling result. User 0x%x does not exist\n", rnti);
         }
@@ -668,8 +690,11 @@ int mac::get_dl_sched(uint32_t tti_tx_dl, dl_sched_list_t& dl_sched_res_list)
   }
 
   // Count number of TTIs for all active users
-  for (auto& u : ue_db) {
-    u.second->metrics_cnt();
+  {
+    srslte::rwlock_read_guard lock(rwlock);
+    for (auto& u : ue_db) {
+      u.second->metrics_cnt();
+    }
   }
 
   return SRSLTE_SUCCESS;
@@ -854,6 +879,12 @@ int mac::get_ul_sched(uint32_t tti_tx_ul, ul_sched_list_t& ul_sched_res_list)
             phy_ul_sched_res->pusch[n].dci           = sched_result.pusch[i].dci;
             phy_ul_sched_res->pusch[n].softbuffer_rx =
                 ue_db[rnti]->get_rx_softbuffer(sched_result.pusch[i].dci.ue_cc_idx, tti_tx_ul);
+
+            // If the Rx soft-buffer is not given, abort reception
+            if (phy_ul_sched_res->pusch[n].softbuffer_rx == nullptr) {
+              continue;
+            }
+
             if (sched_result.pusch[n].current_tx_nb == 0) {
               srslte_softbuffer_rx_reset_tbs(phy_ul_sched_res->pusch[n].softbuffer_rx, sched_result.pusch[i].tbs * 8);
             }
@@ -913,6 +944,17 @@ void mac::write_mcch(sib_type2_s* sib2_, sib_type13_r9_s* sib13_, mcch_msg_s* mc
       std::unique_ptr<ue>{new ue(SRSLTE_MRNTI, args.nof_prb, &scheduler, rrc_h, rlc_h, phy_h, log_h, cells.size())};
 
   rrc_h->add_user(SRSLTE_MRNTI, {});
+}
+
+bool mac::check_ue_exists(uint16_t rnti)
+{
+  if (not ue_db.count(rnti)) {
+    if (not ues_to_rem.count(rnti)) {
+      Error("User rnti=0x%x not found\n", rnti);
+    }
+    return false;
+  }
+  return true;
 }
 
 } // namespace srsenb

@@ -27,6 +27,7 @@
 #include "srslte/mac/pdu.h"
 #include "ttcn3_interfaces.h"
 #include "ttcn3_port_handler.h"
+#include <srslte/asn1/asn1_utils.h>
 #include <srslte/interfaces/ue_interfaces.h>
 
 using namespace srslte;
@@ -49,11 +50,11 @@ public:
     return port_listen();
   }
 
-  void tx(unique_byte_buffer_t pdu)
+  void tx(const uint8_t* buffer, uint32_t len)
   {
     if (initialized) {
-      log->info_hex(pdu->msg, pdu->N_bytes, "Sending %d B to Titan\n", pdu->N_bytes);
-      send(pdu->msg, pdu->N_bytes);
+      log->info_hex(buffer, len, "Sending %d B to Titan\n", len);
+      send(buffer, len);
     } else {
       log->error("Trying to transmit but port not connected.\n");
     }
@@ -85,9 +86,58 @@ private:
     document.Accept(writer);
     log->info("Received JSON with %d B\n%s\n", json_len, (char*)buffer.GetString());
 
-    // TODO: call handler
+    // check for common
+    assert(document.HasMember("Common"));
+    assert(document["Common"].IsObject());
+
+    // Check for user data
+    assert(document.HasMember("U_Plane"));
+    assert(document["U_Plane"].IsObject());
+
+    // Handle Pdus
+    const Value& uplane = document["U_Plane"];
+    assert(uplane.HasMember("SubframeDataList"));
+    assert(uplane["SubframeDataList"].IsArray());
+
+    uint32_t lcid = document["Common"]["RoutingInfo"]["RadioBearerId"]["Drb"].GetInt() + 2;
+    for (Value::ConstValueIterator itr = uplane["SubframeDataList"].Begin(); itr != uplane["SubframeDataList"].End();
+         ++itr) {
+      assert(itr->HasMember("PduSduList"));
+      assert((*itr)["PduSduList"].IsObject());
+      if ((*itr)["PduSduList"].HasMember("PdcpSdu")) {
+        assert((*itr)["PduSduList"]["PdcpSdu"].IsArray());
+        const Value& sdulist = (*itr)["PduSduList"]["PdcpSdu"];
+        for (Value::ConstValueIterator sdu_itr = sdulist.Begin(); sdu_itr != sdulist.End(); ++sdu_itr) {
+          assert(sdu_itr->IsString());
+          string              sdustr = sdu_itr->GetString();
+          asn1::dyn_octstring octstr(sdustr.size());
+          octstr.from_string(sdustr);
+          handle_sdu(document, lcid, octstr.data(), octstr.size(), ttcn3_helpers::get_follow_on_flag(document));
+        }
+      } else if ((*itr)["PduSduList"].HasMember("MacPdu")) {
+        log->warning("Not handling MacPdu type.");
+      } else {
+        log->warning("Not handling this PduSdu type.\n");
+      }
+    }
 
     return SRSLTE_SUCCESS;
+  }
+
+  void handle_sdu(Document& document, const uint16_t lcid, const uint8_t* payload, const uint16_t len, bool follow_on)
+  {
+    log->info_hex(payload, len, "Received DRB PDU (lcid=%d)\n", lcid);
+
+    // pack into byte buffer
+    unique_byte_buffer_t pdu = pool_allocate_blocking;
+    pdu->N_bytes             = len;
+    memcpy(pdu->msg, payload, pdu->N_bytes);
+
+    syssim->add_dcch_pdu(ttcn3_helpers::get_timing_info(document),
+                         ttcn3_helpers::get_cell_name(document),
+                         lcid,
+                         std::move(pdu),
+                         follow_on);
   }
 
   ss_srb_interface* syssim = nullptr;

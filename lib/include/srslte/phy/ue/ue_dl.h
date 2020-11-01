@@ -56,19 +56,22 @@
 
 #include "srslte/config.h"
 
-#define MAX_CANDIDATES_UE 16 // From 36.213 Table 9.1.1-1
-#define MAX_CANDIDATES_COM 6 // From 36.213 Table 9.1.1-1
-#define MAX_CANDIDATES (MAX_CANDIDATES_UE + MAX_CANDIDATES_COM)
+#define SRSLTE_MAX_CANDIDATES_UE 16 // From 36.213 Table 9.1.1-1
+#define SRSLTE_MAX_CANDIDATES_COM 6 // From 36.213 Table 9.1.1-1
+#define SRSLTE_MAX_CANDIDATES (SRSLTE_MAX_CANDIDATES_UE + SRSLTE_MAX_CANDIDATES_COM)
 
-#define MI_NOF_REGS ((q->cell.frame_type == SRSLTE_FDD) ? 1 : 6)
-#define MI_MAX_REGS 6
+#define SRSLTE_MAX_FORMATS 4
+
+#define SRSLTE_MI_NOF_REGS ((q->cell.frame_type == SRSLTE_FDD) ? 1 : 6)
+#define SRSLTE_MI_MAX_REGS 6
 
 #define SRSLTE_MAX_DCI_MSG SRSLTE_MAX_CARRIERS
 
 typedef struct SRSLTE_API {
-  srslte_dci_format_t   format;
-  srslte_dci_location_t loc[MAX_CANDIDATES];
+  srslte_dci_format_t   formats[SRSLTE_MAX_FORMATS];
+  srslte_dci_location_t loc[SRSLTE_MAX_CANDIDATES];
   uint32_t              nof_locations;
+  uint32_t              nof_formats;
 } dci_blind_search_t;
 
 typedef struct SRSLTE_API {
@@ -86,7 +89,7 @@ typedef struct SRSLTE_API {
   srslte_phich_t  phich;
 
   // Control region
-  srslte_regs_t regs[MI_MAX_REGS];
+  srslte_regs_t regs[SRSLTE_MI_MAX_REGS];
   uint32_t      mi_manual_index;
   bool          mi_auto;
 
@@ -100,11 +103,13 @@ typedef struct SRSLTE_API {
   cf_t* sf_symbols[SRSLTE_MAX_PORTS];
 
   // Variables for blind DCI search
-  dci_blind_search_t current_ss_ue[MI_MAX_REGS][3][10];
-  dci_blind_search_t current_ss_common[MI_MAX_REGS][3];
+  dci_blind_search_t current_ss_ue[SRSLTE_MI_MAX_REGS][SRSLTE_NOF_CFI][SRSLTE_NOF_SF_X_FRAME];
+  dci_blind_search_t current_ss_common[SRSLTE_MI_MAX_REGS][SRSLTE_NOF_CFI];
   srslte_dci_msg_t   pending_ul_dci_msg[SRSLTE_MAX_DCI_MSG];
   uint32_t           pending_ul_dci_count;
 
+  srslte_dci_location_t allocated_locations[SRSLTE_MAX_DCI_MSG];
+  uint32_t              nof_allocated_locations;
 } srslte_ue_dl_t;
 
 // Downlink config (includes common and dedicated variables)
@@ -113,6 +118,7 @@ typedef struct SRSLTE_API {
   srslte_pdsch_cfg_t      pdsch;
   srslte_dci_cfg_t        dci;
   srslte_tm_t             tm;
+  bool                    dci_common_ss;
 } srslte_dl_cfg_t;
 
 typedef struct SRSLTE_API {

@@ -19,7 +19,7 @@
  *
  */
 
-#include "srslte/common/move_callback.h"
+#include "srslte/adt/move_callback.h"
 #include <functional>
 #include <list>
 #include <memory>
@@ -349,6 +349,7 @@ protected:
 
   void run_then(bool is_success) final
   {
+    proc_state = proc_status_t::idle;
     proc_result_type result;
     // update result state
     if (is_success) {
@@ -367,7 +368,6 @@ protected:
     complete_callbacks(std::move(result));
     // back to inactive
     proc_detail::optional_clear(proc_ptr.get());
-    proc_state = proc_status_t::idle;
   }
 
   std::unique_ptr<T>                proc_ptr;
@@ -483,25 +483,6 @@ public:
 private:
   std::list<proc_obj_t> proc_list;
 };
-
-template <typename Functor>
-struct deferred_callback {
-  explicit deferred_callback(Functor&& f_) : f(std::forward<Functor>(f_)) {}
-  deferred_callback(const deferred_callback&)     = delete;
-  deferred_callback(deferred_callback&&) noexcept = default;
-  deferred_callback& operator=(const deferred_callback&) = delete;
-  deferred_callback& operator=(deferred_callback&&) noexcept = default;
-  ~deferred_callback() { f(); }
-
-private:
-  Functor f;
-};
-template <typename Functor>
-deferred_callback<Functor> defer_call(Functor&& f)
-{
-  return deferred_callback<Functor>{std::forward<Functor>(f)};
-}
-#define DEFER(FUNC) auto on_exit_call = ::srslte::defer_call([&]() { FUNC })
 
 } // namespace srslte
 

@@ -24,6 +24,7 @@
 
 #include "srslte/common/common.h"
 #include "srslte/common/log.h"
+#include "srslte/common/task_scheduler.h"
 #include "srslte/interfaces/ue_interfaces.h"
 #include "srslte/upper/pdcp_entity_lte.h"
 
@@ -32,7 +33,7 @@ namespace srslte {
 class pdcp : public srsue::pdcp_interface_rlc, public srsue::pdcp_interface_rrc
 {
 public:
-  pdcp(srslte::task_handler_interface* task_executor_, const char* logname);
+  pdcp(srslte::task_sched_handle task_sched_, const char* logname);
   virtual ~pdcp();
   void init(srsue::rlc_interface_pdcp* rlc_, srsue::rrc_interface_pdcp* rrc_, srsue::gw_interface_pdcp* gw_);
   void stop();
@@ -41,37 +42,38 @@ public:
   bool is_lcid_enabled(uint32_t lcid);
 
   // RRC interface
-  void reestablish();
-  void reestablish(uint32_t lcid);
-  void reset();
-  void write_sdu(uint32_t lcid, unique_byte_buffer_t sdu, bool blocking);
+  void reestablish() override;
+  void reestablish(uint32_t lcid) override;
+  void reset() override;
+  void write_sdu(uint32_t lcid, unique_byte_buffer_t sdu) override;
   void write_sdu_mch(uint32_t lcid, unique_byte_buffer_t sdu);
-  void add_bearer(uint32_t lcid, pdcp_config_t cnfg);
+  void add_bearer(uint32_t lcid, pdcp_config_t cnfg) override;
   void add_bearer_mrb(uint32_t lcid, pdcp_config_t cnfg);
   void del_bearer(uint32_t lcid);
-  void change_lcid(uint32_t old_lcid, uint32_t new_lcid);
-  void config_security(uint32_t lcid, as_security_config_t sec_cfg);
-  void config_security_all(as_security_config_t sec_cfg);
-  void enable_integrity(uint32_t lcid, srslte_direction_t direction);
-  void enable_encryption(uint32_t lcid, srslte_direction_t direction);
+  void change_lcid(uint32_t old_lcid, uint32_t new_lcid) override;
+  void config_security(uint32_t lcid, as_security_config_t sec_cfg) override;
+  void config_security_all(as_security_config_t sec_cfg) override;
+  void enable_integrity(uint32_t lcid, srslte_direction_t direction) override;
+  void enable_encryption(uint32_t lcid, srslte_direction_t direction) override;
   void enable_security_timed(uint32_t lcid, srslte_direction_t direction, uint32_t sn);
-  bool get_bearer_status(uint32_t lcid, uint16_t* dlsn, uint16_t* dlhfn, uint16_t* ulsn, uint16_t* ulhfn);
+  bool get_bearer_state(uint32_t lcid, srslte::pdcp_lte_state_t* state);
+  bool set_bearer_state(uint32_t lcid, const srslte::pdcp_lte_state_t& state);
 
   // RLC interface
-  void write_pdu(uint32_t lcid, unique_byte_buffer_t sdu);
-  void write_pdu_mch(uint32_t lcid, unique_byte_buffer_t sdu);
-  void write_pdu_bcch_bch(unique_byte_buffer_t sdu);
-  void write_pdu_bcch_dlsch(unique_byte_buffer_t sdu);
-  void write_pdu_pcch(unique_byte_buffer_t sdu);
+  void write_pdu(uint32_t lcid, unique_byte_buffer_t sdu) override;
+  void write_pdu_mch(uint32_t lcid, unique_byte_buffer_t sdu) override;
+  void write_pdu_bcch_bch(unique_byte_buffer_t sdu) override;
+  void write_pdu_bcch_dlsch(unique_byte_buffer_t sdu) override;
+  void write_pdu_pcch(unique_byte_buffer_t sdu) override;
 
 private:
-  srsue::rlc_interface_pdcp*      rlc           = nullptr;
-  srsue::rrc_interface_pdcp*      rrc           = nullptr;
-  srsue::gw_interface_pdcp*       gw            = nullptr;
-  srslte::task_handler_interface* task_executor = nullptr;
-  srslte::log_ref                 pdcp_log;
+  srsue::rlc_interface_pdcp* rlc = nullptr;
+  srsue::rrc_interface_pdcp* rrc = nullptr;
+  srsue::gw_interface_pdcp*  gw  = nullptr;
+  srslte::task_sched_handle  task_sched;
+  srslte::log_ref            pdcp_log;
 
-  std::map<uint16_t, std::unique_ptr<pdcp_entity_lte> > pdcp_array, pdcp_array_mrb;
+  std::map<uint16_t, std::unique_ptr<pdcp_entity_base> > pdcp_array, pdcp_array_mrb;
 
   // cache valid lcids to be checked from separate thread
   std::mutex         cache_mutex;

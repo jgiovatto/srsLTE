@@ -95,7 +95,7 @@ private:
 };
 
 ///< Create periodic epoll timer every 1ms
-int create_tti_timer()
+inline int create_tti_timer()
 {
   int timer_fd = timerfd_create(CLOCK_MONOTONIC, 0);
   if (timer_fd == -1) {
@@ -118,14 +118,18 @@ int create_tti_timer()
   return timer_fd;
 }
 
-///< Create signalfd for handling signals
-int add_signalfd()
+///< Blocks all signals from the calling thread
+inline void block_signals()
 {
   // block all signals. we take signals synchronously via signalfd
   sigset_t all;
   sigfillset(&all);
-  sigprocmask(SIG_SETMASK, &all, NULL);
+  pthread_sigmask(SIG_BLOCK, &all, NULL);
+}
 
+///< Create signalfd for handling signals
+inline int add_signalfd()
+{
   // add signals we accept synchronously via signalfd
   std::vector<int> sigs = {SIGIO, SIGHUP, SIGTERM, SIGINT, SIGQUIT, SIGALRM};
 
@@ -145,7 +149,7 @@ int add_signalfd()
 }
 
 ///< Add fd to epoll fd
-int add_epoll(int fd, int epoll_fd)
+inline int add_epoll(int fd, int epoll_fd)
 {
   struct epoll_event ev = {};
   ev.data.fd            = fd;
@@ -158,7 +162,7 @@ int add_epoll(int fd, int epoll_fd)
 }
 
 ///< Remove fd from epoll
-int del_epoll(int fd, int epoll_fd)
+inline int del_epoll(int fd, int epoll_fd)
 {
   struct epoll_event ev = {};
   ev.data.fd            = fd;

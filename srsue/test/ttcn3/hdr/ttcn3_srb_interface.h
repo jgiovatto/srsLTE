@@ -49,11 +49,11 @@ public:
     return port_listen();
   }
 
-  void tx(unique_byte_buffer_t pdu)
+  void tx(const uint8_t* buffer, uint32_t len)
   {
     if (initialized) {
-      log->info_hex(pdu->msg, pdu->N_bytes, "Sending %d B to Titan\n", pdu->N_bytes);
-      send(pdu->msg, pdu->N_bytes);
+      log->info_hex(buffer, len, "Sending %d B to Titan\n", len);
+      send(buffer, len);
     } else {
       log->error("Trying to transmit but port not connected.\n");
     }
@@ -119,11 +119,12 @@ private:
     pdu->N_bytes             = len;
     memcpy(pdu->msg, payload, pdu->N_bytes);
 
-    syssim->add_ccch_pdu(ttcn3_helpers::get_timing_info(document), std::move(pdu));
+    syssim->add_ccch_pdu(
+        ttcn3_helpers::get_timing_info(document), ttcn3_helpers::get_cell_name(document), std::move(pdu));
 
     // TODO: is there a better way to check for RRCConnectionReestablishment?
     if (ccch_is_rrc_reestablishment(document)) {
-      syssim->reestablish_bearer(1);
+      syssim->reestablish_bearer(ttcn3_helpers::get_cell_name(document), 1);
     }
   }
 
@@ -138,7 +139,11 @@ private:
     pdu->N_bytes             = len;
     memcpy(pdu->msg, payload, pdu->N_bytes);
 
-    syssim->add_dcch_pdu(ttcn3_helpers::get_timing_info(document), lcid, std::move(pdu), follow_on);
+    syssim->add_dcch_pdu(ttcn3_helpers::get_timing_info(document),
+                         ttcn3_helpers::get_cell_name(document),
+                         lcid,
+                         std::move(pdu),
+                         follow_on);
   }
 
   bool ccch_is_rrc_reestablishment(Document& document)

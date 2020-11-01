@@ -26,6 +26,7 @@
                               INCLUDES
 *******************************************************************************/
 
+#include "srslte/adt/span.h"
 #include <memory>
 #include <stdint.h>
 #include <string.h>
@@ -56,6 +57,8 @@
 
 #define TTIMOD_SZ 20
 #define TTIMOD(tti) (tti % TTIMOD_SZ)
+
+#define INVALID_TTI 10241
 
 #define PHICH_MAX_SF 6 // Maximum PHICH in a subframe (1 in FDD, > 1 in TDD, see table 9.1.2-1 36.213)
 
@@ -263,6 +266,33 @@ public:
 };
 
 typedef std::unique_ptr<byte_buffer_t, byte_buffer_deleter> unique_byte_buffer_t;
+
+///
+/// Utilities to create a span out of a byte_buffer.
+///
+
+using byte_span = span<uint8_t>;
+using const_byte_span = span<const uint8_t>;
+
+inline byte_span make_span(byte_buffer_t& b)
+{
+  return byte_span{b.msg, b.N_bytes};
+}
+
+inline const_byte_span make_span(const byte_buffer_t& b)
+{
+  return const_byte_span{b.msg, b.N_bytes};
+}
+
+inline byte_span make_span(unique_byte_buffer_t& b)
+{
+  return byte_span{b->msg, b->N_bytes};
+}
+
+inline const_byte_span make_span(const unique_byte_buffer_t& b)
+{
+  return const_byte_span{b->msg, b->N_bytes};
+}
 
 } // namespace srslte
 

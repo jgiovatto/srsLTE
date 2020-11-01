@@ -28,6 +28,7 @@
 #include <sys/time.h>
 
 #include "srslte/common/log_filter.h"
+#include "srslte/srslog/srslog.h"
 
 namespace srslte {
 
@@ -42,12 +43,30 @@ log_filter::log_filter() : log()
   logger_h    = NULL;
 }
 
+/// Creates a log channel that writes to stdout.
+static srslog::log_channel* create_or_get_default_logger()
+{
+  srslog::sink* s = srslog::create_stdout_sink();
+  if (!s) {
+    s = srslog::find_sink("stdout");
+  }
+  srslog::log_channel* log = srslog::create_log_channel("log_filter_default", *s);
+  if (!log) {
+    log = srslog::find_log_channel("log_filter_default");
+  }
+
+  srslog::init();
+
+  return log;
+}
+
 log_filter::log_filter(std::string layer) : log()
 {
-  do_tti      = false;
-  time_src    = NULL;
-  time_format = TIME;
-  init(layer, &def_logger_stdout, do_tti);
+  do_tti         = false;
+  time_src       = NULL;
+  time_format    = TIME;
+  default_logger = std::unique_ptr<srslog_wrapper>(new srslog_wrapper(*create_or_get_default_logger()));
+  init(layer, default_logger.get(), do_tti);
 }
 
 log_filter::log_filter(std::string layer, logger* logger_, bool tti) : log()
@@ -57,7 +76,8 @@ log_filter::log_filter(std::string layer, logger* logger_, bool tti) : log()
   time_format = TIME;
 
   if (!logger_) {
-    logger_ = &def_logger_stdout;
+    default_logger = std::unique_ptr<srslog_wrapper>(new srslog_wrapper(*create_or_get_default_logger()));
+    logger_        = default_logger.get();
   }
 
   init(std::move(layer), logger_, tti);
@@ -77,41 +97,42 @@ void log_filter::init(std::string layer, logger* logger_, bool tti)
 
 void log_filter::all_log(srslte::LOG_LEVEL_ENUM level,
                          uint32_t               tti,
-                         const char*            msg,
+                         char*                  msg,
                          const uint8_t*         hex,
                          int                    size,
                          bool                   long_msg)
 {
-  char buffer_tti[16]  = {};
-  char buffer_time[64] = {};
+  char buffer_tti[16] = {};
 
   if (logger_h) {
     logger::unique_log_str_t log_str = nullptr;
 
     if (long_msg || hex) {
       // For long messages, dynamically allocate a new log_str with enough size outside the pool.
-      uint32_t log_str_msg_len = sizeof(buffer_tti) + sizeof(buffer_time) + 20 + strlen(msg) + CHARS_FOR_HEX_DUMP(size);
+      uint32_t log_str_msg_len = sizeof(buffer_tti) + 20 + strlen(msg) + CHARS_FOR_HEX_DUMP(size);
       log_str = logger::unique_log_str_t(new logger::log_str(nullptr, log_str_msg_len), logger::log_str_deleter());
     } else {
       log_str = logger_h->allocate_unique_log_str();
     }
 
     if (log_str) {
-      now_time(buffer_time, sizeof(buffer_time));
       if (do_tti) {
         get_tti_str(tti, buffer_tti, sizeof(buffer_tti));
       }
 
+      // Trim away a newline character at the end of the message.
+      if (msg[strlen(msg) - 1] == '\n') {
+        msg[strlen(msg) - 1] = '\0';
+      }
+
       snprintf(log_str->str(),
                log_str->get_buffer_size(),
-               "%s [%-4s] %s %s%s%s%s%s",
-               buffer_time,
+               "[%-4s] %s %s%s%s%s",
                get_service_name().c_str(),
                log_level_text_short[level],
                do_tti ? buffer_tti : "",
                add_string_en ? add_string_val.c_str() : "",
                msg,
-               msg[strlen(msg) - 1] != '\n' ? "\n" : "",
                (hex_limit > 0 && hex && size > 0) ? hex_string(hex, size).c_str() : "");
 
       logger_h->log(std::move(log_str));
@@ -119,17 +140,6 @@ void log_filter::all_log(srslte::LOG_LEVEL_ENUM level,
       logger_h->log_char("Error in Log: Not enough buffers in pool\n");
     }
   }
-}
-
-void log_filter::console(const char* message, ...)
-{
-  char    args_msg[char_buff_size];
-  va_list args;
-  va_start(args, message);
-  if (vsnprintf(args_msg, char_buff_size, message, args) > 0)
-    printf("%s", args_msg); // Print directly to stdout
-  fflush(stdout);
-  va_end(args);
 }
 
 #define all_log_expand(log_level)                                                                                      \
@@ -276,7 +286,7 @@ std::string log_filter::hex_string(const uint8_t* hex, int size)
   std::stringstream ss;
   int               c = 0;
 
-  ss << std::hex << std::setfill('0');
+  ss << '\n' << std::hex << std::setfill('0');
   if (hex_limit >= 0) {
     size = (size > hex_limit) ? hex_limit : size;
   }
@@ -286,8 +296,11 @@ std::string log_filter::hex_string(const uint8_t* hex, int size)
     for (int i = 0; i < tmp; i++) {
       ss << std::setw(2) << static_cast<unsigned>(hex[c++]) << " ";
     }
-    ss << "\n";
+    if (c != size) {
+      ss << "\n";
+    }
   }
+
   return ss.str();
 }
 

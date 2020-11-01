@@ -74,7 +74,7 @@ int gtpu::init(std::string                  gtp_bind_addr_,
   if (bind(fd, (struct sockaddr*)&bindaddr, sizeof(struct sockaddr_in))) {
     snprintf(errbuf, sizeof(errbuf), "%s", strerror(errno));
     gtpu_log->error("Failed to bind on address %s, port %d: %s\n", gtp_bind_addr.c_str(), GTPU_PORT, errbuf);
-    gtpu_log->console("Failed to bind on address %s, port %d: %s\n", gtp_bind_addr.c_str(), GTPU_PORT, errbuf);
+    srslte::console("Failed to bind on address %s, port %d: %s\n", gtp_bind_addr.c_str(), GTPU_PORT, errbuf);
     return SRSLTE_ERROR;
   }
 
@@ -111,9 +111,9 @@ void gtpu::write_pdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t 
     if (ntohs(ip_pkt->tot_len) != pdu->N_bytes) {
       gtpu_log->error("IP Len and PDU N_bytes mismatch\n");
     }
-    gtpu_log->debug("S1-U PDU -- IP version %d, Total length %d\n", ip_pkt->version, ntohs(ip_pkt->tot_len));
-    gtpu_log->debug("S1-U PDU -- IP src addr %s\n", srslte::gtpu_ntoa(ip_pkt->saddr).c_str());
-    gtpu_log->debug("S1-U PDU -- IP dst addr %s\n", srslte::gtpu_ntoa(ip_pkt->daddr).c_str());
+    gtpu_log->debug("Tx S1-U PDU -- IP version %d, Total length %d\n", ip_pkt->version, ntohs(ip_pkt->tot_len));
+    gtpu_log->debug("Tx S1-U PDU -- IP src addr %s\n", srslte::gtpu_ntoa(ip_pkt->saddr).c_str());
+    gtpu_log->debug("Tx S1-U PDU -- IP dst addr %s\n", srslte::gtpu_ntoa(ip_pkt->daddr).c_str());
   }
 
   gtpu_header_t header;
@@ -140,17 +140,17 @@ void gtpu::write_pdu(uint16_t rnti, uint32_t lcid, srslte::unique_byte_buffer_t 
  * If access to any element created in init (such as gtpu_log) is required, it must be considered
  * the case of it being NULL.
  */
-void gtpu::add_bearer(uint16_t rnti, uint32_t lcid, uint32_t addr, uint32_t teid_out, uint32_t* teid_in)
+uint32_t gtpu::add_bearer(uint16_t rnti, uint32_t lcid, uint32_t addr, uint32_t teid_out)
 {
   // Allocate a TEID for the incoming tunnel
-  rntilcid_to_teidin(rnti, lcid, teid_in);
+  uint32_t teid_in = allocate_teidin(rnti, lcid);
   if (gtpu_log) {
     gtpu_log->info("Adding bearer for rnti: 0x%x, lcid: %d, addr: 0x%x, teid_out: 0x%x, teid_in: 0x%x\n",
                    rnti,
                    lcid,
                    addr,
                    teid_out,
-                   *teid_in);
+                   teid_in);
   }
 
   // Initialize maps if it's a new RNTI
@@ -162,15 +162,21 @@ void gtpu::add_bearer(uint16_t rnti, uint32_t lcid, uint32_t addr, uint32_t teid
     }
   }
 
-  rnti_bearers[rnti].teids_in[lcid]   = *teid_in;
+  rnti_bearers[rnti].teids_in[lcid]   = teid_in;
   rnti_bearers[rnti].teids_out[lcid]  = teid_out;
   rnti_bearers[rnti].spgw_addrs[lcid] = addr;
+
+  return teid_in;
 }
 
 void gtpu::rem_bearer(uint16_t rnti, uint32_t lcid)
 {
   gtpu_log->info("Removing bearer for rnti: 0x%x, lcid: %d\n", rnti, lcid);
 
+  // Remove from TEID from map
+  free_teidin(rnti, lcid);
+
+  // Remove
   rnti_bearers[rnti].teids_in[lcid]  = 0;
   rnti_bearers[rnti].teids_out[lcid] = 0;
 
@@ -186,8 +192,43 @@ void gtpu::rem_bearer(uint16_t rnti, uint32_t lcid)
   }
 }
 
+void gtpu::mod_bearer_rnti(uint16_t old_rnti, uint16_t new_rnti)
+{
+  gtpu_log->info("Modifying bearer rnti. Old rnti: 0x%x, new rnti: 0x%x\n", old_rnti, new_rnti);
+
+  if (rnti_bearers.count(new_rnti) != 0) {
+    gtpu_log->error("New rnti already exists, aborting.\n");
+    return;
+  }
+  if (rnti_bearers.count(old_rnti) == 0) {
+    gtpu_log->error("Old rnti does not exist, aborting.\n");
+    return;
+  }
+
+  // Change RNTI bearers map
+  auto entry = rnti_bearers.find(old_rnti);
+  if (entry != rnti_bearers.end()) {
+    auto const value = std::move(entry->second);
+    rnti_bearers.erase(entry);
+    rnti_bearers.insert({new_rnti, std::move(value)});
+  }
+
+  // Change TEID
+  for (std::map<uint32_t, rnti_lcid_t>::iterator it = teidin_to_rntilcid_map.begin();
+       it != teidin_to_rntilcid_map.end();
+       it++) {
+    if (it->second.rnti == old_rnti) {
+      it->second.rnti = new_rnti;
+    }
+  }
+}
+
 void gtpu::rem_user(uint16_t rnti)
 {
+  // Free from TEID map
+  free_teidin(rnti);
+
+  // Remove user from RNTI map
   rnti_bearers.erase(rnti);
 }
 
@@ -206,14 +247,14 @@ void gtpu::handle_gtpu_s1u_rx_packet(srslte::unique_byte_buffer_t pdu, const soc
       echo_response(addr.sin_addr.s_addr, addr.sin_port, header.seq_number);
       break;
     case GTPU_MSG_DATA_PDU: {
-      uint16_t rnti = 0;
-      uint16_t lcid = 0;
-      teidin_to_rntilcid(header.teid, &rnti, &lcid);
+      rnti_lcid_t rnti_lcid = teidin_to_rntilcid(header.teid);
+      uint16_t    rnti      = rnti_lcid.rnti;
+      uint16_t    lcid      = rnti_lcid.lcid;
 
       bool user_exists = (rnti_bearers.count(rnti) > 0);
 
       if (not user_exists) {
-        gtpu_log->error("Unrecognized RNTI for DL PDU: 0x%x - dropping packet\n", rnti);
+        gtpu_log->error("Unrecognized TEID In=%d for DL PDU. Dropping packet\n", header.teid);
         return;
       }
 
@@ -225,8 +266,26 @@ void gtpu::handle_gtpu_s1u_rx_packet(srslte::unique_byte_buffer_t pdu, const soc
       gtpu_log->info_hex(
           pdu->msg, pdu->N_bytes, "RX GTPU PDU rnti=0x%x, lcid=%d, n_bytes=%d", rnti, lcid, pdu->N_bytes);
 
+      struct iphdr* ip_pkt = (struct iphdr*)pdu->msg;
+      if (ip_pkt->version != 4 && ip_pkt->version != 6) {
+        gtpu_log->error("Invalid IP version to SPGW\n");
+        return;
+      } else if (ip_pkt->version == 4) {
+        if (ntohs(ip_pkt->tot_len) != pdu->N_bytes) {
+          gtpu_log->error("IP Len and PDU N_bytes mismatch\n");
+        }
+        gtpu_log->debug("Rx S1-U PDU -- IP version %d, Total length %d\n", ip_pkt->version, ntohs(ip_pkt->tot_len));
+        gtpu_log->debug("Rx S1-U PDU -- IP src addr %s\n", srslte::gtpu_ntoa(ip_pkt->saddr).c_str());
+        gtpu_log->debug("Rx S1-U PDU -- IP dst addr %s\n", srslte::gtpu_ntoa(ip_pkt->daddr).c_str());
+      }
       pdcp->write_sdu(rnti, lcid, std::move(pdu));
     } break;
+    case GTPU_MSG_END_MARKER: {
+      rnti_lcid_t rnti_lcid = teidin_to_rntilcid(header.teid);
+      uint16_t    rnti      = rnti_lcid.rnti;
+      gtpu_log->info("Received GTPU End Marker for rnti=0x%x.\n", rnti);
+      break;
+    }
     default:
       break;
   }
@@ -264,17 +323,71 @@ void gtpu::echo_response(in_addr_t addr, in_port_t port, uint16_t seq)
 }
 
 /****************************************************************************
- * TEID to RNIT/LCID helper functions
+ * TEID to RNTI/LCID helper functions
  ***************************************************************************/
-void gtpu::teidin_to_rntilcid(uint32_t teidin, uint16_t* rnti, uint16_t* lcid)
+uint32_t gtpu::allocate_teidin(uint16_t rnti, uint16_t lcid)
 {
-  *lcid = teidin & 0xFFFF;
-  *rnti = (teidin >> 16) & 0xFFFF;
+  uint32_t teid_in = ++next_teid_in;
+  if (teidin_to_rntilcid_map.count(teid_in) != 0) {
+    gtpu_log->error("TEID In already exists\n");
+    return 0;
+  }
+  rnti_lcid_t rnti_lcid           = {rnti, lcid};
+  teidin_to_rntilcid_map[teid_in] = rnti_lcid;
+  gtpu_log->debug("TEID In=%d added\n", teid_in);
+  return teid_in;
 }
 
-void gtpu::rntilcid_to_teidin(uint16_t rnti, uint16_t lcid, uint32_t* teidin)
+void gtpu::free_teidin(uint16_t rnti, uint16_t lcid)
 {
-  *teidin = (rnti << 16) | lcid;
+  for (std::map<uint32_t, rnti_lcid_t>::iterator it = teidin_to_rntilcid_map.begin();
+       it != teidin_to_rntilcid_map.end();) {
+    if (it->second.rnti == rnti && it->second.lcid == lcid) {
+      gtpu_log->debug("TEID In=%d erased\n", it->first);
+      it = teidin_to_rntilcid_map.erase(it);
+    } else {
+      it++;
+    }
+  }
+}
+
+void gtpu::free_teidin(uint16_t rnti)
+{
+  for (std::map<uint32_t, rnti_lcid_t>::iterator it = teidin_to_rntilcid_map.begin();
+       it != teidin_to_rntilcid_map.end();) {
+    if (it->second.rnti == rnti) {
+      gtpu_log->debug("TEID In=%d erased\n", it->first);
+      it = teidin_to_rntilcid_map.erase(it);
+    } else {
+      it++;
+    }
+  }
+}
+
+gtpu::rnti_lcid_t gtpu::teidin_to_rntilcid(uint32_t teidin)
+{
+  rnti_lcid_t rnti_lcid = {};
+  if (teidin_to_rntilcid_map.count(teidin) == 0) {
+    gtpu_log->error("TEID=%d In does not exist.\n", teidin);
+    return rnti_lcid;
+  }
+  rnti_lcid.rnti = teidin_to_rntilcid_map[teidin].rnti;
+  rnti_lcid.lcid = teidin_to_rntilcid_map[teidin].lcid;
+  return rnti_lcid;
+}
+
+uint32_t gtpu::rntilcid_to_teidin(uint16_t rnti, uint16_t lcid)
+{
+  uint32_t teidin = 0;
+  for (const std::pair<const uint32_t, rnti_lcid_t>& item : teidin_to_rntilcid_map) {
+    if (item.second.rnti == rnti and item.second.lcid == lcid) {
+      teidin = item.first;
+    }
+  }
+  if (teidin == 0) {
+    gtpu_log->error("Could not find TEID. RNTI=0x%x, LCID=%d.\n", rnti, lcid);
+  }
+  return teidin;
 }
 
 /****************************************************************************
@@ -314,8 +427,7 @@ bool gtpu::m1u_handler::init(std::string m1u_multiaddr_, std::string m1u_if_addr
   }
 
   /* Send an ADD MEMBERSHIP message via setsockopt */
-  struct ip_mreq mreq {
-  };
+  struct ip_mreq mreq {};
   mreq.imr_multiaddr.s_addr = inet_addr(m1u_multiaddr.c_str()); // Multicast address of the service
   mreq.imr_interface.s_addr = inet_addr(m1u_if_addr.c_str());   // Address of the IF the socket will listen to.
   if (setsockopt(m1u_sd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) {

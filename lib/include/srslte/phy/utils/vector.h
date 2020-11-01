@@ -135,6 +135,7 @@ SRSLTE_API void srslte_vec_sc_prod_ccc(const cf_t* x, const cf_t h, cf_t* z, con
 SRSLTE_API void srslte_vec_sc_prod_fff(const float* x, const float h, float* z, const uint32_t len);
 
 SRSLTE_API void srslte_vec_convert_fi(const float* x, const float scale, int16_t* z, const uint32_t len);
+SRSLTE_API void srslte_vec_convert_conj_cs(const cf_t* x, const float scale, int16_t* z, const uint32_t len);
 SRSLTE_API void srslte_vec_convert_if(const int16_t* x, const float scale, float* z, const uint32_t len);
 SRSLTE_API void srslte_vec_convert_fb(const float* x, const float scale, int8_t* z, const uint32_t len);
 
@@ -273,6 +274,8 @@ SRSLTE_API void srslte_vec_abs_dB_cf(const cf_t* x, float default_value, float* 
  *
  */
 SRSLTE_API void srslte_vec_arg_deg_cf(const cf_t* x, float default_value, float* arg, const uint32_t len);
+
+SRSLTE_API float srslte_mean_arg_cf(const cf_t* x, uint32_t len);
 
 SRSLTE_API void srslte_vec_interleave(const cf_t* x, const cf_t* y, cf_t* z, const int len);
 

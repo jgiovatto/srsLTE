@@ -21,7 +21,6 @@
 
 #include "srslte/common/crash_handler.h"
 #include "srslte/common/log_filter.h"
-#include "srslte/common/logger_stdout.h"
 #include "srslte/common/rlc_pcap.h"
 #include "srslte/common/threads.h"
 #include "srslte/upper/rlc.h"
@@ -41,7 +40,7 @@
 
 #if PCAP
 #include "srslte/common/mac_nr_pcap.h"
-#include "srslte/common/mac_nr_pdu.h"
+#include "srslte/mac/mac_nr_pdu.h"
 static std::unique_ptr<srslte::mac_nr_pcap> pcap_handle = nullptr;
 #endif
 
@@ -166,7 +165,8 @@ public:
     log("MAC  "),
     thread("MAC_DUMMY"),
     real_dist(0.0, 1.0),
-    mt19937(1234)
+    mt19937(1234),
+    pool(byte_buffer_pool::get_instance())
   {
     log.set_level(static_cast<LOG_LEVEL_ENUM>(args.log_level));
     log.set_hex_limit(LOG_HEX_LIMIT);
@@ -185,9 +185,6 @@ private:
   {
     // Generate A number of MAC PDUs
     for (uint32_t i = 0; i < args.nof_pdu_tti; i++) {
-      // Get PDU pool
-      byte_buffer_pool* pool = byte_buffer_pool::get_instance();
-
       // Create PDU unique buffer
       unique_byte_buffer_t pdu = srslte::allocate_unique_buffer(*pool, __PRETTY_FUNCTION__, true);
       if (!pdu) {
@@ -232,7 +229,8 @@ private:
       unique_byte_buffer_t& pdu = *it;
 
       // Drop
-      if (((real_dist(mt19937) > args.pdu_drop_rate) || skip_action) && pdu->N_bytes > 0) {
+      float rnd = real_dist(mt19937);
+      if (std::isnan(rnd) || (((rnd > args.pdu_drop_rate) || skip_action) && pdu->N_bytes > 0)) {
         uint32_t pdu_len = pdu->N_bytes;
 
         // Cut
@@ -246,11 +244,11 @@ private:
         rx_rlc->write_pdu(lcid, pdu->msg, pdu_len);
 
         // Write PCAP
-        write_pdu_to_pcap(is_dl, 4, pdu->msg, pdu_len);
+        write_pdu_to_pcap(is_dl, 4, pdu->msg, pdu_len); // Only handles NR rat
         if (is_dl) {
-          pcap->write_dl_am_ccch(pdu->msg, pdu_len);
+          pcap->write_dl_ccch(pdu->msg, pdu_len);
         } else {
-          pcap->write_ul_am_ccch(pdu->msg, pdu_len);
+          pcap->write_ul_ccch(pdu->msg, pdu_len);
         }
       } else {
         log.warning_hex(pdu->msg, pdu->N_bytes, "Dropping RLC PDU (%d B)\n", pdu->N_bytes);
@@ -318,6 +316,7 @@ private:
 
   std::mt19937                          mt19937;
   std::uniform_real_distribution<float> real_dist;
+  byte_buffer_pool* pool = nullptr;
 };
 
 class rlc_tester : public pdcp_interface_rlc, public rrc_interface_rlc, public thread
@@ -445,7 +444,7 @@ void stress_test(stress_test_args_t args)
 
 #if PCAP
     if (args.write_pcap) {
-      pcap.open("rlc_stress_test.pcap", 0);
+      pcap.open("rlc_stress_test.pcap", cnfg_);
     }
 #endif
 
@@ -533,16 +532,18 @@ void stress_test(stress_test_args_t args)
          tester1.get_nof_rx_pdus(),
          args.test_duration_sec,
          static_cast<double>(tester1.get_nof_rx_pdus() / args.test_duration_sec),
-         metrics.bearer[lcid].num_tx_bytes,
-         metrics.bearer[lcid].num_rx_bytes);
+         metrics.bearer[lcid].num_tx_pdu_bytes,
+         metrics.bearer[lcid].num_rx_pdu_bytes);
+  rlc_bearer_metrics_print(metrics.bearer[lcid]);
 
   rlc2.get_metrics(metrics);
   printf("RLC2 received %d SDUs in %ds (%.2f/s), Tx=%" PRIu64 " B, Rx=%" PRIu64 " B\n",
          tester2.get_nof_rx_pdus(),
          args.test_duration_sec,
          static_cast<double>(tester2.get_nof_rx_pdus() / args.test_duration_sec),
-         metrics.bearer[lcid].num_tx_bytes,
-         metrics.bearer[lcid].num_rx_bytes);
+         metrics.bearer[lcid].num_tx_pdu_bytes,
+         metrics.bearer[lcid].num_rx_pdu_bytes);
+  rlc_bearer_metrics_print(metrics.bearer[lcid]);
 }
 
 int main(int argc, char** argv)
@@ -559,7 +560,6 @@ int main(int argc, char** argv)
   }
 
   stress_test(args);
-  byte_buffer_pool::get_instance()->cleanup();
 
   exit(0);
 }

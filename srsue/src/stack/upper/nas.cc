@@ -22,6 +22,7 @@
 #include "srsue/hdr/stack/upper/nas.h"
 #include "srslte/common/bcd_helpers.h"
 #include "srslte/common/security.h"
+#include "srslte/common/string_helpers.h"
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -110,7 +111,7 @@ proc_outcome_t nas::plmn_search_proc::react(const plmn_search_complete_t& t)
     nas_ptr->known_plmns.push_back(t.found_plmns[i].plmn_id);
     nas_ptr->nas_log->info(
         "Found PLMN:  Id=%s, TAC=%d\n", t.found_plmns[i].plmn_id.to_string().c_str(), t.found_plmns[i].tac);
-    nas_ptr->nas_log->console(
+    srslte::console(
         "Found PLMN:  Id=%s, TAC=%d\n", t.found_plmns[i].plmn_id.to_string().c_str(), t.found_plmns[i].tac);
   }
   nas_ptr->select_plmn();
@@ -135,7 +136,7 @@ proc_outcome_t nas::plmn_search_proc::react(const plmn_search_complete_t& t)
 
 nas::rrc_connect_proc::rrc_connect_proc(nas* nas_ptr_) : nas_ptr(nas_ptr_)
 {
-  timeout_timer = nas_ptr->task_handler->get_unique_timer();
+  timeout_timer = nas_ptr->task_sched.get_unique_timer();
   timeout_timer.set(attach_timeout_ms,
                     [this](uint32_t tid) { nas_ptr->rrc_connector.trigger(nas::rrc_connect_proc::attach_timeout{}); });
 }
@@ -234,19 +235,18 @@ proc_outcome_t nas::rrc_connect_proc::react(nas::rrc_connect_proc::connection_re
  *   NAS
  ********************************************************************/
 
-nas::nas(srslte::task_handler_interface* task_handler_) :
+nas::nas(srslte::task_sched_handle task_sched_) :
   pool(byte_buffer_pool::get_instance()),
   plmn_searcher(this),
   rrc_connector(this),
-  task_handler(task_handler_),
-  t3402(task_handler_->get_unique_timer()),
-  t3410(task_handler_->get_unique_timer()),
-  t3411(task_handler_->get_unique_timer()),
-  t3421(task_handler_->get_unique_timer()),
-  reattach_timer(task_handler_->get_unique_timer()),
+  task_sched(task_sched_),
+  t3402(task_sched_.get_unique_timer()),
+  t3410(task_sched_.get_unique_timer()),
+  t3411(task_sched_.get_unique_timer()),
+  t3421(task_sched_.get_unique_timer()),
+  reattach_timer(task_sched_.get_unique_timer()),
   nas_log{"NAS"}
-{
-}
+{}
 
 void nas::init(usim_interface_nas* usim_, rrc_interface_nas* rrc_, gw_interface_nas* gw_, const nas_args_t& cfg_)
 {
@@ -261,7 +261,8 @@ void nas::init(usim_interface_nas* usim_, rrc_interface_nas* rrc_, gw_interface_
   }
 
   // parse and sanity check EIA list
-  std::vector<uint8_t> cap_list = split_string(cfg_.eia);
+  std::vector<uint8_t> cap_list;
+  srslte::string_parse_list(cfg_.eia, ',', cap_list);
   if (cap_list.empty()) {
     nas_log->error("Empty EIA list. Select at least one EIA algorithm.\n");
   }
@@ -274,7 +275,7 @@ void nas::init(usim_interface_nas* usim_, rrc_interface_nas* rrc_, gw_interface_
   }
 
   // parse and sanity check EEA list
-  cap_list = split_string(cfg_.eea);
+  srslte::string_parse_list(cfg_.eea, ',', cap_list);
   if (cap_list.empty()) {
     nas_log->error("Empty EEA list. Select at least one EEA algorithm.\n");
   }
@@ -340,7 +341,7 @@ void nas::timer_expired(uint32_t timeout_id)
     // Section 5.5.1.2.6 case c)
     attach_attempt_counter++;
 
-    nas_log->console("Attach failed (attempt %d/%d)\n", attach_attempt_counter, max_attach_attempts);
+    srslte::console("Attach failed (attempt %d/%d)\n", attach_attempt_counter, max_attach_attempts);
     if (attach_attempt_counter < max_attach_attempts) {
       nas_log->info("Timer T3410 expired after attach attempt %d/%d: starting T3411\n",
                     attach_attempt_counter,
@@ -405,7 +406,7 @@ void nas::start_attach_proc(srslte::proc_state_t* result, srslte::establishment_
           }
           if (!res.is_success()) {
             // try again ..
-            task_handler->defer_callback(reattach_timer_duration_ms, [&]() { start_attach_proc(nullptr, cause_); });
+            task_sched.defer_callback(reattach_timer_duration_ms, [&]() { start_attach_proc(nullptr, cause_); });
           }
         });
       } else {
@@ -563,9 +564,9 @@ void nas::select_plmn()
                   home_plmn.to_string().c_str(),
                   known_plmns[0].to_string().c_str());
 
-    nas_log->console("Could not find Home PLMN Id=%s, trying to connect to PLMN Id=%s\n",
-                     home_plmn.to_string().c_str(),
-                     known_plmns[0].to_string().c_str());
+    srslte::console("Could not find Home PLMN Id=%s, trying to connect to PLMN Id=%s\n",
+                       home_plmn.to_string().c_str(),
+                       known_plmns[0].to_string().c_str());
     plmn_is_selected = true;
     current_plmn     = known_plmns[0];
   }
@@ -808,7 +809,6 @@ void nas::integrity_generate(uint8_t* key_128,
 
 // This function depends to a valid k_nas_int.
 // This key is generated in the security mode command.
-
 bool nas::integrity_check(byte_buffer_t* pdu)
 {
   if (pdu == nullptr) {
@@ -821,7 +821,7 @@ bool nas::integrity_check(byte_buffer_t* pdu)
     uint8_t* mac        = &pdu->msg[1];
 
     // generate expected MAC
-    uint32_t count_est = (ctxt.rx_count & 0x0FF0u) | pdu->msg[5];
+    uint32_t count_est = (ctxt.rx_count & 0x00FFFF00u) | pdu->msg[5];
     integrity_generate(
         &k_nas_int[16], count_est, SECURITY_DIRECTION_DOWNLINK, &pdu->msg[5], pdu->N_bytes - 5, &exp_mac[0]);
 
@@ -830,7 +830,7 @@ bool nas::integrity_check(byte_buffer_t* pdu)
       if (exp_mac[i] != mac[i]) {
         nas_log->warning("Integrity check failure. Local: count=%d, [%02x %02x %02x %02x], "
                          "Received: count=%d, [%02x %02x %02x %02x]\n",
-                         ctxt.rx_count,
+                         count_est,
                          exp_mac[0],
                          exp_mac[1],
                          exp_mac[2],
@@ -844,7 +844,7 @@ bool nas::integrity_check(byte_buffer_t* pdu)
       }
     }
     nas_log->info("Integrity check ok. Local: count=%d, Received: count=%d  [%02x %02x %02x %02x]\n",
-                  ctxt.rx_count,
+                  count_est,
                   pdu->msg[5],
                   mac[0],
                   mac[1],
@@ -997,11 +997,11 @@ int nas::apply_security_config(srslte::unique_byte_buffer_t& pdu, uint8_t sec_hd
  */
 void nas::reset_security_context()
 {
-  have_guti = false;
-  have_ctxt = false;
+  have_guti       = false;
+  have_ctxt       = false;
   current_sec_hdr = LIBLTE_MME_SECURITY_HDR_TYPE_PLAIN_NAS;
-  ctxt      = {};
-  ctxt.ksi  = LIBLTE_MME_NAS_KEY_SET_IDENTIFIER_NO_KEY_AVAILABLE;
+  ctxt            = {};
+  ctxt.ksi        = LIBLTE_MME_NAS_KEY_SET_IDENTIFIER_NO_KEY_AVAILABLE;
 }
 
 /*******************************************************************************
@@ -1104,11 +1104,11 @@ void nas::parse_attach_accept(uint32_t lcid, unique_byte_buffer_t pdu)
                     act_def_eps_bearer_context_req.pdn_addr.addr[2],
                     act_def_eps_bearer_context_req.pdn_addr.addr[3]);
 
-      nas_log->console("Network attach successful. IP: %u.%u.%u.%u\n",
-                       act_def_eps_bearer_context_req.pdn_addr.addr[0],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[1],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[2],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[3]);
+      srslte::console("Network attach successful. IP: %u.%u.%u.%u\n",
+                         act_def_eps_bearer_context_req.pdn_addr.addr[0],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[1],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[2],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[3]);
 
       // Setup GW
       char* err_str = nullptr;
@@ -1118,7 +1118,7 @@ void nas::parse_attach_accept(uint32_t lcid, unique_byte_buffer_t pdu)
                             nullptr,
                             err_str)) {
         nas_log->error("%s - %s\n", gw_setup_failure_str.c_str(), err_str);
-        nas_log->console("%s\n", gw_setup_failure_str.c_str());
+        srslte::console("%s\n", gw_setup_failure_str.c_str());
       }
     } else if (LIBLTE_MME_PDN_TYPE_IPV6 == act_def_eps_bearer_context_req.pdn_addr.pdn_type) {
       memcpy(ipv6_if_id, act_def_eps_bearer_context_req.pdn_addr.addr, 8);
@@ -1133,15 +1133,15 @@ void nas::parse_attach_accept(uint32_t lcid, unique_byte_buffer_t pdu)
                     act_def_eps_bearer_context_req.pdn_addr.addr[6],
                     act_def_eps_bearer_context_req.pdn_addr.addr[7]);
 
-      nas_log->console("Network attach successful. IPv6 interface Id: %02x%02x:%02x%02x:%02x%02x:%02x%02x\n",
-                       act_def_eps_bearer_context_req.pdn_addr.addr[0],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[1],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[2],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[3],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[4],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[5],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[6],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[7]);
+      srslte::console("Network attach successful. IPv6 interface Id: %02x%02x:%02x%02x:%02x%02x:%02x%02x\n",
+                         act_def_eps_bearer_context_req.pdn_addr.addr[0],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[1],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[2],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[3],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[4],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[5],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[6],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[7]);
       // Setup GW
       char* err_str = nullptr;
       if (gw->setup_if_addr(rrc->get_lcid_for_eps_bearer(act_def_eps_bearer_context_req.eps_bearer_id),
@@ -1150,7 +1150,7 @@ void nas::parse_attach_accept(uint32_t lcid, unique_byte_buffer_t pdu)
                             ipv6_if_id,
                             err_str)) {
         nas_log->error("%s - %s\n", gw_setup_failure_str.c_str(), err_str);
-        nas_log->console("%s\n", gw_setup_failure_str.c_str());
+        srslte::console("%s\n", gw_setup_failure_str.c_str());
       }
     } else if (LIBLTE_MME_PDN_TYPE_IPV4V6 == act_def_eps_bearer_context_req.pdn_addr.pdn_type) {
       memcpy(ipv6_if_id, act_def_eps_bearer_context_req.pdn_addr.addr, 8);
@@ -1165,15 +1165,15 @@ void nas::parse_attach_accept(uint32_t lcid, unique_byte_buffer_t pdu)
                     act_def_eps_bearer_context_req.pdn_addr.addr[5],
                     act_def_eps_bearer_context_req.pdn_addr.addr[6],
                     act_def_eps_bearer_context_req.pdn_addr.addr[7]);
-      nas_log->console("Network attach successful. IPv6 interface Id: %02x%02x:%02x%02x:%02x%02x:%02x%02x\n",
-                       act_def_eps_bearer_context_req.pdn_addr.addr[0],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[1],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[2],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[3],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[4],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[5],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[6],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[7]);
+      srslte::console("Network attach successful. IPv6 interface Id: %02x%02x:%02x%02x:%02x%02x:%02x%02x\n",
+                         act_def_eps_bearer_context_req.pdn_addr.addr[0],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[1],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[2],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[3],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[4],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[5],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[6],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[7]);
       // IPv4
       ip_addr |= act_def_eps_bearer_context_req.pdn_addr.addr[8] << 24u;
       ip_addr |= act_def_eps_bearer_context_req.pdn_addr.addr[9] << 16u;
@@ -1187,11 +1187,11 @@ void nas::parse_attach_accept(uint32_t lcid, unique_byte_buffer_t pdu)
                     act_def_eps_bearer_context_req.pdn_addr.addr[10],
                     act_def_eps_bearer_context_req.pdn_addr.addr[11]);
 
-      nas_log->console("Network attach successful. IP: %u.%u.%u.%u\n",
-                       act_def_eps_bearer_context_req.pdn_addr.addr[8],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[9],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[10],
-                       act_def_eps_bearer_context_req.pdn_addr.addr[11]);
+      srslte::console("Network attach successful. IP: %u.%u.%u.%u\n",
+                         act_def_eps_bearer_context_req.pdn_addr.addr[8],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[9],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[10],
+                         act_def_eps_bearer_context_req.pdn_addr.addr[11]);
 
       char* err_str = nullptr;
       if (gw->setup_if_addr(rrc->get_lcid_for_eps_bearer(act_def_eps_bearer_context_req.eps_bearer_id),
@@ -1200,7 +1200,7 @@ void nas::parse_attach_accept(uint32_t lcid, unique_byte_buffer_t pdu)
                             ipv6_if_id,
                             err_str)) {
         nas_log->error("%s - %s\n", gw_setup_failure_str.c_str(), err_str);
-        nas_log->console("%s\n", gw_setup_failure_str.c_str());
+        srslte::console("%s\n", gw_setup_failure_str.c_str());
       }
     } else {
       nas_log->error("PDN type not IPv4, IPv6 nor IPv4v6\n");
@@ -1277,7 +1277,7 @@ void nas::parse_attach_reject(uint32_t lcid, unique_byte_buffer_t pdu)
 
   liblte_mme_unpack_attach_reject_msg((LIBLTE_BYTE_MSG_STRUCT*)pdu.get(), &attach_rej);
   nas_log->warning("Received Attach Reject. Cause= %02X\n", attach_rej.emm_cause);
-  nas_log->console("Received Attach Reject. Cause= %02X\n", attach_rej.emm_cause);
+  srslte::console("Received Attach Reject. Cause= %02X\n", attach_rej.emm_cause);
 
   // stop T3410
   if (t3410.is_running()) {
@@ -1334,7 +1334,7 @@ void nas::parse_authentication_request(uint32_t lcid, unique_byte_buffer_t pdu, 
     ctxt.ksi = auth_req.nas_ksi.nas_ksi;
   } else {
     nas_log->error("NAS mapped security context not currently supported\n");
-    nas_log->console("Warning: NAS mapped security context not currently supported\n");
+    srslte::console("Warning: NAS mapped security context not currently supported\n");
   }
 
   if (auth_result == AUTH_OK) {
@@ -1351,7 +1351,7 @@ void nas::parse_authentication_request(uint32_t lcid, unique_byte_buffer_t pdu, 
     send_authentication_failure(LIBLTE_MME_EMM_CAUSE_SYNCH_FAILURE, res);
   } else {
     nas_log->warning("Network authentication failure\n");
-    nas_log->console("Warning: Network authentication failure\n");
+    srslte::console("Warning: Network authentication failure\n");
     send_authentication_failure(LIBLTE_MME_EMM_CAUSE_MAC_FAILURE, nullptr);
   }
 }
@@ -1503,7 +1503,7 @@ void nas::parse_service_reject(uint32_t lcid, unique_byte_buffer_t pdu)
     return;
   }
 
-  nas_log->console("Received service reject with EMM cause=0x%x.\n", service_reject.emm_cause);
+  srslte::console("Received service reject with EMM cause=0x%x.\n", service_reject.emm_cause);
   if (service_reject.t3446_present) {
     nas_log->info(
         "Received service reject with EMM cause=0x%x and t3446=%d\n", service_reject.emm_cause, service_reject.t3446);
@@ -1540,7 +1540,7 @@ void nas::parse_emm_information(uint32_t lcid, unique_byte_buffer_t pdu)
   liblte_mme_unpack_emm_information_msg((LIBLTE_BYTE_MSG_STRUCT*)pdu.get(), &emm_info);
   std::string str = emm_info_str(&emm_info);
   nas_log->info("Received EMM Information: %s\n", str.c_str());
-  nas_log->console("%s\n", str.c_str());
+  srslte::console("%s\n", str.c_str());
   ctxt.rx_count++;
 }
 
@@ -1899,7 +1899,7 @@ void nas::gen_pdn_connectivity_request(LIBLTE_BYTE_MSG_STRUCT* msg)
     pdn_con_req.pdn_type = LIBLTE_MME_PDN_TYPE_IPV4V6;
   } else {
     nas_log->warning("Unsupported PDN prtocol. Defaulting to IPv4\n");
-    nas_log->console("Unsupported PDN prtocol: %s. Defaulting to IPv4\n", cfg.apn_protocol.c_str());
+    srslte::console("Unsupported PDN prtocol: %s. Defaulting to IPv4\n", cfg.apn_protocol.c_str());
     pdn_con_req.pdn_type = LIBLTE_MME_PDN_TYPE_IPV4;
   }
 
@@ -2498,7 +2498,7 @@ void nas::handle_airplane_mode_sim()
     // check if we're already attached, if so, schedule airplane mode command
     if (state == EMM_STATE_REGISTERED) {
       // NAS is attached
-      task_handler->defer_callback(cfg.sim.airplane_t_on_ms, [&]() {
+      task_sched.defer_callback(cfg.sim.airplane_t_on_ms, [&]() {
         // Enabling air-plane mode
         send_detach_request(true);
         airplane_mode_state = ENABLED;
@@ -2508,7 +2508,7 @@ void nas::handle_airplane_mode_sim()
     // check if we are already deregistered, if so, schedule command to turn off airplone mode again
     if (state == EMM_STATE_DEREGISTERED) {
       // NAS is deregistered
-      task_handler->defer_callback(cfg.sim.airplane_t_off_ms, [&]() {
+      task_sched.defer_callback(cfg.sim.airplane_t_off_ms, [&]() {
         // Disabling airplane mode again
         start_attach_proc(nullptr, srslte::establishment_cause_t::mo_sig);
         airplane_mode_state = DISABLED;
@@ -2518,7 +2518,7 @@ void nas::handle_airplane_mode_sim()
 
   // schedule another call
   if (cfg.sim.airplane_t_on_ms > 0 || cfg.sim.airplane_t_off_ms > 0) {
-    task_handler->defer_callback(1000, [&]() { handle_airplane_mode_sim(); });
+    task_sched.defer_callback(1000, [&]() { handle_airplane_mode_sim(); });
   }
 }
 

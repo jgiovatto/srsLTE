@@ -23,13 +23,9 @@ find_package(SCTP REQUIRED)
 #######################################################################
 # COMMON TESTS
 #######################################################################
-add_executable(logger_test logger_test.cc)
-target_link_libraries(logger_test srslte_phy srslte_common srslte_phy ${SEC_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${Boost_LIBRARIES})
-add_test(logger_test logger_test)
-
-add_executable(msg_queue_test msg_queue_test.cc)
-target_link_libraries(msg_queue_test srslte_phy srslte_common ${CMAKE_THREAD_LIBS_INIT} ${Boost_LIBRARIES})
-add_test(msg_queue_test msg_queue_test)
+add_executable(byte_buffer_queue_test byte_buffer_queue_test.cc)
+target_link_libraries(byte_buffer_queue_test srslte_phy srslte_common ${CMAKE_THREAD_LIBS_INIT} ${Boost_LIBRARIES})
+add_test(byte_buffer_queue_test byte_buffer_queue_test)
 
 add_executable(test_eia1 test_eia1.cc)
 target_link_libraries(test_eia1 srslte_common srslte_phy ${CMAKE_THREAD_LIBS_INIT})
@@ -93,3 +89,16 @@ add_test(fsm_test fsm_test)
 add_executable(choice_type_test choice_type_test.cc)
 target_link_libraries(choice_type_test srslte_common)
 add_test(choice_type_test choice_type_test)
+
+add_executable(task_scheduler_test task_scheduler_test.cc)
+target_link_libraries(task_scheduler_test srslte_common)
+add_test(task_scheduler_test task_scheduler_test)
+
+if(ENABLE_5GNR)
+  add_executable(pnf_dummy pnf_dummy.cc)
+  target_link_libraries(pnf_dummy srslte_common ${CMAKE_THREAD_LIBS_INIT} ${Boost_LIBRARIES})
+
+  add_executable(pnf_bridge pnf_bridge.cc)
+  target_link_libraries(pnf_bridge srslte_common ${CMAKE_THREAD_LIBS_INIT} ${Boost_LIBRARIES})
+endif()
+

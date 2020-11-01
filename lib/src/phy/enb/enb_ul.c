@@ -107,7 +107,10 @@ void srslte_enb_ul_free(srslte_enb_ul_t* q)
   }
 }
 
-int srslte_enb_ul_set_cell(srslte_enb_ul_t* q, srslte_cell_t cell, srslte_refsignal_dmrs_pusch_cfg_t* pusch_cfg)
+int srslte_enb_ul_set_cell(srslte_enb_ul_t*                   q,
+                           srslte_cell_t                      cell,
+                           srslte_refsignal_dmrs_pusch_cfg_t* pusch_cfg,
+                           srslte_refsignal_srs_cfg_t*        srs_cfg)
 {
   int ret = SRSLTE_ERROR_INVALID_INPUTS;
 
@@ -136,7 +139,7 @@ int srslte_enb_ul_set_cell(srslte_enb_ul_t* q, srslte_cell_t cell, srslte_refsig
       }
 
       // SRS is a dedicated configuration
-      srslte_chest_ul_pregen(&q->chest, pusch_cfg);
+      srslte_chest_ul_pregen(&q->chest, pusch_cfg, srs_cfg);
 
       ret = SRSLTE_SUCCESS;
     }
@@ -172,10 +175,9 @@ void srslte_enb_ul_fft(srslte_enb_ul_t* q)
 
 static int get_pucch(srslte_enb_ul_t* q, srslte_ul_sf_cfg_t* ul_sf, srslte_pucch_cfg_t* cfg, srslte_pucch_res_t* res)
 {
-  int                ret                               = SRSLTE_SUCCESS;
-  uint32_t           n_pucch_i[SRSLTE_PUCCH_MAX_ALLOC] = {};
-  srslte_pucch_res_t pucch_res                         = {};
-  uint32_t           uci_cfg_total_ack                 = srslte_uci_cfg_total_ack(&cfg->uci_cfg);
+  int      ret                               = SRSLTE_SUCCESS;
+  uint32_t n_pucch_i[SRSLTE_PUCCH_MAX_ALLOC] = {};
+  uint32_t uci_cfg_total_ack                 = srslte_uci_cfg_total_ack(&cfg->uci_cfg);
 
   // Drop CQI if there is collision with ACK
   if (!cfg->simul_cqi_ack && uci_cfg_total_ack > 0 && cfg->uci_cfg.cqi.data_enable) {
@@ -201,6 +203,8 @@ static int get_pucch(srslte_enb_ul_t* q, srslte_ul_sf_cfg_t* ul_sf, srslte_pucch
 
   // Iterate possible resources and select the one with higher correlation
   for (int i = 0; i < nof_resources && ret == SRSLTE_SUCCESS; i++) {
+    srslte_pucch_res_t pucch_res = {};
+
     // Configure resource
     cfg->n_pucch = n_pucch_i[i];
 
@@ -215,15 +219,27 @@ static int get_pucch(srslte_enb_ul_t* q, srslte_ul_sf_cfg_t* ul_sf, srslte_pucch
       ERROR("Error decoding PUCCH\n");
     } else {
 
-      // Get PUCCH Format 1b with channel selection if used
+      // Get PUCCH Format 1b with channel selection if:
+      // - At least one ACK bit needs to be received; and
+      // - PUCCH Format 1b was used; and
+      // - HARQ feedback mode is set to PUCCH Format1b with Channel Selection (CS); and
+      // - No scheduling request is expected; and
+      // - Data is valid (invalid data does not make sense to decode).
       if (uci_cfg_total_ack > 0 && cfg->format == SRSLTE_PUCCH_FORMAT_1B &&
-          cfg->ack_nack_feedback_mode == SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_CS) {
+          cfg->ack_nack_feedback_mode == SRSLTE_PUCCH_ACK_NACK_FEEDBACK_MODE_CS &&
+          !cfg->uci_cfg.is_scheduling_request_tti && pucch_res.uci_data.ack.valid) {
         uint8_t b[2] = {pucch_res.uci_data.ack.ack_value[0], pucch_res.uci_data.ack.ack_value[1]};
         srslte_pucch_cs_get_ack(cfg, &cfg->uci_cfg, i, b, &pucch_res.uci_data);
       }
 
-      // Check correlation value, keep maximum
+      // Compares correlation value, it stores the PUCCH result with the greatest correlation
       if (i == 0 || pucch_res.correlation > res->correlation) {
+        // Copy measurements only if PUCCH was decoded succesfully
+        if (cfg->meas_ta_en) {
+          pucch_res.ta_valid = !(isnan(q->chest_res.ta_us) || isinf(q->chest_res.ta_us));
+          pucch_res.ta_us    = q->chest_res.ta_us;
+        }
+
         *res = pucch_res;
       }
     }

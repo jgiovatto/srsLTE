@@ -26,8 +26,8 @@
 #include "srslte/common/common.h"
 #include "srslte/common/log.h"
 #include "srslte/interfaces/ue_interfaces.h"
+#include "srslte/upper/byte_buffer_queue.h"
 #include "srslte/upper/rlc_common.h"
-#include "srslte/upper/rlc_tx_queue.h"
 #include <map>
 #include <mutex>
 #include <pthread.h>
@@ -53,8 +53,9 @@ public:
   uint32_t   get_bearer();
 
   // PDCP interface
-  void write_sdu(unique_byte_buffer_t sdu, bool blocking = true);
+  void write_sdu(unique_byte_buffer_t sdu);
   void discard_sdu(uint32_t discard_sn);
+  bool sdu_queue_is_full();
 
   // MAC interface
   bool     has_data();
@@ -65,6 +66,8 @@ public:
 
   rlc_bearer_metrics_t get_metrics();
   void                 reset_metrics();
+
+  void set_bsr_callback(bsr_callback_t callback) {}
 
 protected:
   // Transmitter sub-class base
@@ -80,7 +83,8 @@ protected:
     void             empty_queue();
     void             write_sdu(unique_byte_buffer_t sdu);
     void             discard_sdu(uint32_t discard_sn);
-    void             try_write_sdu(unique_byte_buffer_t sdu);
+    bool             sdu_queue_is_full();
+    int              try_write_sdu(unique_byte_buffer_t sdu);
     void             reset_metrics();
     bool             has_data();
     virtual uint32_t get_buffer_state() = 0;
@@ -93,7 +97,7 @@ protected:
     rlc_config_t cfg = {};
 
     // TX SDU buffers
-    rlc_tx_queue         tx_sdu_queue;
+    byte_buffer_queue    tx_sdu_queue;
     unique_byte_buffer_t tx_sdu;
 
     // Mutexes
@@ -103,6 +107,7 @@ protected:
 
     // helper functions
     virtual void debug_state() = 0;
+    virtual void reset()       = 0;
   };
 
   // Receiver sub-class base

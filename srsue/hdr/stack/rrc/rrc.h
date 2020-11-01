@@ -22,6 +22,7 @@
 #ifndef SRSUE_RRC_H
 #define SRSUE_RRC_H
 
+#include "rrc_cell.h"
 #include "rrc_common.h"
 #include "rrc_metrics.h"
 #include "srslte/asn1/rrc_asn1.h"
@@ -41,17 +42,17 @@
 
 #define SRSLTE_RRC_N_BANDS 43
 typedef struct {
-  std::string ue_category_str;
-  uint32_t    ue_category;
-  int         ue_category_ul;
-  int         ue_category_dl;
-  uint32_t    release;
-  uint32_t    feature_group;
-  uint8_t     supported_bands[SRSLTE_RRC_N_BANDS];
-  uint32_t    nof_supported_bands;
-  bool        support_ca;
-  int         mbms_service_id;
-  uint32_t    mbms_service_port;
+  std::string                             ue_category_str;
+  uint32_t                                ue_category;
+  int                                     ue_category_ul;
+  int                                     ue_category_dl;
+  uint32_t                                release;
+  uint32_t                                feature_group;
+  std::array<uint8_t, SRSLTE_RRC_N_BANDS> supported_bands;
+  uint32_t                                nof_supported_bands;
+  bool                                    support_ca;
+  int                                     mbms_service_id;
+  uint32_t                                mbms_service_port;
 } rrc_args_t;
 
 #define SRSLTE_UE_CATEGORY_DEFAULT "4"
@@ -65,216 +66,7 @@ using srslte::byte_buffer_t;
 
 namespace srsue {
 
-class cell_t
-{
-public:
-  bool is_valid() { return phy_cell.earfcn != 0 && srslte_cellid_isvalid(phy_cell.pci); }
-  bool equals(cell_t* x) { return equals(x->phy_cell.earfcn, x->phy_cell.pci); }
-  bool equals(uint32_t earfcn, uint32_t pci) { return earfcn == phy_cell.earfcn && pci == phy_cell.pci; }
-  // NaN means an RSRP value has not yet been obtained. Keep then in the list and clean them if never updated
-  bool greater(cell_t* x) { return rsrp > x->rsrp || std::isnan(rsrp); }
-  bool plmn_equals(asn1::rrc::plmn_id_s plmn_id)
-  {
-    if (has_valid_sib1) {
-      for (uint32_t i = 0; i < sib1.cell_access_related_info.plmn_id_list.size(); i++) {
-        if (plmn_id.mcc == sib1.cell_access_related_info.plmn_id_list[i].plmn_id.mcc &&
-            plmn_id.mnc == sib1.cell_access_related_info.plmn_id_list[i].plmn_id.mnc) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  uint32_t nof_plmns()
-  {
-    if (has_valid_sib1) {
-      return sib1.cell_access_related_info.plmn_id_list.size();
-    } else {
-      return 0;
-    }
-  }
-
-  srslte::plmn_id_t get_plmn(uint32_t idx)
-  {
-    if (idx < sib1.cell_access_related_info.plmn_id_list.size() && has_valid_sib1) {
-      return srslte::make_plmn_id_t(sib1.cell_access_related_info.plmn_id_list[idx].plmn_id);
-    } else {
-      return {};
-    }
-  }
-
-  uint16_t get_tac()
-  {
-    if (has_valid_sib1) {
-      return (uint16_t)sib1.cell_access_related_info.tac.to_number();
-    } else {
-      return 0;
-    }
-  }
-
-  cell_t() {
-    gettimeofday(&last_update, nullptr);
-    has_valid_sib1  = false;
-    has_valid_sib2  = false;
-    has_valid_sib3  = false;
-    has_valid_sib13 = false;
-    phy_cell        = {0,0,0};
-    rsrp            = NAN;
-    rsrq            = NAN;
-    sib1            = {};
-    sib2            = {};
-    sib3            = {};
-    sib13           = {};
-  }
-
-  cell_t(phy_interface_rrc_lte::phy_cell_t phy_cell_) : cell_t()
-  {
-    phy_cell = phy_cell_;
-  }
-
-  uint32_t get_earfcn() { return phy_cell.earfcn; }
-
-  uint32_t get_pci() { return phy_cell.pci; }
-
-  void set_rsrp(float rsrp_)
-  {
-    if (!std::isnan(rsrp_)) {
-      rsrp = rsrp_;
-    }
-    gettimeofday(&last_update, nullptr);
-  }
-  void set_rsrq(float rsrq_)
-  {
-    if (!std::isnan(rsrq_)) {
-      rsrq = rsrq_;
-    }
-  }
-  void set_cfo(float cfo_Hz_)
-  {
-    if (not std::isnan(cfo_Hz_) && not std::isinf(cfo_Hz_)) {
-      phy_cell.cfo_hz = cfo_Hz_;
-    }
-  }
-
-  float get_rsrp() { return rsrp; }
-  float get_rsrq() { return rsrq; }
-  float get_cfo_hz() { return phy_cell.cfo_hz; }
-
-  void set_sib1(asn1::rrc::sib_type1_s* sib1_);
-  void set_sib2(asn1::rrc::sib_type2_s* sib2_);
-  void set_sib3(asn1::rrc::sib_type3_s* sib3_);
-  void set_sib13(asn1::rrc::sib_type13_r9_s* sib13_);
-
-  // TODO: replace with TTI count
-  uint32_t timeout_secs(struct timeval now)
-  {
-    struct timeval t[3];
-    memcpy(&t[2], &now, sizeof(struct timeval));
-    memcpy(&t[1], &last_update, sizeof(struct timeval));
-    get_time_interval(t);
-    return t[0].tv_sec;
-  }
-
-  asn1::rrc::sib_type1_s*     sib1ptr() { return &sib1; }
-  asn1::rrc::sib_type2_s*     sib2ptr() { return &sib2; }
-  asn1::rrc::sib_type3_s*     sib3ptr() { return &sib3; }
-  asn1::rrc::sib_type13_r9_s* sib13ptr() { return &sib13; }
-
-  uint32_t get_cell_id() { return (uint32_t)sib1.cell_access_related_info.cell_id.to_number(); }
-
-  bool has_sib1() { return has_valid_sib1; }
-  bool has_sib2() { return has_valid_sib2; }
-  bool has_sib3() { return has_valid_sib3; }
-  bool has_sib13() { return has_valid_sib13; }
-
-  bool has_sib(uint32_t index)
-  {
-    switch (index) {
-      case 0:
-        return has_sib1();
-      case 1:
-        return has_sib2();
-      case 2:
-        return has_sib3();
-      case 12:
-        return has_sib13();
-    }
-    return false;
-  }
-
-  void reset_sibs()
-  {
-    has_valid_sib1  = false;
-    has_valid_sib2  = false;
-    has_valid_sib3  = false;
-    has_valid_sib13 = false;
-  }
-
-  uint16_t get_mcc()
-  {
-    uint16_t mcc;
-    if (has_valid_sib1) {
-      if (sib1.cell_access_related_info.plmn_id_list.size() > 0) {
-        if (srslte::bytes_to_mcc(&sib1.cell_access_related_info.plmn_id_list[0].plmn_id.mcc[0], &mcc)) {
-          return mcc;
-        }
-      }
-    }
-    return 0;
-  }
-
-  uint16_t get_mnc()
-  {
-    uint16_t mnc;
-    if (has_valid_sib1) {
-      if (sib1.cell_access_related_info.plmn_id_list.size() > 0) {
-        if (srslte::bytes_to_mnc(&sib1.cell_access_related_info.plmn_id_list[0].plmn_id.mnc[0],
-                                 &mnc,
-                                 sib1.cell_access_related_info.plmn_id_list[0].plmn_id.mnc.size())) {
-          return mnc;
-        }
-      }
-    }
-    return 0;
-  }
-
-  std::string to_string()
-  {
-    char buf[256];
-    snprintf(buf,
-             256,
-             "{cell_id: 0x%x, pci: %d, dl_earfcn: %d, rsrp=%+.1f, cfo=%+.1f}",
-             get_cell_id(),
-             get_pci(),
-             get_earfcn(),
-             get_rsrp(),
-             get_cfo_hz());
-    return std::string{buf};
-  }
-
-  bool is_sib_scheduled(uint32_t sib_index) const;
-
-  phy_interface_rrc_lte::phy_cell_t phy_cell = {};
-  bool                              has_mcch = false;
-  asn1::rrc::sib_type1_s            sib1;
-  asn1::rrc::sib_type2_s            sib2;
-  asn1::rrc::sib_type3_s            sib3;
-  asn1::rrc::sib_type13_r9_s        sib13;
-  asn1::rrc::mcch_msg_s             mcch;
-
-private:
-  float rsrp = NAN;
-  float rsrq = NAN;
-
-  struct timeval last_update = {};
-
-  bool                         has_valid_sib1  = false;
-  bool                         has_valid_sib2  = false;
-  bool                         has_valid_sib3  = false;
-  bool                         has_valid_sib13 = false;
-  std::map<uint32_t, uint32_t> sib_info_map; ///< map of sib_index to index of schedInfoList in SIB1
-};
+class phy_controller;
 
 class rrc : public rrc_interface_nas,
             public rrc_interface_phy_lte,
@@ -284,7 +76,7 @@ class rrc : public rrc_interface_nas,
             public srslte::timer_callback
 {
 public:
-  rrc(stack_interface_rrc* stack_);
+  rrc(stack_interface_rrc* stack_, srslte::task_sched_handle task_sched_);
   ~rrc();
 
   void init(phy_interface_rrc_lte* phy_,
@@ -301,7 +93,7 @@ public:
   void get_metrics(rrc_metrics_t& m);
 
   // Timeout callback interface
-  void timer_expired(uint32_t timeout_id);
+  void timer_expired(uint32_t timeout_id) final;
   void srslte_rrc_log(const char* str);
 
   typedef enum { Rx = 0, Tx } direction_t;
@@ -330,15 +122,19 @@ public:
   void in_sync() final;
   void out_of_sync() final;
   void new_cell_meas(const std::vector<phy_meas_t>& meas);
+  void cell_search_complete(cell_search_ret_t ret, phy_cell_t found_cell);
+  void cell_select_complete(bool status);
+  void set_config_complete(bool status);
+  void set_scell_complete(bool status);
 
   // MAC interface
-  void ho_ra_completed(bool ra_successful);
+  void ra_completed() final;
   void release_pucch_srs();
   void run_tti();
   void ra_problem();
 
   // GW interface
-  bool is_connected(); // this is also NAS interface
+  bool is_connected() final; // this is also NAS interface
   bool have_drb();
 
   // PDCP interface
@@ -348,19 +144,18 @@ public:
   void write_pdu_pcch(srslte::unique_byte_buffer_t pdu);
   void write_pdu_mch(uint32_t lcid, srslte::unique_byte_buffer_t pdu);
 
-  // STACK interface
-  void cell_search_completed(const phy_interface_rrc_lte::cell_search_ret_t& cs_ret,
-                             const phy_interface_rrc_lte::phy_cell_t&        found_cell);
-  void cell_select_completed(bool cs_ret);
+  bool srbs_flushed(); //< Check if data on SRBs still needs to be sent
 
 protected:
   // Moved to protected to be accessible by unit tests
-  void set_serving_cell(phy_interface_rrc_lte::phy_cell_t phy_cell, bool discard_serving);
-  bool has_neighbour_cell(const uint32_t earfcn, const uint32_t pci);
+  void set_serving_cell(phy_cell_t phy_cell, bool discard_serving);
+  bool has_neighbour_cell(uint32_t earfcn, uint32_t pci) const;
+  bool is_serving_cell(uint32_t earfcn, uint32_t pci) const;
+  int  start_cell_select();
 
 private:
   typedef struct {
-    enum { PCCH, RLF, HO_COMPLETE, STOP } command;
+    enum { PCCH, RLF, RA_COMPLETE, STOP } command;
     srslte::unique_byte_buffer_t pdu;
     uint16_t                     lcid;
   } cmd_msg_t;
@@ -370,16 +165,17 @@ private:
 
   void process_pcch(srslte::unique_byte_buffer_t pdu);
 
-  stack_interface_rrc*      stack   = nullptr;
-  srslte::byte_buffer_pool* pool    = nullptr;
-  srslte::log_ref             rrc_log;
-  phy_interface_rrc_lte*    phy     = nullptr;
-  mac_interface_rrc*        mac     = nullptr;
-  rlc_interface_rrc*        rlc     = nullptr;
-  pdcp_interface_rrc*       pdcp    = nullptr;
-  nas_interface_rrc*        nas     = nullptr;
-  usim_interface_rrc*       usim    = nullptr;
-  gw_interface_rrc*         gw      = nullptr;
+  stack_interface_rrc*      stack = nullptr;
+  srslte::task_sched_handle task_sched;
+  srslte::byte_buffer_pool* pool = nullptr;
+  srslte::log_ref           rrc_log;
+  phy_interface_rrc_lte*    phy  = nullptr;
+  mac_interface_rrc*        mac  = nullptr;
+  rlc_interface_rrc*        rlc  = nullptr;
+  pdcp_interface_rrc*       pdcp = nullptr;
+  nas_interface_rrc*        nas  = nullptr;
+  usim_interface_rrc*       usim = nullptr;
+  gw_interface_rrc*         gw   = nullptr;
 
   srslte::unique_byte_buffer_t dedicated_info_nas;
 
@@ -395,21 +191,17 @@ private:
 
   bool drb_up = false;
 
-  typedef enum { phy_unknown_sync = 0, phy_in_sync, phy_out_of_sync } phy_sync_state_t;
-  phy_sync_state_t phy_sync_state = phy_unknown_sync;
+  // PHY controller state machine
+  std::unique_ptr<phy_controller> phy_ctrl;
 
   rrc_args_t args = {};
 
   uint32_t cell_clean_cnt = 0;
 
-  uint16_t                    ho_src_rnti = 0;
-  cell_t                      ho_src_cell = {};
-  srslte::phy_cfg_t           current_phy_cfg, previous_phy_cfg = {};
-  srslte::mac_cfg_t           current_mac_cfg, previous_mac_cfg = {};
-  bool                        current_scell_configured[SRSLTE_MAX_CARRIERS] = {};
-  bool                        pending_mob_reconf = false;
-  asn1::rrc::rrc_conn_recfg_s mob_reconf         = {};
+  srslte::phy_cfg_t previous_phy_cfg = {};
+  srslte::mac_cfg_t current_mac_cfg, previous_mac_cfg = {};
 
+  void                         generate_as_keys();
   srslte::as_security_config_t sec_cfg = {};
 
   std::map<uint32_t, asn1::rrc::srb_to_add_mod_s> srbs;
@@ -447,26 +239,13 @@ private:
     }
   }
 
+  // Measurements private subclass
+  class rrc_meas;
+  std::unique_ptr<rrc_meas> measurements;
+
   // List of strongest neighbour cell
-  const static int NEIGHBOUR_TIMEOUT   = 5;
-  const static int NOF_NEIGHBOUR_CELLS = 8;
-
-  typedef std::unique_ptr<cell_t> unique_cell_t;
-  std::vector<unique_cell_t>      neighbour_cells;
-  unique_cell_t                   serving_cell = nullptr;
-  void                            set_serving_cell(uint32_t cell_idx);
-
-  unique_cell_t      remove_neighbour_cell(const uint32_t earfcn, const uint32_t pci);
-  cell_t*            get_neighbour_cell_handle(const uint32_t earfcn, const uint32_t pci);
-  int                find_neighbour_cell(uint32_t earfcn, uint32_t pci);
-  bool               add_neighbour_cell(phy_meas_t meas);
-  bool               add_neighbour_cell(unique_cell_t new_cell);
-  void               log_neighbour_cells();
-  void               sort_neighbour_cells();
-  void               clean_neighbours();
-  void               delete_last_neighbour();
-  std::string        print_neighbour_cells();
-  std::set<uint32_t> get_neighbour_pcis(uint32_t earfcn);
+  using unique_cell_t = std::unique_ptr<meas_cell>;
+  meas_cell_list meas_cells;
 
   bool                     initiated                  = false;
   asn1::rrc::reest_cause_e m_reest_cause              = asn1::rrc::reest_cause_e::nulltype;
@@ -475,19 +254,12 @@ private:
   bool                     reestablishment_started    = false;
   bool                     reestablishment_successful = false;
 
-  // Process HO completition in the background
-  void process_ho_ra_completed(bool ra_successful);
-
-  // Measurements private subclass
-  class rrc_meas;
-  std::unique_ptr<rrc_meas> measurements;
-
   // Interface from rrc_meas
   void               send_srb1_msg(const asn1::rrc::ul_dcch_msg_s& msg);
   std::set<uint32_t> get_cells(const uint32_t earfcn);
   float              get_cell_rsrp(const uint32_t earfcn, const uint32_t pci);
   float              get_cell_rsrq(const uint32_t earfcn, const uint32_t pci);
-  cell_t*            get_serving_cell();
+  meas_cell*         get_serving_cell();
 
   void                                          process_cell_meas();
   void                                          process_new_cell_meas(const std::vector<phy_meas_t>& meas);
@@ -521,12 +293,14 @@ private:
   class serving_cell_config_proc;
   class cell_selection_proc;
   class connection_request_proc;
+  class connection_reconf_no_ho_proc;
   class plmn_search_proc;
   class process_pcch_proc;
   class go_idle_proc;
   class cell_reselection_proc;
   class connection_reest_proc;
-  srslte::proc_t<cell_search_proc, phy_interface_rrc_lte::cell_search_ret_t> cell_searcher;
+  class ho_proc;
+  srslte::proc_t<cell_search_proc, rrc_interface_phy_lte::cell_search_ret_t> cell_searcher;
   srslte::proc_t<si_acquire_proc>                                            si_acquirer;
   srslte::proc_t<serving_cell_config_proc>                                   serv_cell_cfg;
   srslte::proc_t<cell_selection_proc, cs_result_t>                           cell_selector;
@@ -536,6 +310,8 @@ private:
   srslte::proc_t<plmn_search_proc>                                           plmn_searcher;
   srslte::proc_t<cell_reselection_proc>                                      cell_reselector;
   srslte::proc_t<connection_reest_proc>                                      connection_reest;
+  srslte::proc_t<ho_proc>                                                    ho_handler;
+  srslte::proc_t<connection_reconf_no_ho_proc>                               conn_recfg_proc;
 
   srslte::proc_manager_list_t callback_list;
 
@@ -553,7 +329,7 @@ private:
 
   // Senders
   void send_con_request(srslte::establishment_cause_t cause);
-  void send_con_restablish_request(asn1::rrc::reest_cause_e cause, uint16_t rnti, uint16_t pci);
+  void send_con_restablish_request(asn1::rrc::reest_cause_e cause, uint16_t rnti, uint16_t pci, uint32_t cellid);
   void send_con_restablish_complete();
   void send_con_setup_complete(srslte::unique_byte_buffer_t nas_msg);
   void send_ul_info_transfer(srslte::unique_byte_buffer_t nas_msg);
@@ -569,29 +345,28 @@ private:
   void parse_pdu_mch(uint32_t lcid, srslte::unique_byte_buffer_t pdu);
 
   // Helpers
-  bool con_reconfig(asn1::rrc::rrc_conn_recfg_s* reconfig);
   void con_reconfig_failed();
-  bool con_reconfig_ho(asn1::rrc::rrc_conn_recfg_s* reconfig);
-  bool ho_prepare();
+  bool con_reconfig_ho(const asn1::rrc::rrc_conn_recfg_s& reconfig);
   void ho_failed();
-  void start_ho();
   void start_go_idle();
   void rrc_connection_release(const std::string& cause);
-  void radio_link_failure();
+  void radio_link_failure_push_cmd();
+  void radio_link_failure_process();
   void leave_connected();
   void stop_timers();
   void start_con_restablishment(asn1::rrc::reest_cause_e cause);
-  void start_cell_reselection();
 
   void log_rr_config_common();
   void log_phy_config_dedicated();
   void log_mac_config_dedicated();
 
   void apply_rr_config_common(asn1::rrc::rr_cfg_common_s* config, bool send_lower_layers);
-  bool apply_rr_config_dedicated(asn1::rrc::rr_cfg_ded_s* cnfg);
-  void apply_scell_config(asn1::rrc::rrc_conn_recfg_r8_ies_s* reconfig_r8);
-  void apply_phy_config_dedicated(const asn1::rrc::phys_cfg_ded_s& phy_cnfg);
-  void apply_phy_scell_config(const asn1::rrc::scell_to_add_mod_r10_s& scell_config);
+  bool apply_rr_config_dedicated(const asn1::rrc::rr_cfg_ded_s* cnfg, bool is_handover = false);
+  bool apply_rr_config_dedicated_on_ho_complete(const asn1::rrc::rr_cfg_ded_s& cnfg);
+  void apply_scell_config(asn1::rrc::rrc_conn_recfg_r8_ies_s* reconfig_r8, bool enable_cqi);
+  bool apply_scell_config_on_ho_complete(const asn1::rrc::rrc_conn_recfg_r8_ies_s& reconfig_r8);
+  void apply_phy_config_dedicated(const asn1::rrc::phys_cfg_ded_s& phy_cnfg, bool is_handover);
+  void apply_phy_scell_config(const asn1::rrc::scell_to_add_mod_r10_s& scell_config, bool enable_cqi);
 
   void apply_mac_config_dedicated_default();
 
@@ -600,19 +375,18 @@ private:
   void handle_sib3();
   void handle_sib13();
 
-  void     handle_con_setup(asn1::rrc::rrc_conn_setup_s* setup);
-  void     handle_con_reest(asn1::rrc::rrc_conn_reest_s* setup);
-  void     handle_rrc_con_reconfig(uint32_t lcid, asn1::rrc::rrc_conn_recfg_s* reconfig);
+  void     handle_con_setup(const asn1::rrc::rrc_conn_setup_s& setup);
+  void     handle_con_reest(const asn1::rrc::rrc_conn_reest_s& setup);
+  void     handle_rrc_con_reconfig(uint32_t lcid, const asn1::rrc::rrc_conn_recfg_s& reconfig);
   void     handle_ue_capability_enquiry(const asn1::rrc::ue_cap_enquiry_s& enquiry);
-  void     add_srb(asn1::rrc::srb_to_add_mod_s* srb_cnfg);
-  void     add_drb(asn1::rrc::drb_to_add_mod_s* drb_cnfg);
+  void     add_srb(const asn1::rrc::srb_to_add_mod_s& srb_cnfg);
+  void     add_drb(const asn1::rrc::drb_to_add_mod_s& drb_cnfg);
   void     release_drb(uint32_t drb_id);
   uint32_t get_lcid_for_eps_bearer(const uint32_t& eps_bearer_id);
   void     add_mrb(uint32_t lcid, uint32_t port);
 
   // Helpers for setting default values
   void set_phy_default_pucch_srs();
-  void set_phy_config_dedicated_default();
   void set_phy_default();
   void set_mac_default();
   void set_rrc_default();

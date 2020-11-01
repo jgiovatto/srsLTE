@@ -912,7 +912,7 @@ int rf_shmem_close(void *h)
  }
 
 
-double rf_shmem_set_rx_gain(void *h, double gain)
+int rf_shmem_set_rx_gain(void *h, double gain)
  {
    RF_SHMEM_GET_STATE(h);
 
@@ -922,11 +922,11 @@ double rf_shmem_set_rx_gain(void *h, double gain)
      _state->rx_gain = gain;
    }
 
-   return _state->rx_gain;
+   return SRSLTE_SUCCESS;
  }
 
 
-double rf_shmem_set_tx_gain(void *h, double gain)
+int rf_shmem_set_tx_gain(void *h, double gain)
  {
    RF_SHMEM_GET_STATE(h);
 
@@ -936,7 +936,7 @@ double rf_shmem_set_tx_gain(void *h, double gain)
      _state->tx_gain = gain;
    }
 
-   return _state->tx_gain;
+   return SRSLTE_SUCCESS;
  }
 
 

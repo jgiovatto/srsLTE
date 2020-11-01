@@ -56,12 +56,13 @@ private:
 
 /** Storage of cell-specific eNB config and derived params */
 struct cell_info_common {
-  uint32_t                           enb_cc_idx = 0;
-  asn1::rrc::mib_s                   mib;
-  asn1::rrc::sib_type1_s             sib1;
-  asn1::rrc::sib_type2_s             sib2;
-  const cell_cfg_t&                  cell_cfg;
-  std::vector<std::vector<uint8_t> > sib_buffer; ///< Packed SIBs for given CC
+  uint32_t                                  enb_cc_idx = 0;
+  asn1::rrc::mib_s                          mib;
+  asn1::rrc::sib_type1_s                    sib1;
+  asn1::rrc::sib_type2_s                    sib2;
+  const cell_cfg_t&                         cell_cfg;
+  std::vector<srslte::unique_byte_buffer_t> sib_buffer; ///< Packed SIBs for given CC
+  std::vector<const cell_info_common*>      scells;
 
   cell_info_common(uint32_t idx_, const cell_cfg_t& cfg) : enb_cc_idx(idx_), cell_cfg(cfg) {}
 };
@@ -71,23 +72,27 @@ class cell_info_common_list
 public:
   explicit cell_info_common_list(const rrc_cfg_t& cfg_);
 
-  cell_info_common*       get_cc_idx(uint32_t enb_cc_idx) { return &cell_list[enb_cc_idx]; }
-  const cell_info_common* get_cc_idx(uint32_t enb_cc_idx) const { return &cell_list[enb_cc_idx]; }
+  cell_info_common*       get_cc_idx(uint32_t enb_cc_idx) { return cell_list[enb_cc_idx].get(); }
+  const cell_info_common* get_cc_idx(uint32_t enb_cc_idx) const { return cell_list[enb_cc_idx].get(); }
   const cell_info_common* get_cell_id(uint32_t cell_id) const;
   const cell_info_common* get_pci(uint32_t pci) const;
   size_t                  nof_cells() const { return cell_list.size(); }
 
 private:
-  const rrc_cfg_t&              cfg;
-  std::vector<cell_info_common> cell_list;
+  const rrc_cfg_t&                                cfg;
+  std::vector<std::unique_ptr<cell_info_common> > cell_list;
 };
+
+// Helper methods
+std::vector<const cell_info_common*> get_cfg_intraenb_scells(const cell_info_common_list& list,
+                                                             uint32_t                     pcell_enb_cc_idx);
+std::vector<uint32_t>                get_measobj_earfcns(const cell_info_common& pcell);
 
 /** Class used to store all the resources specific to a UE's cell */
 struct cell_ctxt_dedicated {
   uint32_t                ue_cc_idx;
-  const cell_info_common& cell_common;
+  const cell_info_common* cell_common;
   bool                    cqi_res_present = false;
-  bool                    sr_res_present  = false;
   struct cqi_res_t {
     uint32_t pmi_idx   = 0;
     uint32_t pucch_res = 0;
@@ -95,12 +100,15 @@ struct cell_ctxt_dedicated {
     uint32_t sf_idx    = 0;
   } cqi_res;
 
-  explicit cell_ctxt_dedicated(uint32_t i_, const cell_info_common& c_) : ue_cc_idx(i_), cell_common(c_) {}
+  explicit cell_ctxt_dedicated(uint32_t i_, const cell_info_common& c_) : ue_cc_idx(i_), cell_common(&c_) {}
 
   // forbid copying to not break counting of pucch allocated resources
   cell_ctxt_dedicated(const cell_ctxt_dedicated&)     = delete;
   cell_ctxt_dedicated(cell_ctxt_dedicated&&) noexcept = default;
   cell_ctxt_dedicated& operator=(const cell_ctxt_dedicated&) = delete;
+  cell_ctxt_dedicated& operator=(cell_ctxt_dedicated&&) noexcept = default;
+
+  uint32_t get_dl_earfcn() const { return cell_common->cell_cfg.dl_earfcn; }
 };
 
 /** Class used to handle the allocation of a UE's resources across its cells */
@@ -113,8 +121,14 @@ public:
   ~cell_ctxt_dedicated_list();
 
   cell_ctxt_dedicated* add_cell(uint32_t enb_cc_idx);
+  bool                 rem_last_cell();
+  bool                 set_cells(const std::vector<uint32_t>& enb_cc_idxs);
 
   cell_ctxt_dedicated* get_ue_cc_idx(uint32_t ue_cc_idx)
+  {
+    return (ue_cc_idx < nof_cells()) ? &cell_ded_list[ue_cc_idx] : nullptr;
+  }
+  const cell_ctxt_dedicated* get_ue_cc_idx(uint32_t ue_cc_idx) const
   {
     return (ue_cc_idx < nof_cells()) ? &cell_ded_list[ue_cc_idx] : nullptr;
   }
@@ -138,6 +152,7 @@ public:
   bool            is_pucch_cs_allocated() const { return n_pucch_cs_present; }
 
 private:
+  bool alloc_cell_resources(uint32_t ue_cc_idx);
   bool alloc_cqi_resources(uint32_t ue_cc_idx, uint32_t period);
   bool dealloc_cqi_resources(uint32_t ue_cc_idx);
   bool alloc_sr_resources(uint32_t period);

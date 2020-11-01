@@ -57,6 +57,8 @@ public:
 
   void set_tti(uint32_t tti);
 
+  uint16_t get_rnti() { return rnti; }
+
   uint32_t set_ta(int ta) override;
 
   void     start_ta() { ta_fsm.start(); };
@@ -82,11 +84,6 @@ public:
   void     push_pdu(const uint32_t ue_cc_idx, const uint32_t tti, uint32_t len);
   void     deallocate_pdu(const uint32_t ue_cc_idx, const uint32_t tti);
 
-  uint32_t rl_failure();
-  void     rl_failure_reset();
-
-  void set_lcg(uint32_t lcid, uint32_t lcg);
-
   void metrics_read(srsenb::mac_metrics_t* metrics);
   void metrics_rx(bool crc, uint32_t tbs);
   void metrics_tx(bool crc, uint32_t tbs);
@@ -105,8 +102,6 @@ private:
   void allocate_sdu(srslte::sch_pdu* pdu, uint32_t lcid, uint32_t sdu_len);
   bool process_ce(srslte::sch_subh* subh);
   void allocate_ce(srslte::sch_pdu* pdu, uint32_t lcid);
-
-  std::vector<uint32_t> lc_groups[4];
 
   uint32_t      phr_counter    = 0;
   uint32_t      dl_cqi_counter = 0;

@@ -78,6 +78,8 @@ class usim_interface_rrc
 public:
   virtual void generate_as_keys(uint8_t* k_asme, uint32_t count_ul, srslte::as_security_config_t* sec_cfg)        = 0;
   virtual void generate_as_keys_ho(uint32_t pci, uint32_t earfcn, int ncc, srslte::as_security_config_t* sec_cfg) = 0;
+  virtual void store_keys_before_ho(const srslte::as_security_config_t& as_cfg)                                   = 0;
+  virtual void restore_keys_from_failed_ho(srslte::as_security_config_t* as_cfg)                                  = 0;
 };
 
 // GW interface for NAS
@@ -129,8 +131,14 @@ public:
 class rrc_interface_mac : public rrc_interface_mac_common
 {
 public:
-  virtual void ho_ra_completed(bool ra_successful) = 0;
-  virtual void release_pucch_srs()                 = 0;
+  virtual void ra_completed()      = 0;
+  virtual void release_pucch_srs() = 0;
+};
+
+struct phy_cell_t {
+  uint32_t pci;
+  uint32_t earfcn;
+  float    cfo_hz;
 };
 
 // RRC interface for PHY
@@ -149,6 +157,16 @@ public:
   virtual void in_sync()                                          = 0;
   virtual void out_of_sync()                                      = 0;
   virtual void new_cell_meas(const std::vector<phy_meas_t>& meas) = 0;
+
+  typedef struct {
+    enum { CELL_FOUND = 0, CELL_NOT_FOUND, ERROR } found;
+    enum { MORE_FREQS = 0, NO_MORE_FREQS } last_freq;
+  } cell_search_ret_t;
+
+  virtual void cell_search_complete(cell_search_ret_t ret, phy_cell_t found_cell) = 0;
+  virtual void cell_select_complete(bool status)                                  = 0;
+  virtual void set_config_complete(bool status)                                   = 0;
+  virtual void set_scell_complete(bool status)                                    = 0;
 };
 
 // RRC interface for NAS
@@ -162,7 +180,7 @@ public:
 
   const static int MAX_FOUND_PLMNS = 16;
 
-  virtual ~rrc_interface_nas()                                                           = default;
+  virtual ~rrc_interface_nas()                                                          = default;
   virtual void        write_sdu(srslte::unique_byte_buffer_t sdu)                       = 0;
   virtual uint16_t    get_mcc()                                                         = 0;
   virtual uint16_t    get_mnc()                                                         = 0;
@@ -233,7 +251,7 @@ public:
   virtual void reestablish()                                                                                        = 0;
   virtual void reestablish(uint32_t lcid)                                                                           = 0;
   virtual void reset()                                                                                              = 0;
-  virtual void write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu, bool blocking)                            = 0;
+  virtual void write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu)                                           = 0;
   virtual void add_bearer(uint32_t lcid, srslte::pdcp_config_t cnfg)                                                = 0;
   virtual void change_lcid(uint32_t old_lcid, uint32_t new_lcid)                                                    = 0;
   virtual void config_security(uint32_t lcid, srslte::as_security_config_t sec_cfg)                                 = 0;
@@ -258,38 +276,45 @@ public:
 class pdcp_interface_gw
 {
 public:
-  virtual void write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu, bool blocking) = 0;
-  virtual bool is_lcid_enabled(uint32_t lcid)                                            = 0;
+  virtual void write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu) = 0;
+  virtual bool is_lcid_enabled(uint32_t lcid)                             = 0;
 };
 
 // RLC interface for RRC
 class rlc_interface_rrc
 {
 public:
-  virtual void reset()                                                                          = 0;
-  virtual void reestablish()                                                                    = 0;
-  virtual void reestablish(uint32_t lcid)                                                       = 0;
-  virtual void add_bearer(uint32_t lcid, const srslte::rlc_config_t& cnfg)                      = 0;
-  virtual void add_bearer_mrb(uint32_t lcid)                                                    = 0;
-  virtual void del_bearer(uint32_t lcid)                                                        = 0;
-  virtual void suspend_bearer(uint32_t lcid)                                                    = 0;
-  virtual void resume_bearer(uint32_t lcid)                                                     = 0;
-  virtual void change_lcid(uint32_t old_lcid, uint32_t new_lcid)                                = 0;
-  virtual bool has_bearer(uint32_t lcid)                                                        = 0;
-  virtual bool has_data(const uint32_t lcid)                                                    = 0;
-  virtual bool is_suspended(const uint32_t lcid)                                                = 0;
-  virtual void write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu, bool blocking = true) = 0;
+  virtual void reset()                                                     = 0;
+  virtual void reestablish()                                               = 0;
+  virtual void reestablish(uint32_t lcid)                                  = 0;
+  virtual void add_bearer(uint32_t lcid, const srslte::rlc_config_t& cnfg) = 0;
+  virtual void add_bearer_mrb(uint32_t lcid)                               = 0;
+  virtual void del_bearer(uint32_t lcid)                                   = 0;
+  virtual void suspend_bearer(uint32_t lcid)                               = 0;
+  virtual void resume_bearer(uint32_t lcid)                                = 0;
+  virtual void change_lcid(uint32_t old_lcid, uint32_t new_lcid)           = 0;
+  virtual bool has_bearer(uint32_t lcid)                                   = 0;
+  virtual bool has_data(const uint32_t lcid)                               = 0;
+  virtual bool is_suspended(const uint32_t lcid)                           = 0;
+  virtual void write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu)  = 0;
 };
 
 // RLC interface for PDCP
 class rlc_interface_pdcp
 {
 public:
-  /* PDCP calls RLC to push an RLC SDU. SDU gets placed into the RLC buffer and MAC pulls
-   * RLC PDUs according to TB size. */
-  virtual void write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu, bool blocking = true) = 0;
-  virtual void discard_sdu(uint32_t lcid, uint32_t discard_sn)                                  = 0;
-  virtual bool rb_is_um(uint32_t lcid)                                                          = 0;
+  ///< PDCP calls RLC to push an RLC SDU. SDU gets placed into the buffer
+  ///< MAC pulls RLC PDUs according to TB size
+  virtual void write_sdu(uint32_t lcid, srslte::unique_byte_buffer_t sdu) = 0;
+
+  ///< Indicate RLC that a certain SN can be discarded
+  virtual void discard_sdu(uint32_t lcid, uint32_t discard_sn) = 0;
+
+  ///< Helper to query RLC mode
+  virtual bool rb_is_um(uint32_t lcid) = 0;
+
+  ///< Allow PDCP to query SDU queue status
+  virtual bool sdu_queue_is_full(uint32_t lcid) = 0;
 };
 
 // RLC interface for MAC
@@ -298,7 +323,7 @@ class rlc_interface_mac : public srslte::read_pdu_interface
 public:
   /* MAC calls has_data() to query whether a logical channel has data to transmit (without
    * knowing how much. This function should return quickly. */
-  virtual bool has_data(const uint32_t lcid) = 0;
+  virtual bool has_data_locked(const uint32_t lcid) = 0;
 
   /* MAC calls RLC to get the buffer state for a logical channel. */
   virtual uint32_t get_buffer_state(const uint32_t lcid) = 0;
@@ -374,6 +399,7 @@ public:
     tb_action_t tb;
     uint32_t    current_tx_nb;
     bool        expect_ack;
+    bool        is_rar;
   } tb_action_ul_t;
 
   /* Query the MAC for the current RNTI to look for
@@ -423,8 +449,6 @@ public:
 class mac_interface_rrc : public mac_interface_rrc_common
 {
 public:
-  virtual void clear_rntis() = 0;
-
   /* Instructs the MAC to start receiving BCCH */
   virtual void bcch_start_rx(int si_window_start, int si_window_length) = 0;
   virtual void bcch_stop_rx()                                           = 0;
@@ -438,18 +462,20 @@ public:
   /* Instructs the MAC to start receiving an MCH */
   virtual void mch_start_rx(uint32_t lcid) = 0;
 
+  /* Set entire MAC config */
   virtual void set_config(srslte::mac_cfg_t& mac_cfg) = 0;
+
+  /* Update SR config only for PUCCH release */
+  virtual void set_config(srslte::sr_cfg_t& sr_cfg) = 0;
+
+  virtual void set_rach_ded_cfg(uint32_t preamble_index, uint32_t prach_mask) = 0;
 
   virtual void get_rntis(ue_rnti_t* rntis)                      = 0;
   virtual void set_contention_id(uint64_t uecri)                = 0;
   virtual void set_ho_rnti(uint16_t crnti, uint16_t target_pci) = 0;
 
-  virtual void start_noncont_ho(uint32_t preamble_index, uint32_t prach_mask) = 0;
-  virtual void start_cont_ho()                                                = 0;
-
   virtual void reconfiguration(const uint32_t& cc_idx, const bool& enable) = 0;
   virtual void reset()                                                     = 0;
-  virtual void wait_uplink()                                               = 0;
 };
 
 /** PHY interface
@@ -518,6 +544,8 @@ typedef struct {
 
   srslte::channel::args_t dl_channel_args;
   srslte::channel::args_t ul_channel_args;
+
+  srslte::vnf_args_t vnf_args;
 } phy_args_t;
 
 /* RAT agnostic Interface MAC -> PHY */
@@ -554,9 +582,6 @@ public:
     uint32_t preamble_format;
   } prach_info_t;
 
-  /* Configure PRACH using parameters written by RRC */
-  virtual void configure_prach_params() = 0;
-
   virtual void
                        prach_send(uint32_t preamble_idx, int allowed_subframe, float target_power_dbm, float ta_base_sec = 0.0f) = 0;
   virtual prach_info_t prach_get_info() = 0;
@@ -571,36 +596,23 @@ public:
 class phy_interface_rrc_lte
 {
 public:
-  virtual void set_config(srslte::phy_cfg_t& config,
-                          uint32_t           cc_idx    = 0,
-                          uint32_t           earfcn    = 0,
-                          srslte_cell_t*     cell_info = nullptr)                             = 0;
+  virtual bool set_config(srslte::phy_cfg_t config, uint32_t cc_idx = 0)                  = 0;
+  virtual bool set_scell(srslte_cell_t cell_info, uint32_t cc_idx, uint32_t earfcn)       = 0;
   virtual void set_config_tdd(srslte_tdd_config_t& tdd_config)                            = 0;
   virtual void set_config_mbsfn_sib2(srslte::mbsfn_sf_cfg_t* cfg_list, uint32_t nof_cfgs) = 0;
   virtual void set_config_mbsfn_sib13(const srslte::sib13_t& sib13)                       = 0;
   virtual void set_config_mbsfn_mcch(const srslte::mcch_msg_t& mcch)                      = 0;
 
+  virtual void set_activation_deactivation_scell(uint32_t cmd) = 0;
+
   /* Measurements interface */
   virtual void set_cells_to_meas(uint32_t earfcn, const std::set<uint32_t>& pci) = 0;
   virtual void meas_stop()                                                       = 0;
 
-  typedef struct {
-    enum { CELL_FOUND = 0, CELL_NOT_FOUND, ERROR } found;
-    enum { MORE_FREQS = 0, NO_MORE_FREQS } last_freq;
-  } cell_search_ret_t;
-
-  typedef struct {
-    uint32_t pci;
-    uint32_t earfcn;
-    float    cfo_hz;
-  } phy_cell_t;
-
   /* Cell search and selection procedures */
-  virtual cell_search_ret_t cell_search(phy_cell_t* cell)                 = 0;
-  virtual bool              cell_select(const phy_cell_t* cell = nullptr) = 0;
-  virtual bool              cell_is_camping()                             = 0;
-
-  virtual void reset() = 0;
+  virtual bool cell_search()                = 0;
+  virtual bool cell_select(phy_cell_t cell) = 0;
+  virtual bool cell_is_camping()            = 0;
 
   virtual void enable_pregen_signals(bool enable) = 0;
 };
@@ -613,16 +625,13 @@ public:
 };
 
 class gw_interface_stack : public gw_interface_nas, public gw_interface_rrc, public gw_interface_pdcp
-{
-};
+{};
 
 // STACK interface for RRC
-class stack_interface_rrc : public srslte::task_handler_interface
+class stack_interface_rrc
 {
 public:
-  virtual void              start_cell_search()                                              = 0;
-  virtual void              start_cell_select(const phy_interface_rrc_lte::phy_cell_t* cell) = 0;
-  virtual srslte::tti_point get_current_tti()                                                = 0;
+  virtual srslte::tti_point get_current_tti() = 0;
 };
 
 // Combined interface for PHY to access stack (MAC and RRC)
@@ -635,8 +644,7 @@ public:
 
 // Combined interface for stack (MAC and RRC) to access PHY
 class phy_interface_stack_lte : public phy_interface_mac_lte, public phy_interface_rrc_lte
-{
-};
+{};
 
 } // namespace srsue
 

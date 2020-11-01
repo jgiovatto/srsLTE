@@ -46,6 +46,12 @@
  *  Based on 3GPP TS 36.211 version 10.7.0 Release 10.
  */
 
+typedef struct {
+  int   idx;
+  float factor;
+  cf_t  phase_array[2 * 839];
+} srslte_prach_cancellation_t;
+
 typedef struct SRSLTE_API {
   // Parameters from higher layers (extracted from SIB2)
   uint32_t config_idx;
@@ -69,9 +75,10 @@ typedef struct SRSLTE_API {
   // Generated tables
   cf_t     seqs[64][839];     // Our set of 64 preamble sequences
   cf_t     dft_seqs[64][839]; // DFT-precoded seqs
+  uint64_t dft_gen_bitmap;    // Bitmap where each bit Indicates if the dft has been generated for sequence i.
   uint32_t root_seqs_idx[64]; // Indices of root seqs in seqs table
   uint32_t N_roots;           // Number of root sequences used in this configuration
-
+  cf_t*    td_signals[64];
   // Containers
   cf_t*  ifft_in;
   cf_t*  ifft_out;
@@ -90,12 +97,19 @@ typedef struct SRSLTE_API {
   cf_t* signal_fft;
   float detect_factor;
 
-  uint32_t deadzone;
-  float    peak_values[65];
-  uint32_t peak_offsets[65];
-  uint32_t            num_ra_preambles;
-  srslte_tdd_config_t tdd_config;
-  uint32_t            current_prach_idx;
+  uint32_t                    deadzone;
+  float                       peak_values[65];
+  uint32_t                    peak_offsets[65];
+  uint32_t                    num_ra_preambles;
+  bool                        successive_cancellation;
+  bool                        freq_domain_offset_calc;
+  srslte_tdd_config_t         tdd_config;
+  uint32_t                    current_prach_idx;
+  cf_t*                       cross;
+  cf_t*                       corr_freq;
+  srslte_prach_cancellation_t prach_cancel;
+  cf_t                        sub[839 * 2];
+  float                       phase[839];
 
 } srslte_prach_t;
 
@@ -117,6 +131,8 @@ typedef struct {
   uint32_t            num_ra_preambles;
   bool                hs_flag;
   srslte_tdd_config_t tdd_config;
+  bool                enable_successive_cancellation;
+  bool                enable_freq_domain_offset_calc;
 } srslte_prach_cfg_t;
 
 typedef struct SRSLTE_API {
@@ -200,5 +216,15 @@ SRSLTE_API void srslte_prach_set_detect_factor(srslte_prach_t* p, float factor);
 SRSLTE_API int srslte_prach_free(srslte_prach_t* p);
 
 SRSLTE_API int srslte_prach_print_seqs(srslte_prach_t* p);
+
+SRSLTE_API int srslte_prach_process(srslte_prach_t* p,
+                                    cf_t*           signal,
+                                    uint32_t*       indices,
+                                    float*          t_offsets,
+                                    float*          peak_to_avg,
+                                    uint32_t*       n_indices,
+                                    int             cancellation_idx,
+                                    uint32_t        begin,
+                                    uint32_t        sig_len);
 
 #endif // SRSLTE_PRACH_H

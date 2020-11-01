@@ -38,6 +38,7 @@ struct phy_cell_cfg_t {
   double        ul_freq_hz;
   uint32_t      root_seq_idx;
   uint32_t      num_ra_preambles;
+  float         gain_db;
 };
 
 typedef std::vector<phy_cell_cfg_t> phy_cell_cfg_list_t;
@@ -46,6 +47,7 @@ struct phy_args_t {
   std::string            type;
   srslte::phy_log_args_t log;
 
+  float       sampling_rate_hz    = 0.0f;
   float       max_prach_offset_us = 10;
   int         pusch_max_its       = 10;
   bool        pusch_8bit_decoder  = false;
@@ -56,9 +58,12 @@ struct phy_args_t {
   bool        pusch_meas_epre     = true;
   bool        pusch_meas_evm      = false;
   bool        pusch_meas_ta       = true;
+  bool        pucch_meas_ta       = true;
 
   srslte::channel::args_t dl_channel_args;
   srslte::channel::args_t ul_channel_args;
+
+  srslte::vnf_args_t vnf_args;
 };
 
 struct phy_cfg_t {

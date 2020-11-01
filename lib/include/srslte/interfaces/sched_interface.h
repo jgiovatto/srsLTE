@@ -40,6 +40,7 @@ public:
   const static int MAX_SIB_PAYLOAD_LEN = 2048;
   const static int MAX_SIBS            = 16;
   const static int MAX_LC              = 6;
+  const static int MAX_LC_GROUP        = 4;
   const static int MAX_DATA_LIST       = 32;
   const static int MAX_RAR_LIST        = 8;
   const static int MAX_BC_LIST         = 8;
@@ -104,11 +105,11 @@ public:
   };
 
   struct ue_bearer_cfg_t {
-    int priority                              = 0;
-    int bsd                                   = 0;
-    int pbr                                   = 0;
-    int group                                 = 0;
-    enum { IDLE = 0, UL, DL, BOTH } direction = IDLE;
+    int      priority                                     = 1;
+    uint32_t bsd                                          = 1000; // msec
+    uint32_t pbr                                          = -1;
+    int      group                                        = 0;
+    enum direction_t { IDLE = 0, UL, DL, BOTH } direction = IDLE;
   };
 
   struct ant_info_ded_t {
@@ -130,17 +131,17 @@ public:
 
   struct ue_cfg_t {
     struct cc_cfg_t {
-      bool     active     = false;
-      uint32_t enb_cc_idx = 0; ///< eNB CC index
+      bool            active               = false;
+      uint32_t        enb_cc_idx           = 0; ///< eNB CC index
+      srslte_dl_cfg_t dl_cfg               = {};
+      uint32_t        aperiodic_cqi_period = 0; // if 0 is periodic CQI
     };
     /* ue capabilities, etc */
-    uint32_t                            maxharq_tx           = 5;
-    bool                                continuous_pusch     = false;
-    srslte_uci_offset_cfg_t             uci_offset           = {};
-    srslte_pucch_cfg_t                  pucch_cfg            = {};
-    uint32_t                            aperiodic_cqi_period = 0; // if 0 is periodic CQI
-    srslte_dl_cfg_t                     dl_cfg;
-    std::array<ue_bearer_cfg_t, MAX_LC> ue_bearers = {};
+    uint32_t                            maxharq_tx       = 5;
+    bool                                continuous_pusch = false;
+    srslte_uci_offset_cfg_t             uci_offset       = {15, 12, 10};
+    srslte_pucch_cfg_t                  pucch_cfg        = {};
+    std::array<ue_bearer_cfg_t, MAX_LC> ue_bearers       = {};
     std::vector<cc_cfg_t>               supported_cc_list; ///< list of UE supported CCs. First index for PCell
     ant_info_ded_t                      dl_ant_info;
     bool                                use_tbs_index_alt = false;
@@ -286,8 +287,7 @@ public:
   /* UL information */
   virtual int ul_crc_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, bool crc)                          = 0;
   virtual int ul_sr_info(uint32_t tti, uint16_t rnti)                                                          = 0;
-  virtual int ul_bsr(uint16_t rnti, uint32_t lcid, uint32_t bsr, bool set_value = true)                        = 0;
-  virtual int ul_recv_len(uint16_t rnti, uint32_t lcid, uint32_t len)                                          = 0;
+  virtual int ul_bsr(uint16_t rnti, uint32_t lcg_id, uint32_t bsr)                                             = 0;
   virtual int ul_phr(uint16_t rnti, int phr)                                                                   = 0;
   virtual int ul_cqi_info(uint32_t tti, uint16_t rnti, uint32_t enb_cc_idx, uint32_t cqi, uint32_t ul_ch_code) = 0;
 
@@ -296,8 +296,9 @@ public:
   virtual int ul_sched(uint32_t tti, uint32_t enb_cc_idx, ul_sched_res_t& sched_result) = 0;
 
   /* Custom */
-  virtual void                                 set_dl_tti_mask(uint8_t* tti_mask, uint32_t nof_sfs) = 0;
-  virtual std::array<int, SRSLTE_MAX_CARRIERS> get_enb_ue_cc_map(uint16_t rnti)                     = 0;
+  virtual void                                 set_dl_tti_mask(uint8_t* tti_mask, uint32_t nof_sfs)        = 0;
+  virtual std::array<int, SRSLTE_MAX_CARRIERS> get_enb_ue_cc_map(uint16_t rnti)                            = 0;
+  virtual int                                  ul_buffer_add(uint16_t rnti, uint32_t lcid, uint32_t bytes) = 0;
 };
 
 } // namespace srsenb

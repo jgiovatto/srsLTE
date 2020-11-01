@@ -28,7 +28,7 @@
 #                     Default is auto (yes for UHD, no for rest)
 #####################################################################
 [rf]
-dl_earfcn = 3400
+dl_earfcn = 3350
 freq_offset = 0
 tx_gain = 80
 #rx_gain = 40
@@ -191,7 +191,8 @@ enable = false
 #
 # -- AWGN Generator
 # awgn.enable:       Enable/disable AWGN generator
-# awgn.n0:           Noise power in dBfs
+# awgn.snr:          SNR in dB
+# awgn.signal_power: Received signal power in decibels full scale (dBfs)
 #
 # -- Fading emulator
 # fading.enable:     Enable/disable fading simulator
@@ -221,7 +222,7 @@ enable = false
 
 [channel.dl.awgn]
 #enable        = false
-#n0            = -30
+#snr           = 30
 
 [channel.dl.fading]
 #enable        = false
@@ -289,7 +290,7 @@ enable = false
 #                                   empty: use empty subcarriers in the boarder of pss/sss signal
 # pdsch_max_its:        Maximum number of turbo decoder iterations (Default 4)
 # pdsch_meas_evm:       Measure PDSCH EVM, increases CPU load (default false)
-# nof_phy_threads:      Selects the number of PHY threads (maximum 4, minimum 1, default 2)
+# nof_phy_threads:      Selects the number of PHY threads (maximum 4, minimum 1, default 3)
 # equalizer_mode:       Selects equalizer mode. Valid modes are: "mmse", "zf" or any 
 #                       non-negative real number to indicate a regularized zf coefficient.
 #                       Default is MMSE.
