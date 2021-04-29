@@ -1,14 +1,14 @@
-/*
- * Copyright 2013-2020 Software Radio Systems Limited
+/**
+ * Copyright 2013-2021 Software Radio Systems Limited
  *
- * This file is part of srsLTE.
+ * This file is part of srsRAN.
  *
- * srsLTE is free software: you can redistribute it and/or modify
+ * srsRAN is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsLTE is distributed in the hope that it will be useful,
+ * srsRAN is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -22,12 +22,13 @@
 #ifndef SRSENB_PARSER_H
 #define SRSENB_PARSER_H
 
-#include "srslte/asn1/asn1_utils.h"
+#include "srsran/asn1/asn1_utils.h"
 #include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <libconfig.h++>
 #include <list>
+#include <sstream>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -73,7 +74,6 @@ public:
     {
       std::string val;
       if (root.exists(name)) {
-
         if (enabled_value) {
           *enabled_value = true;
         }
@@ -141,7 +141,6 @@ public:
     {
       S val;
       if (root.exists(name)) {
-
         if (enabled_value) {
           *enabled_value = true;
         }
@@ -422,9 +421,9 @@ int str_to_enum(EnumType& enum_val, Setting& root)
   bool        found = nowhitespace_string_to_enum(enum_val, val);
   if (not found) {
     fprintf(stderr, "PARSER ERROR: Invalid option: \"%s\" for asn1 enum type\n", val.c_str());
-    fprintf(stderr, "Valid options:  \"%s\"", EnumType((typename EnumType::options)0).to_string().c_str());
+    fprintf(stderr, "Valid options:  \"%s\"", EnumType((typename EnumType::options)0).to_string());
     for (uint32_t i = 1; i < EnumType::nof_types; i++) {
-      fprintf(stderr, ", \"%s\"", EnumType((typename EnumType::options)i).to_string().c_str());
+      fprintf(stderr, ", \"%s\"", EnumType((typename EnumType::options)i).to_string());
     }
     fprintf(stderr, "\n");
   }

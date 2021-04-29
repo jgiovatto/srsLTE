@@ -1,14 +1,14 @@
-/*
- * Copyright 2013-2020 Software Radio Systems Limited
+/**
+ * Copyright 2013-2021 Software Radio Systems Limited
  *
- * This file is part of srsLTE.
+ * This file is part of srsRAN.
  *
- * srsLTE is free software: you can redistribute it and/or modify
+ * srsRAN is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsLTE is distributed in the hope that it will be useful,
+ * srsRAN is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -22,7 +22,7 @@
 #ifndef SRSLOG_OBJECT_REPOSITORY_H
 #define SRSLOG_OBJECT_REPOSITORY_H
 
-#include "srslte/srslog/detail/support/thread_utils.h"
+#include "srsran/srslog/detail/support/thread_utils.h"
 #include <unordered_map>
 #include <vector>
 
@@ -35,7 +35,7 @@ namespace srslog {
 template <typename K, typename V>
 class object_repository
 {
-  mutable detail::mutex m;
+  mutable detail::mutex    m;
   std::unordered_map<K, V> repo;
 
 public:
@@ -44,7 +44,7 @@ public:
   V* insert(const K& key, V&& value)
   {
     detail::scoped_lock lock(m);
-    const auto& insertion = repo.emplace(key, std::move(value));
+    const auto&         insertion = repo.emplace(key, std::move(value));
     if (!insertion.second)
       return nullptr;
     return &insertion.first->second;
@@ -57,7 +57,7 @@ public:
   V& emplace(Args&&... args)
   {
     detail::scoped_lock lock(m);
-    auto insertion = repo.emplace(std::forward<Args>(args)...);
+    auto                insertion = repo.emplace(std::forward<Args>(args)...);
     return insertion.first->second;
   }
 
@@ -66,13 +66,13 @@ public:
   V* find(const K& key)
   {
     detail::scoped_lock lock(m);
-    auto it = repo.find(key);
+    auto                it = repo.find(key);
     return (it != repo.end()) ? &it->second : nullptr;
   }
   const V* find(const K& key) const
   {
     detail::scoped_lock lock(m);
-    const auto it = repo.find(key);
+    const auto          it = repo.find(key);
     return (it != repo.cend()) ? &it->second : nullptr;
   }
 

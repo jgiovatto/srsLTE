@@ -1,14 +1,14 @@
-/*
- * Copyright 2013-2020 Software Radio Systems Limited
+/**
+ * Copyright 2013-2021 Software Radio Systems Limited
  *
- * This file is part of srsLTE.
+ * This file is part of srsRAN.
  *
- * srsLTE is free software: you can redistribute it and/or modify
+ * srsRAN is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsLTE is distributed in the hope that it will be useful,
+ * srsRAN is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -22,9 +22,9 @@
 #ifndef SRSLOG_FILE_UTILS_H
 #define SRSLOG_FILE_UTILS_H
 
-#include "srslte/srslog/bundled/fmt/format.h"
-#include "srslte/srslog/detail/support/error_string.h"
-#include "srslte/srslog/detail/support/memory_buffer.h"
+#include "srsran/srslog/bundled/fmt/format.h"
+#include "srsran/srslog/detail/support/error_string.h"
+#include "srsran/srslog/detail/support/memory_buffer.h"
 
 namespace srslog {
 
@@ -40,8 +40,7 @@ inline std::string format_error(const std::string& error, int error_code)
 }
 
 /// Splits the specified path into a filename and its extension (if present).
-inline std::pair<std::string, std::string>
-split_filename_extension(const std::string& filename)
+inline std::pair<std::string, std::string> split_filename_extension(const std::string& filename)
 {
   // Search for the last dot.
   auto dot_pos = filename.find_last_of('.');
@@ -50,8 +49,7 @@ split_filename_extension(const std::string& filename)
   //   a) No dot found: my_file
   //   b) Dot found at the beginning: .my_file
   //   c) Dot found at the end: my_file.
-  if (dot_pos == std::string::npos || dot_pos == 0 ||
-      dot_pos == filename.size() - 1) {
+  if (dot_pos == std::string::npos || dot_pos == 0 || dot_pos == filename.size() - 1) {
     return {filename, ""};
   }
 
@@ -70,8 +68,7 @@ split_filename_extension(const std::string& filename)
 }
 
 /// Builds a file name formatting the input base name and file index.
-inline std::string build_filename_with_index(const std::string& basename,
-                                             size_t index)
+inline std::string build_filename_with_index(const std::string& basename, size_t index)
 {
   if (index == 0) {
     return basename;
@@ -86,7 +83,7 @@ inline std::string build_filename_with_index(const std::string& basename,
 class file
 {
   std::string path;
-  std::FILE* handle = nullptr;
+  std::FILE*  handle = nullptr;
 
 public:
   ~file() { close(); }
@@ -94,7 +91,7 @@ public:
   explicit operator bool() const { return handle; }
 
   /// Returns the handle of the underlying file.
-  std::FILE* get_handle() { return handle; }
+  std::FILE* get_handle() const { return handle; }
 
   /// Returns the path of the file.
   const std::string& get_path() const { return path; }
@@ -110,20 +107,17 @@ public:
       return {};
     }
 
-    return format_error(fmt::format("Unable to create log file \"{}\"", path),
-                        errno);
+    return format_error(fmt::format("Unable to create log file \"{}\"", new_path), errno);
   }
 
   /// Writes the provided memory buffer into an open file, otherwise does
   /// nothing.
   detail::error_string write(detail::memory_buffer buffer)
   {
-    if (handle &&
-        std::fwrite(buffer.data(), sizeof(char), buffer.size(), handle) !=
-            buffer.size()) {
+    if (handle && std::fwrite(buffer.data(), sizeof(char), buffer.size(), handle) != buffer.size()) {
+      auto err_str = format_error(fmt::format("Unable to write log file \"{}\"", path), errno);
       close();
-      return format_error(fmt::format("Unable to write log file \"{}\"", path),
-                          errno);
+      return err_str;
     }
 
     return {};
@@ -133,10 +127,9 @@ public:
   detail::error_string flush()
   {
     if (handle && ::fflush(handle) == EOF) {
+      auto err_str = format_error(fmt::format("Error encountered while flushing log file \"{}\"", path), errno);
       close();
-      return format_error(
-          fmt::format("Error encountered while flushing log file \"{}\"", path),
-          errno);
+      return err_str;
     }
 
     return {};

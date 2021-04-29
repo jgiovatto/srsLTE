@@ -1,14 +1,14 @@
-/*
- * Copyright 2013-2020 Software Radio Systems Limited
+/**
+ * Copyright 2013-2021 Software Radio Systems Limited
  *
- * This file is part of srsLTE.
+ * This file is part of srsRAN.
  *
- * srsLTE is free software: you can redistribute it and/or modify
+ * srsRAN is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsLTE is distributed in the hope that it will be useful,
+ * srsRAN is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -19,21 +19,14 @@
  *
  */
 
-#include "srslte/common/timers.h"
+#include "srsran/common/test_common.h"
+#include "srsran/common/timers.h"
 #include <iostream>
 #include <random>
-#include <srslte/common/tti_sync_cv.h>
+#include <srsran/common/tti_sync_cv.h>
 #include <thread>
 
-#define TESTASSERT(cond)                                                                                               \
-  do {                                                                                                                 \
-    if (!(cond)) {                                                                                                     \
-      std::cout << "[" << __FUNCTION__ << "][Line " << __LINE__ << "]: FAIL at " << (#cond) << std::endl;              \
-      return -1;                                                                                                       \
-    }                                                                                                                  \
-  } while (0)
-
-using namespace srslte;
+using namespace srsran;
 
 int timers_test1()
 {
@@ -41,6 +34,7 @@ int timers_test1()
   uint32_t      dur = 5;
 
   {
+    // TEST: default ctor places unique_timer in correct state
     timer_handler::unique_timer t = timers.get_unique_timer();
     TESTASSERT(not t.is_running() and not t.is_expired());
     TESTASSERT(t.id() == 0);
@@ -51,8 +45,7 @@ int timers_test1()
 
     // TEST: Run multiple times with the same duration
     bool callback_called = false;
-    t.set(dur, [&callback_called](int) { callback_called = true; });
-    TESTASSERT(timers.get_cur_time() == 0);
+    t.set(dur, [&callback_called](int tid) { callback_called = true; });
     for (uint32_t runs = 0; runs < 3; ++runs) {
       callback_called = false;
       TESTASSERT(not t.is_running());
@@ -66,7 +59,6 @@ int timers_test1()
       TESTASSERT(not t.is_running() and t.is_expired());
       TESTASSERT(callback_called);
     }
-    TESTASSERT(timers.get_cur_time() == 3 * dur);
 
     // TEST: interrupt a timer. check if callback was called
     callback_called = false;
@@ -121,22 +113,21 @@ int timers_test1()
     timers.step_all();
     TESTASSERT(t.is_expired() and t2.is_expired() and t3.is_expired());
     TESTASSERT(first_id == 1);
-    printf("Last timer id=%d\n", last_id);
     TESTASSERT(last_id == 2);
   }
   // TEST: timer dtor is called and removes "timer" from "timers"
   TESTASSERT(timers.nof_timers() == 0);
 
-  return SRSLTE_SUCCESS;
+  return SRSRAN_SUCCESS;
 }
 
+/**
+ * Description:
+ * - calling stop() early, forbids the timer from getting expired
+ * - calling stop() after timer has expired should be a noop
+ */
 int timers_test2()
 {
-  /**
-   * Description:
-   * - calling stop() early, forbids the timer from getting expired
-   * - calling stop() after timer has expired should be a noop
-   */
   timer_handler timers;
   uint32_t      duration = 2;
 
@@ -162,15 +153,15 @@ int timers_test2()
   utimer2.stop();
   TESTASSERT(utimer2.is_expired());
 
-  return SRSLTE_SUCCESS;
+  return SRSRAN_SUCCESS;
 }
 
+/**
+ * Description:
+ * - setting a new duration while the timer is already running should not stop timer, and should extend timeout
+ */
 int timers_test3()
 {
-  /**
-   * Description:
-   * - setting a new duration while the timer is already running should not stop timer, and should extend timeout
-   */
   timer_handler timers;
   uint32_t      duration = 5;
 
@@ -191,15 +182,15 @@ int timers_test3()
     TESTASSERT(utimer.is_running());
   }
   timers.step_all();
-  TESTASSERT(not utimer.is_running());
+  TESTASSERT(not utimer.is_running() and utimer.is_expired());
 
-  return SRSLTE_SUCCESS;
+  return SRSRAN_SUCCESS;
 }
 
 struct timers_test4_ctxt {
   std::vector<timer_handler::unique_timer> timers;
-  srslte::tti_sync_cv                      tti_sync1;
-  srslte::tti_sync_cv                      tti_sync2;
+  srsran::tti_sync_cv                      tti_sync1;
+  srsran::tti_sync_cv                      tti_sync2;
   const uint32_t                           duration = 1000;
 };
 
@@ -302,7 +293,7 @@ int timers_test4()
 
   delete ctx;
 
-  return SRSLTE_SUCCESS;
+  return SRSRAN_SUCCESS;
 }
 
 /**
@@ -330,10 +321,7 @@ int timers_test5()
     std::string string = "test string";
     timers.defer_callback(2, [&vals, string]() {
       vals.push_back(2);
-      if (string != "test string") {
-        ERROR("string was not captured correctly\n");
-        exit(-1);
-      }
+      srsran_assert(string == "test string", "string was not captured correctly");
     });
   }
   timers.defer_callback(6, [&vals]() { vals.push_back(3); });
@@ -364,7 +352,7 @@ int timers_test5()
   TESTASSERT(vals.size() == 3);
   TESTASSERT(vals[2] == 3);
 
-  return SRSLTE_SUCCESS;
+  return SRSRAN_SUCCESS;
 }
 
 /**
@@ -409,17 +397,68 @@ int timers_test6()
   timers.step_all();
   TESTASSERT(vals.size() == 1 and vals[0] == 3);
 
-  return SRSLTE_SUCCESS;
+  return SRSRAN_SUCCESS;
+}
+
+/**
+ * Tests specific to timer_handler wheel-based implementation:
+ * - check if timer update is safe when its new updated wheel position matches the previous wheel position
+ * - multime timers can exist in the same wheel position
+ */
+int timers_test7()
+{
+  timer_handler timers;
+  size_t        wheel_size = timer_handler::get_wheel_size();
+
+  unique_timer t = timers.get_unique_timer();
+  t.set(2);
+  t.run();
+
+  timers.step_all();
+  TESTASSERT(not t.is_expired() and t.is_running());
+
+  // should fall in same wheel position as previous timer run
+  t.set(1 + wheel_size);
+  for (size_t i = 0; i < wheel_size; ++i) {
+    timers.step_all();
+    TESTASSERT(not t.is_expired() and t.is_running());
+  }
+  timers.step_all();
+  TESTASSERT(t.is_expired() and not t.is_running());
+
+  // the three timers will all fall in the same wheel position. However, only t and t3 should trigger
+  unique_timer t2 = timers.get_unique_timer();
+  unique_timer t3 = timers.get_unique_timer();
+  t.set(5);
+  t2.set(5 + wheel_size);
+  t3.set(5);
+  t.run();
+  t2.run();
+  t3.run();
+  TESTASSERT(timers.nof_running_timers() == 3 and timers.nof_timers() == 3);
+  for (size_t i = 0; i < 5; ++i) {
+    TESTASSERT(not t.is_expired() and t.is_running());
+    TESTASSERT(not t2.is_expired() and t2.is_running());
+    TESTASSERT(not t3.is_expired() and t3.is_running());
+    timers.step_all();
+  }
+  TESTASSERT(t.is_expired() and not t.is_running());
+  TESTASSERT(not t2.is_expired() and t2.is_running());
+  TESTASSERT(t3.is_expired() and not t3.is_running());
+  TESTASSERT(timers.nof_running_timers() == 1 and timers.nof_timers() == 3);
+
+  return SRSRAN_SUCCESS;
 }
 
 int main()
 {
-  TESTASSERT(timers_test1() == SRSLTE_SUCCESS);
-  TESTASSERT(timers_test2() == SRSLTE_SUCCESS);
-  TESTASSERT(timers_test3() == SRSLTE_SUCCESS);
-  TESTASSERT(timers_test4() == SRSLTE_SUCCESS);
-  TESTASSERT(timers_test5() == SRSLTE_SUCCESS);
-  TESTASSERT(timers_test6() == SRSLTE_SUCCESS);
+  TESTASSERT(timers_test1() == SRSRAN_SUCCESS);
+  TESTASSERT(timers_test2() == SRSRAN_SUCCESS);
+  TESTASSERT(timers_test3() == SRSRAN_SUCCESS);
+  TESTASSERT(timers_test4() == SRSRAN_SUCCESS);
+  TESTASSERT(timers_test5() == SRSRAN_SUCCESS);
+  TESTASSERT(timers_test6() == SRSRAN_SUCCESS);
+  TESTASSERT(timers_test7() == SRSRAN_SUCCESS);
   printf("Success\n");
   return 0;
 }

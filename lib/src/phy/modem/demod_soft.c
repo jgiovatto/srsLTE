@@ -1,14 +1,14 @@
-/*
- * Copyright 2013-2020 Software Radio Systems Limited
+/**
+ * Copyright 2013-2021 Software Radio Systems Limited
  *
- * This file is part of srsLTE.
+ * This file is part of srsRAN.
  *
- * srsLTE is free software: you can redistribute it and/or modify
+ * srsRAN is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsLTE is distributed in the hope that it will be useful,
+ * srsRAN is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -23,73 +23,51 @@
 #include <stdlib.h>
 #include <strings.h>
 
-#include "srslte/phy/modem/demod_soft.h"
-#include "srslte/phy/utils/bit.h"
-#include "srslte/phy/utils/debug.h"
-#include "srslte/phy/utils/vector.h"
+#include "srsran/phy/modem/demod_soft.h"
+#include "srsran/phy/utils/bit.h"
+#include "srsran/phy/utils/debug.h"
+#include "srsran/phy/utils/vector.h"
 
 #ifdef HAVE_NEONv8
 #include <arm_neon.h>
-inline static uint8x16_t v_load_s8(int i15,
-                                   int i14,
-                                   int i13,
-                                   int i12,
-                                   int i11,
-                                   int i10,
-                                   int i9,
-                                   int i8,
-                                   int i7,
-                                   int i6,
-                                   int i5,
-                                   int i4,
-                                   int i3,
-                                   int i2,
-                                   int i1,
-                                   int i0)
-{
-  uint8_t __attribute__((aligned(16)))
-  data[16] = {i0, i1, i2, i3, i4, i5, i6, i7, i8, i9, i10, i11, i12, i13, i14, i15};
-  return vld1q_u8(data);
-}
 
-#define int8x16_to_8x8x2(v) ((int8x8x2_t){{vget_low_s8(v), vget_high_s8(v)}})
+#define vshuff_s32_even(a, imm, res)                                                                                   \
+  do {                                                                                                                 \
+    *res = vsetq_lane_s32(vgetq_lane_s32((a), ((imm) >> 2) & 0x3), *res, 1);                                           \
+    *res = vsetq_lane_s32(vgetq_lane_s32((a), ((imm) >> 6) & 0x3), *res, 3);                                           \
+  } while (0)
 
-inline static void vshuff_s32_even(int32x4_t a, int imm, int32x4_t* res)
-{
-  *res = vsetq_lane_s32(vgetq_lane_s32((a), ((imm) >> 2) & 0x3), *res, 1);
-  *res = vsetq_lane_s32(vgetq_lane_s32((a), ((imm) >> 6) & 0x3), *res, 3);
-}
-inline static void vshuff_s32_odd(int32x4_t a, int imm, int32x4_t* res)
-{
-  *res = vsetq_lane_s32(vgetq_lane_s32((a), (imm)&0x3), *res, 0);
-  *res = vsetq_lane_s32(vgetq_lane_s32((a), ((imm) >> 4) & 0x3), *res, 2);
-}
+#define vshuff_s32_odd(a, imm, res)                                                                                    \
+  do {                                                                                                                 \
+    *res = vsetq_lane_s32(vgetq_lane_s32((a), (imm)&0x3), *res, 0);                                                    \
+    *res = vsetq_lane_s32(vgetq_lane_s32((a), ((imm) >> 4) & 0x3), *res, 2);                                           \
+  } while (0)
 
-inline static void vshuff_s32_idx(int32x4_t a, int imm, int32x4_t* res, int idx)
-{
-  *res = vsetq_lane_s32(vgetq_lane_s32((a), ((imm) >> idx * 2) & 0x3), *res, idx);
-}
+#define vshuff_s32_idx(a, imm, res, idx)                                                                               \
+  do {                                                                                                                 \
+    *res = vsetq_lane_s32(vgetq_lane_s32((a), ((imm) >> idx * 2) & 0x3), *res, idx);                                   \
+  } while (0)
 
-inline static void vshuff_s16_idx(int16x8_t a, int imm, int16x8_t* res, int idx)
-{
-  *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm) >> (idx * 4)) & 0xF), *res, idx);
-}
+#define vshuff_s16_idx(a, imm, res, idx)                                                                               \
+  do {                                                                                                                 \
+    *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm) >> (idx * 4)) & 0xF), *res, idx);                                 \
+  } while (0)
 
-inline static void vshuff_s16_even(int16x8_t a, int imm, int16x8_t* res)
-{
-  *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm) >> 4) & 0xF), *res, 1);
-  *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm) >> 12) & 0xF), *res, 3);
-  *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm) >> 20) & 0xF), *res, 5);
-  *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm) >> 28) & 0xF), *res, 7);
-}
+#define vshuff_s16_even(a, imm, res)                                                                                   \
+  do {                                                                                                                 \
+    *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm) >> 4) & 0xF), *res, 1);                                           \
+    *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm) >> 12) & 0xF), *res, 3);                                          \
+    *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm) >> 20) & 0xF), *res, 5);                                          \
+    *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm) >> 28) & 0xF), *res, 7);                                          \
+  } while (0)
 
-inline static void vshuff_s16_odd(int16x8_t a, int imm, int16x8_t* res)
-{
-  *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm)) & 0xF), *res, 0);
-  *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm) >> 8) & 0xF), *res, 2);
-  *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm) >> 16) & 0xF), *res, 4);
-  *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm) >> 24) & 0xF), *res, 6);
-}
+#define vshuff_s16_odd(a, imm, res)                                                                                    \
+  do {                                                                                                                 \
+    *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm)) & 0xF), *res, 0);                                                \
+    *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm) >> 8) & 0xF), *res, 2);                                           \
+    *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm) >> 16) & 0xF), *res, 4);                                          \
+    *res = vsetq_lane_s16(vgetq_lane_s16((a), ((imm) >> 24) & 0xF), *res, 6);                                          \
+  } while (0)
 
 #endif
 
@@ -131,17 +109,17 @@ void demod_bpsk_lte(const cf_t* symbols, float* llr, int nsymbols)
 
 void demod_qpsk_lte_b(const cf_t* symbols, int8_t* llr, int nsymbols)
 {
-  srslte_vec_convert_fb((const float*)symbols, -SCALE_BYTE_CONV_QPSK * M_SQRT2, llr, nsymbols * 2);
+  srsran_vec_convert_fb((const float*)symbols, -SCALE_BYTE_CONV_QPSK * M_SQRT2, llr, nsymbols * 2);
 }
 
 void demod_qpsk_lte_s(const cf_t* symbols, short* llr, int nsymbols)
 {
-  srslte_vec_convert_fi((const float*)symbols, -SCALE_SHORT_CONV_QPSK * M_SQRT2, llr, nsymbols * 2);
+  srsran_vec_convert_fi((const float*)symbols, -SCALE_SHORT_CONV_QPSK * M_SQRT2, llr, nsymbols * 2);
 }
 
 void demod_qpsk_lte(const cf_t* symbols, float* llr, int nsymbols)
 {
-  srslte_vec_sc_prod_fff((const float*)symbols, -M_SQRT2, llr, nsymbols * 2);
+  srsran_vec_sc_prod_fff((const float*)symbols, -M_SQRT2, llr, nsymbols * 2);
 }
 
 void demod_16qam_lte(const cf_t* symbols, float* llr, int nsymbols)
@@ -223,7 +201,6 @@ void demod_16qam_lte_b_neon(const cf_t* symbols, int8_t* llr, int nsymbols)
   result1n = vdupq_n_s8(0);
   result2n = vdupq_n_s8(0);
   for (int i = 0; i < nsymbols / 8; i++) {
-
     symbol1 = vld1q_f32(symbolsPtr);
     symbolsPtr += 4;
     symbol2 = vld1q_f32(symbolsPtr);
@@ -457,7 +434,6 @@ void demod_64qam_lte_s_neon(const cf_t* symbols, short* llr, int nsymbols)
   int16x8_t result31 = vdupq_n_s16(0);
 
   for (int i = 0; i < nsymbols / 4; i++) {
-
     symbol1 = vld1q_f32(symbolsPtr);
     symbolsPtr += 4;
     symbol2 = vld1q_f32(symbolsPtr);
@@ -520,7 +496,6 @@ void demod_64qam_lte_b_neon(const cf_t* symbols, int8_t* llr, int nsymbols)
   int8x16_t   result31 = vdupq_n_s8(0);
 
   for (int i = 0; i < nsymbols / 8; i++) {
-
     symbol1 = vld1q_f32(symbolsPtr);
     symbolsPtr += 4;
     symbol2 = vld1q_f32(symbolsPtr);
@@ -868,76 +843,76 @@ void demod_256qam_lte_s(const cf_t* symbols, short* llr, int nsymbols)
   }
 }
 
-int srslte_demod_soft_demodulate(srslte_mod_t modulation, const cf_t* symbols, float* llr, int nsymbols)
+int srsran_demod_soft_demodulate(srsran_mod_t modulation, const cf_t* symbols, float* llr, int nsymbols)
 {
   switch (modulation) {
-    case SRSLTE_MOD_BPSK:
+    case SRSRAN_MOD_BPSK:
       demod_bpsk_lte(symbols, llr, nsymbols);
       break;
-    case SRSLTE_MOD_QPSK:
+    case SRSRAN_MOD_QPSK:
       demod_qpsk_lte(symbols, llr, nsymbols);
       break;
-    case SRSLTE_MOD_16QAM:
+    case SRSRAN_MOD_16QAM:
       demod_16qam_lte(symbols, llr, nsymbols);
       break;
-    case SRSLTE_MOD_64QAM:
+    case SRSRAN_MOD_64QAM:
       demod_64qam_lte(symbols, llr, nsymbols);
       break;
-    case SRSLTE_MOD_256QAM:
+    case SRSRAN_MOD_256QAM:
       demod_256qam_lte(symbols, llr, nsymbols);
       break;
     default:
-      ERROR("Invalid modulation %d\n", modulation);
+      ERROR("Invalid modulation %d", modulation);
       return -1;
   }
   return 0;
 }
 
-int srslte_demod_soft_demodulate_s(srslte_mod_t modulation, const cf_t* symbols, short* llr, int nsymbols)
+int srsran_demod_soft_demodulate_s(srsran_mod_t modulation, const cf_t* symbols, short* llr, int nsymbols)
 {
   switch (modulation) {
-    case SRSLTE_MOD_BPSK:
+    case SRSRAN_MOD_BPSK:
       demod_bpsk_lte_s(symbols, llr, nsymbols);
       break;
-    case SRSLTE_MOD_QPSK:
+    case SRSRAN_MOD_QPSK:
       demod_qpsk_lte_s(symbols, llr, nsymbols);
       break;
-    case SRSLTE_MOD_16QAM:
+    case SRSRAN_MOD_16QAM:
       demod_16qam_lte_s(symbols, llr, nsymbols);
       break;
-    case SRSLTE_MOD_64QAM:
+    case SRSRAN_MOD_64QAM:
       demod_64qam_lte_s(symbols, llr, nsymbols);
       break;
-    case SRSLTE_MOD_256QAM:
+    case SRSRAN_MOD_256QAM:
       demod_256qam_lte_s(symbols, llr, nsymbols);
       break;
     default:
-      ERROR("Invalid modulation %d\n", modulation);
+      ERROR("Invalid modulation %d", modulation);
       return -1;
   }
   return 0;
 }
 
-int srslte_demod_soft_demodulate_b(srslte_mod_t modulation, const cf_t* symbols, int8_t* llr, int nsymbols)
+int srsran_demod_soft_demodulate_b(srsran_mod_t modulation, const cf_t* symbols, int8_t* llr, int nsymbols)
 {
   switch (modulation) {
-    case SRSLTE_MOD_BPSK:
+    case SRSRAN_MOD_BPSK:
       demod_bpsk_lte_b(symbols, llr, nsymbols);
       break;
-    case SRSLTE_MOD_QPSK:
+    case SRSRAN_MOD_QPSK:
       demod_qpsk_lte_b(symbols, llr, nsymbols);
       break;
-    case SRSLTE_MOD_16QAM:
+    case SRSRAN_MOD_16QAM:
       demod_16qam_lte_b(symbols, llr, nsymbols);
       break;
-    case SRSLTE_MOD_64QAM:
+    case SRSRAN_MOD_64QAM:
       demod_64qam_lte_b(symbols, llr, nsymbols);
       break;
-    case SRSLTE_MOD_256QAM:
+    case SRSRAN_MOD_256QAM:
       demod_256qam_lte_b(symbols, llr, nsymbols);
       break;
     default:
-      ERROR("Invalid modulation %d\n", modulation);
+      ERROR("Invalid modulation %d", modulation);
       return -1;
   }
   return 0;
