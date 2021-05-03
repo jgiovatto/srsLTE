@@ -79,11 +79,11 @@
 #include <arpa/inet.h>
 #include <fcntl.h>    /* For O_* constants */
 
-#include "srslte/srslte.h"
+#include "srsran/srsran.h"
 #include "rf_shmem_imp.h"
 #include "rf_helper.h"
-#include "srslte/phy/rf/rf.h"
-#include "srslte/phy/resampling/resample_arb.h"
+#include "srsran/phy/rf/rf.h"
+#include "srsran/phy/resampling/resample_arb.h"
 
 // define to allow debug
 // #define RF_SHMEM_DEBUG_MODE
@@ -171,7 +171,7 @@ typedef struct {
   cf_t                    iqdata[RF_SHMEM_MAX_CF_LEN]; // data
 } rf_shmem_element_t;
 
-sem_t * sem[SRSLTE_MAX_CARRIERS][RF_SHMEM_NUM_SF_X_FRAME] = {{0}};  // element r/w bin locks
+sem_t * sem[SRSRAN_MAX_CARRIERS][RF_SHMEM_NUM_SF_X_FRAME] = {{0}};  // element r/w bin locks
 
 // msg element bins 1 for each sf (tti)
 typedef struct {
@@ -203,10 +203,10 @@ typedef struct {
    double                    tx_gain;
    double                    rx_srate;
    double                    tx_srate;
-   double                    rx_freq[SRSLTE_MAX_CARRIERS];
-   double                    tx_freq[SRSLTE_MAX_CARRIERS];
+   double                    rx_freq[SRSRAN_MAX_CARRIERS];
+   double                    tx_freq[SRSRAN_MAX_CARRIERS];
    double                    clock_rate;
-   srslte_rf_error_handler_t error_handler;
+   srsran_rf_error_handler_t error_handler;
    void *                    error_arg;
    bool                      rx_stream;
    uint64_t                  tx_seqnum;
@@ -217,13 +217,13 @@ typedef struct {
    size_t                    tx_nof_late;
    size_t                    tx_nof_ok;
    size_t                    tx_nof_drop;
-   srslte_rf_info_t          rf_info;
-   int                       shm_dl_fd[SRSLTE_MAX_CARRIERS];
-   int                       shm_ul_fd[SRSLTE_MAX_CARRIERS];
-   void *                    shm_dl[SRSLTE_MAX_CARRIERS];       // dl shared mem
-   void *                    shm_ul[SRSLTE_MAX_CARRIERS];       // ul shared mem
-   rf_shmem_segment_t *      rx_segment[SRSLTE_MAX_CARRIERS];   // rx bins
-   rf_shmem_segment_t *      tx_segment[SRSLTE_MAX_CARRIERS];   // tx bins
+   srsran_rf_info_t          rf_info;
+   int                       shm_dl_fd[SRSRAN_MAX_CARRIERS];
+   int                       shm_ul_fd[SRSRAN_MAX_CARRIERS];
+   void *                    shm_dl[SRSRAN_MAX_CARRIERS];       // dl shared mem
+   void *                    shm_ul[SRSRAN_MAX_CARRIERS];       // ul shared mem
+   rf_shmem_segment_t *      rx_segment[SRSRAN_MAX_CARRIERS];   // rx bins
+   rf_shmem_segment_t *      tx_segment[SRSRAN_MAX_CARRIERS];   // tx bins
    int                       tx_loss;                           // random loss 0=none, 100=all
    uint32_t                  num_carriers; 
    int                       ctrl_sock;                         // sock control  
@@ -248,14 +248,14 @@ static inline uint32_t get_bin(const struct timeval * tv)
    return (tv_to_usec(tv) / tv_to_usec(&tv_step)) % RF_SHMEM_NUM_SF_X_FRAME;
  }
 
-static void rf_shmem_handle_error(void * arg, srslte_rf_error_t error)
+static void rf_shmem_handle_error(void * arg, srsran_rf_error_t error)
 {
   // XXX TODO make use of this handler
   printf("type %s", 
-          error.type == SRSLTE_RF_ERROR_LATE      ? "late"      :
-          error.type == SRSLTE_RF_ERROR_UNDERFLOW ? "underflow" :
-          error.type == SRSLTE_RF_ERROR_OVERFLOW  ? "overflow"  :
-          error.type == SRSLTE_RF_ERROR_OTHER     ? "other"     :
+          error.type == SRSRAN_RF_ERROR_LATE      ? "late"      :
+          error.type == SRSRAN_RF_ERROR_UNDERFLOW ? "underflow" :
+          error.type == SRSRAN_RF_ERROR_OVERFLOW  ? "overflow"  :
+          error.type == SRSRAN_RF_ERROR_OTHER     ? "other"     :
           "unknown error");
 }
 
@@ -263,8 +263,8 @@ static rf_shmem_state_t rf_shmem_state = { .dev_name        = "shmemrf",
                                            .nodetype        = RF_SHMEM_NTYPE_NONE,
                                            .rx_gain         = 0.0,
                                            .tx_gain         = 0.0,
-                                           .rx_srate        = SRSLTE_CS_SAMP_FREQ,
-                                           .tx_srate        = SRSLTE_CS_SAMP_FREQ,
+                                           .rx_srate        = SRSRAN_CS_SAMP_FREQ,
+                                           .tx_srate        = SRSRAN_CS_SAMP_FREQ,
                                            .rx_freq         = {0.0},
                                            .tx_freq         = {0.0},
                                            .clock_rate      = 0.0,
@@ -349,10 +349,10 @@ static int rf_shmem_resample(double srate_in,
                      sratio);
       }
 
-     srslte_resample_arb_t r;
-     srslte_resample_arb_init(&r, sratio, 0);
+     srsran_resample_arb_t r;
+     srsran_resample_arb_init(&r, sratio, 0);
 
-     return RF_SHMEM_BYTES_X_SAMPLE(srslte_resample_arb_compute(&r, 
+     return RF_SHMEM_BYTES_X_SAMPLE(srsran_resample_arb_compute(&r, 
                                                                 (cf_t*)data_in, 
                                                                 (cf_t*)data_out, 
                                                                 RF_SHMEM_SAMPLES_X_BYTE(nbytes)));
@@ -736,7 +736,7 @@ float rf_shmem_get_rssi(void *h)
  }
 
 
-void rf_shmem_register_error_handler(void *h, srslte_rf_error_handler_t error_handler, void * arg)
+void rf_shmem_register_error_handler(void *h, srsran_rf_error_handler_t error_handler, void * arg)
  {
    RF_SHMEM_GET_STATE(h);
 
@@ -757,9 +757,9 @@ int rf_shmem_open_multi(char *args, void **h, uint32_t nof_channels)
 
    *h = NULL;
 
-   if(! (nof_channels < SRSLTE_MAX_CARRIERS))
+   if(! (nof_channels < SRSRAN_MAX_CARRIERS))
      {
-        RF_SHMEM_INFO("channels %u !< MAX %u", nof_channels, SRSLTE_MAX_CARRIERS);
+        RF_SHMEM_INFO("channels %u !< MAX %u", nof_channels, SRSRAN_MAX_CARRIERS);
 
         return -1;
      }
@@ -922,7 +922,7 @@ int rf_shmem_set_rx_gain(void *h, double gain)
      _state->rx_gain = gain;
    }
 
-   return SRSLTE_SUCCESS;
+   return SRSRAN_SUCCESS;
  }
 
 
@@ -936,11 +936,11 @@ int rf_shmem_set_tx_gain(void *h, double gain)
      _state->tx_gain = gain;
    }
 
-   return SRSLTE_SUCCESS;
+   return SRSRAN_SUCCESS;
  }
 
 
-srslte_rf_info_t * rf_shmem_get_rf_info(void *h)
+srsran_rf_info_t * rf_shmem_get_rf_info(void *h)
   {
      RF_SHMEM_GET_STATE(h);
 
@@ -1053,7 +1053,7 @@ void rf_shmem_get_time(void *h, time_t *full_secs, double *frac_secs)
 int rf_shmem_recv_with_time(void *h, void *data, uint32_t nsamples, 
                             bool blocking, time_t *full_secs, double *frac_secs)
  {
-   void *d[SRSLTE_MAX_PORTS] = {data, NULL, NULL, NULL};
+   void *d[SRSRAN_MAX_PORTS] = {data, NULL, NULL, NULL};
 
    return rf_shmem_recv_with_time_multi(h, 
                                        d,
@@ -1159,7 +1159,7 @@ int rf_shmem_send_timed(void *h, void *data, int nsamples,
                        time_t full_secs, double frac_secs, bool has_time_spec,
                        bool blocking, bool is_sob, bool is_eob)
  {
-   void *d[SRSLTE_MAX_PORTS] = {data, NULL, NULL, NULL};
+   void *d[SRSRAN_MAX_PORTS] = {data, NULL, NULL, NULL};
 
    return rf_shmem_send_timed_multi(h, d, nsamples, full_secs, frac_secs, has_time_spec, blocking, is_sob, is_eob);
  }
@@ -1175,7 +1175,7 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
 
    if(nsamples == 0)
     {
-      return SRSLTE_SUCCESS;
+      return SRSRAN_SUCCESS;
     }
 
    // some random loss the higher the number the more loss (0-100)
@@ -1184,7 +1184,7 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
       if((rand() % 100) < _state->tx_loss)
        {
          ++_state->tx_nof_drop;
-         return SRSLTE_SUCCESS;
+         return SRSRAN_SUCCESS;
        }
     } 
 
@@ -1280,5 +1280,5 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
        }
     }
 
-   return SRSLTE_SUCCESS;
+   return SRSRAN_SUCCESS;
  }

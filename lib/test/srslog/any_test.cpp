@@ -1,14 +1,14 @@
-/*
- * Copyright 2013-2020 Software Radio Systems Limited
+/**
+ * Copyright 2013-2021 Software Radio Systems Limited
  *
- * This file is part of srsLTE.
+ * This file is part of srsRAN.
  *
- * srsLTE is free software: you can redistribute it and/or modify
+ * srsRAN is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsLTE is distributed in the hope that it will be useful,
+ * srsRAN is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -19,7 +19,7 @@
  *
  */
 
-#include "srslte/srslog/detail/support/any.h"
+#include "srsran/srslog/detail/support/any.h"
 #include "testing_helpers.h"
 
 using namespace srslog;
@@ -58,7 +58,7 @@ struct movable_object {
 static bool when_constructed_with_lvalue_then_any_has_value()
 {
   copyable_object value(5);
-  detail::any a(value);
+  detail::any     a(value);
 
   ASSERT_EQ(a.has_value(), true);
 
@@ -74,7 +74,7 @@ static bool when_constructed_with_lvalue_then_any_has_value()
 static bool when_constructed_with_rvalue_then_any_has_value()
 {
   movable_object value(5);
-  detail::any a(std::move(value));
+  detail::any    a(std::move(value));
 
   ASSERT_EQ(a.has_value(), true);
 
@@ -89,8 +89,8 @@ static bool when_constructed_with_rvalue_then_any_has_value()
 
 static bool when_constructed_with_make_any_then_any_has_int()
 {
-  int value = 5;
-  auto a = detail::make_any<int>(value);
+  int  value = 5;
+  auto a     = detail::make_any<int>(value);
 
   ASSERT_EQ(a.has_value(), true);
 
@@ -105,7 +105,7 @@ static bool when_constructed_with_make_any_then_any_has_int()
 
 static bool when_move_constructing_from_any_then_contents_are_transferred()
 {
-  int value = 5;
+  int         value = 5;
   detail::any a(value);
 
   detail::any b(std::move(a));
@@ -123,7 +123,7 @@ static bool when_move_constructing_from_any_then_contents_are_transferred()
 
 static bool when_move_assigning_from_any_then_contents_are_transferred()
 {
-  int value = 5;
+  int         value = 5;
   detail::any a(value);
 
   detail::any b(3.0);
@@ -152,9 +152,9 @@ static bool when_any_is_reset_then_value_is_lost()
 
 static bool when_swapping_any_then_values_are_exchanged()
 {
-  int i = 5;
+  int         i = 5;
   detail::any a(i);
-  double d = 3.14;
+  double      d = 3.14;
   detail::any b(d);
 
   swap(a, b);
@@ -167,7 +167,7 @@ static bool when_swapping_any_then_values_are_exchanged()
 
 static bool when_null_is_passed_to_any_cast_then_null_is_returned()
 {
-  detail::any* p = nullptr;
+  detail::any*       p  = nullptr;
   const detail::any* cp = nullptr;
   ASSERT_EQ(detail::any_cast<int>(p), nullptr);
   ASSERT_EQ(detail::any_cast<int>(cp), nullptr);
@@ -177,7 +177,7 @@ static bool when_null_is_passed_to_any_cast_then_null_is_returned()
 
 static bool when_empty_any_is_passed_to_any_cast_then_null_is_returned()
 {
-  detail::any a;
+  detail::any       a;
   const detail::any b;
   ASSERT_EQ(detail::any_cast<int>(&a), nullptr);
   ASSERT_EQ(detail::any_cast<int>(&b), nullptr);

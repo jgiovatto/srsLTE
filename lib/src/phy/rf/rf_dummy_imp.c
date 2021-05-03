@@ -24,9 +24,9 @@
  *
  */
 
-#include "srslte/srslte.h"
+#include "srsran/srsran.h"
 #include "rf_dummy_imp.h"
-#include "srslte/phy/rf/rf.h"
+#include "srsran/phy/rf/rf.h"
 
 #include <assert.h>
 #include <unistd.h>
@@ -65,20 +65,20 @@ typedef struct {
    double                    rx_freq;
    double                    tx_freq;
    double                    clock_rate;
-   srslte_rf_error_handler_t error_handler;
+   srsran_rf_error_handler_t error_handler;
    bool                      rx_stream;
-   srslte_rf_info_t          rf_info;
+   srsran_rf_info_t          rf_info;
 } rf_dummy_info_t;
 
 
 
-static void rf_dummy_handle_error(void * arg, srslte_rf_error_t error)
+static void rf_dummy_handle_error(void * arg, srsran_rf_error_t error)
 {
   printf("type %s", 
-          error.type == SRSLTE_RF_ERROR_LATE      ? "late"      :
-          error.type == SRSLTE_RF_ERROR_UNDERFLOW ? "underflow" :
-          error.type == SRSLTE_RF_ERROR_OVERFLOW  ? "overflow"  :
-          error.type == SRSLTE_RF_ERROR_OTHER     ? "other"     :
+          error.type == SRSRAN_RF_ERROR_LATE      ? "late"      :
+          error.type == SRSRAN_RF_ERROR_UNDERFLOW ? "underflow" :
+          error.type == SRSRAN_RF_ERROR_OVERFLOW  ? "overflow"  :
+          error.type == SRSRAN_RF_ERROR_OTHER     ? "other"     :
           "unknown error");
 }
 
@@ -88,8 +88,8 @@ static  rf_dummy_info_t rf_dummy_info = { .dev_name        = "dummyrf",
                                           .nof_rx_ports    = 1,
                                           .rx_gain         = 0.0,
                                           .tx_gain         = 0.0,
-                                          .rx_srate        = SRSLTE_CS_SAMP_FREQ,
-                                          .tx_srate        = SRSLTE_CS_SAMP_FREQ,
+                                          .rx_srate        = SRSRAN_CS_SAMP_FREQ,
+                                          .tx_srate        = SRSRAN_CS_SAMP_FREQ,
                                           .rx_freq         = 0.0,
                                           .tx_freq         = 0.0,
                                           .clock_rate      = 0.0,
@@ -167,7 +167,7 @@ float rf_dummy_get_rssi(void *h)
  }
 
 
-void rf_dummy_register_error_handler(void *h, srslte_rf_error_handler_t error_handler, void *arg)
+void rf_dummy_register_error_handler(void *h, srsran_rf_error_handler_t error_handler, void *arg)
  {
    GET_DEV_INFO(h);
 
@@ -211,7 +211,7 @@ int rf_dummy_set_rx_gain(void *h, double gain)
 
    _info->rx_gain = gain;
 
-   return SRSLTE_SUCCESS;
+   return SRSRAN_SUCCESS;
  }
 
 
@@ -223,7 +223,7 @@ int rf_dummy_set_tx_gain(void *h, double gain)
 
    _info->tx_gain = gain;
 
-   return SRSLTE_SUCCESS;
+   return SRSRAN_SUCCESS;
  }
 
 
@@ -246,7 +246,7 @@ double rf_dummy_get_tx_gain(void *h)
    return _info->tx_gain;
  }
 
-srslte_rf_info_t * rf_dummy_get_rf_info(void *h)
+srsran_rf_info_t * rf_dummy_get_rf_info(void *h)
   {
      GET_DEV_INFO(h);
 

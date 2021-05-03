@@ -1,3 +1,23 @@
+#
+# Copyright 2013-2021 Software Radio Systems Limited
+#
+# This file is part of srsRAN
+#
+# srsRAN is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of
+# the License, or (at your option) any later version.
+#
+# srsRAN is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# A copy of the GNU Affero General Public License can be found in
+# the LICENSE file in the top-level directory of this distribution
+# and at http://www.gnu.org/licenses/.
+#
+
 # - Find PCSC-Lite
 # Find the native PCSC-Lite includes and library
 #
@@ -5,7 +25,7 @@
 #  PCSCLITE_LIBRARIES   - List of libraries when using PCSC-Lite.
 #  PCSCLITE_FOUND       - True if PCSC-Lite found.
 
-FIND_PACKAGE(PkgConfig)
+FIND_PACKAGE(PkgConfig REQUIRED)
 PKG_CHECK_MODULES(PC_PCSCLITE libpcsclite)
 
 IF(NOT PCSCLITE_FOUND)
@@ -33,7 +53,7 @@ FIND_LIBRARY(PCSCLITE_LIBRARY NAMES pcsclite libpcsclite PCSC
 # handle the QUIETLY and REQUIRED arguments and set PCSCLITE_FOUND to TRUE if 
 # all listed variables are TRUE
 INCLUDE(FindPackageHandleStandardArgs)
-FIND_PACKAGE_HANDLE_STANDARD_ARGS(PCSCLITE DEFAULT_MSG PCSCLITE_LIBRARY PCSCLITE_INCLUDE_DIR)
+FIND_PACKAGE_HANDLE_STANDARD_ARGS(PCSCLite DEFAULT_MSG PCSCLITE_LIBRARY PCSCLITE_INCLUDE_DIR)
 
 IF(PCSCLITE_FOUND)
   SET(PCSCLITE_LIBRARIES ${PCSCLITE_LIBRARY})

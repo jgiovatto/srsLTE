@@ -1,14 +1,14 @@
-/*
- * Copyright 2013-2020 Software Radio Systems Limited
+/**
+ * Copyright 2013-2021 Software Radio Systems Limited
  *
- * This file is part of srsLTE.
+ * This file is part of srsRAN.
  *
- * srsLTE is free software: you can redistribute it and/or modify
+ * srsRAN is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of
  * the License, or (at your option) any later version.
  *
- * srsLTE is distributed in the hope that it will be useful,
+ * srsRAN is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
@@ -21,61 +21,66 @@
 
 #define NMSGS 1000000
 
-#include "srslte/common/buffer_pool.h"
-#include "srslte/upper/byte_buffer_queue.h"
+#include "srsran/common/buffer_pool.h"
+#include "srsran/upper/byte_buffer_queue.h"
 #include <stdio.h>
 
-using namespace srslte;
+using namespace srsran;
 
 typedef struct {
   byte_buffer_queue* q;
 } args_t;
 
-void* write_thread(void* a)
+void write_thread(byte_buffer_queue* q)
 {
-  args_t*           args = (args_t*)a;
-  byte_buffer_pool* pool = byte_buffer_pool::get_instance();
+  unique_byte_buffer_t b;
   for (uint32_t i = 0; i < NMSGS; i++) {
-    unique_byte_buffer_t b = srslte::allocate_unique_buffer(*pool, true);
+    do {
+      b = srsran::make_byte_buffer();
+      if (b == nullptr) {
+        // wait until pool is not depleted
+        std::this_thread::yield();
+      }
+    } while (b == nullptr);
     memcpy(b->msg, &i, 4);
     b->N_bytes = 4;
-    args->q->write(std::move(b));
+    q->write(std::move(b));
   }
-  return NULL;
 }
 
-int main(int argc, char** argv)
+int test_concurrent_writeread()
 {
-  bool                 result;
   byte_buffer_queue    q;
   unique_byte_buffer_t b;
-  pthread_t            thread;
-  args_t               args;
-  u_int32_t            r;
+  int                  result = 0;
 
-  result = true;
-  args.q = &q;
-
-  pthread_create(&thread, NULL, &write_thread, &args);
+  std::thread t([&q]() { write_thread(&q); });
 
   for (uint32_t i = 0; i < NMSGS; i++) {
-    b = q.read();
+    b          = q.read();
+    uint32_t r = 0;
     memcpy(&r, b->msg, 4);
-    if (r != i)
-      result = false;
+    if (r != i) {
+      result = -1;
+      break;
+    }
   }
 
-  pthread_join(thread, NULL);
+  t.join();
 
   if (q.size() != 0 || q.size_bytes() != 0) {
-    result = false;
+    result = -1;
   }
 
-  if (result) {
+  if (result == 0) {
     printf("Passed\n");
-    exit(0);
   } else {
     printf("Failed\n;");
-    exit(1);
   }
+  return result;
+}
+
+int main()
+{
+  return test_concurrent_writeread();
 }
