@@ -759,7 +759,6 @@ void phy_common::update_measurements(uint32_t                     cc_idx,
                 ch.sinr,
                 ch.sync_err);
 
-
     set_ch_metrics(cc_idx, ch);
 
     // Prepare measurements for serving cells

@@ -36,7 +36,7 @@
 extern "C" {
 #endif // __cplusplus
 
-// ALINK impatient, was 5 sec
+// joegio impatient, was 5 sec
 #define SRSRAN_TERM_TIMEOUT_S (1)
 
 // static vars required by signal handling
