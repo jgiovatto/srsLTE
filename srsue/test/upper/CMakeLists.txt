@@ -36,11 +36,11 @@ target_link_libraries(rrc_meas_test srsue_rrc srsue_upper srsran_upper srsran_ph
 add_test(rrc_meas_test rrc_meas_test)
 
 add_executable(nas_test nas_test.cc)
-target_link_libraries(nas_test srsue_upper srsran_upper srsran_phy rrc_asn1)
+target_link_libraries(nas_test srsue_upper srsran_upper srsran_phy rrc_asn1 ${emanelte_LIBRARIES})
 add_test(nas_test nas_test)
 
 add_executable(gw_test gw_test.cc)
-target_link_libraries(gw_test srsue_upper srsran_upper srsran_phy)
+target_link_libraries(gw_test srsue_upper srsran_upper srsran_phy ${emanelte_LIBRARIES})
 add_test(gw_test gw_test)
 
 add_executable(tft_test tft_test.cc)

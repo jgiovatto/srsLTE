@@ -46,7 +46,9 @@ target_link_libraries( srsepc  srsepc_mme
                                ${Boost_LIBRARIES}
                                ${SEC_LIBRARIES}
                                ${LIBCONFIGPP_LIBRARIES}
-                               ${SCTP_LIBRARIES})
+                               ${SCTP_LIBRARIES}
+                               ${emanelte_LIBRARIES}
+                               ${ostatistic_LIBRARIES})
 
 add_executable(srsmbms mbms-gw/main.cc )
 target_link_libraries(srsmbms   srsepc_mbms_gw
@@ -57,7 +59,10 @@ target_link_libraries(srsmbms   srsepc_mbms_gw
                                 ${Boost_LIBRARIES}
                                 ${SEC_LIBRARIES}
                                 ${LIBCONFIGPP_LIBRARIES}
-                                ${SCTP_LIBRARIES})
+                                ${SCTP_LIBRARIES}
+                                ${emanelte_LIBRARIES}
+                                ${ostatistic_LIBRARIES})
+
 if (RPATH)
   set_target_properties(srsepc PROPERTIES INSTALL_RPATH ".")
   set_target_properties(srsmbms PROPERTIES INSTALL_RPATH ".")

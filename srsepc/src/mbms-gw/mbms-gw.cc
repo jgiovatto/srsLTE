@@ -33,6 +33,8 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 
+#include "libemanelte/mbmsstatisticmanager.h"
+
 namespace srsepc {
 
 mbms_gw*        mbms_gw::m_instance    = NULL;
@@ -295,6 +297,9 @@ void mbms_gw::handle_sgi_md_pdu(srsran::byte_buffer_t* msg)
     srsran::console("Error writing to M1-U socket.\n");
   } else {
     m_logger.debug("Sent %d Bytes", msg->N_bytes);
+#ifdef PHY_ADAPTER_ENABLE
+    MBMSSTATS::updateDownlinkTraffic(iph->saddr, iph->daddr, msg->N_bytes);
+#endif
   }
 }
 

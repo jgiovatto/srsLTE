@@ -225,20 +225,38 @@ static rf_dev_t dev_zmq = {"zmq",
                            .srsran_rf_send_timed_multi = rf_zmq_send_timed_multi};
 #endif
 
-//#define ENABLE_DUMMY_DEV
-
+#define ENABLE_DUMMY_DEV
 #ifdef ENABLE_DUMMY_DEV
-int dummy_rcv()
-{
-  usleep(100000);
-  return 1;
-}
-void dummy_fnc() {}
 
-static rf_dev_t dev_dummy = {"dummy",   dummy_fnc, dummy_fnc, dummy_fnc, dummy_fnc, dummy_fnc, dummy_fnc, dummy_fnc,
-                             dummy_fnc, dummy_fnc, dummy_fnc, dummy_fnc, dummy_fnc, dummy_fnc, dummy_fnc, dummy_fnc,
-                             dummy_fnc, dummy_fnc, dummy_fnc, dummy_fnc, dummy_fnc, dummy_fnc, dummy_fnc, dummy_rcv,
-                             dummy_fnc, dummy_fnc, dummy_fnc, dummy_fnc, dummy_fnc};
+#include "rf_dummy_imp.h"
+static rf_dev_t dev_dummy = {
+  .name                              = "dummyrf", 
+  .srsran_rf_devname                 = rf_dummy_devname,
+  .srsran_rf_start_rx_stream         = rf_dummy_start_rx_stream,
+  .srsran_rf_stop_rx_stream          = rf_dummy_stop_rx_stream,
+  .srsran_rf_flush_buffer            = rf_dummy_flush_buffer,
+  .srsran_rf_has_rssi                = rf_dummy_has_rssi,
+  .srsran_rf_get_rssi                = rf_dummy_get_rssi,
+  .srsran_rf_suppress_stdout         = rf_dummy_suppress_stdout,
+  .srsran_rf_register_error_handler  = rf_dummy_register_error_handler,
+  .srsran_rf_open                    = rf_dummy_open,
+  .srsran_rf_open_multi              = rf_dummy_open_multi,
+  .srsran_rf_close                   = rf_dummy_close,
+  .srsran_rf_set_rx_srate            = rf_dummy_set_rx_srate,
+  .srsran_rf_set_rx_gain             = rf_dummy_set_rx_gain,
+  .srsran_rf_set_tx_gain             = rf_dummy_set_tx_gain,
+  .srsran_rf_get_rx_gain             = rf_dummy_get_rx_gain,
+  .srsran_rf_get_tx_gain             = rf_dummy_get_tx_gain,
+  .srsran_rf_get_info                = rf_dummy_get_rf_info,
+  .srsran_rf_set_rx_freq             = rf_dummy_set_rx_freq, 
+  .srsran_rf_set_tx_srate            = rf_dummy_set_tx_srate,
+  .srsran_rf_set_tx_freq             = rf_dummy_set_tx_freq,
+  .srsran_rf_get_time                = rf_dummy_get_time,  
+  .srsran_rf_recv_with_time          = rf_dummy_recv_with_time,
+  .srsran_rf_recv_with_time_multi    = rf_dummy_recv_with_time_multi,
+  .srsran_rf_send_timed              = rf_dummy_send_timed,
+  .srsran_rf_send_timed_multi        = rf_dummy_send_timed_multi
+};                        
 #endif
 
 static rf_dev_t* available_devices[] = {

@@ -27,3 +27,5 @@ endif()
 
 set(SOURCES_NR "../phy/vnf_phy_nr.cc")
 add_library(srsue_phy_nr STATIC ${SOURCES_NR})
+
+target_link_libraries(srsue_phy ${emanelte_LIBRARIES} ${protobuf_LIBRARIES} ${ostatistic_LIBRARIES})

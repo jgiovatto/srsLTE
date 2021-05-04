@@ -52,6 +52,8 @@
 #include "srsran/srslog/srslog.h"
 #include "srsran/system/sys_metrics_processor.h"
 
+#include "libemanelte/mhalenb.h"
+
 namespace srsenb {
 
 /*******************************************************************************
@@ -106,6 +108,10 @@ struct general_args_t {
   uint32_t    max_mac_ul_kos;
 };
 
+typedef struct {
+  bool daemonize;
+} runtime_args_t;
+
 struct all_args_t {
   enb_args_t        enb;
   enb_files_t       enb_files;
@@ -115,6 +121,8 @@ struct all_args_t {
   general_args_t    general;
   phy_args_t        phy;
   stack_args_t      stack;
+  runtime_args_t runtime;
+  EMANELTE::MHAL::mhal_config_t mhal;
 };
 
 struct rrc_cfg_t;

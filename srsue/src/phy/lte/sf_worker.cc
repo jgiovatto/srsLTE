@@ -25,6 +25,10 @@
 #include "srsue/hdr/phy/lte/sf_worker.h"
 #include <string.h>
 
+#ifdef PHY_ADAPTER_ENABLE
+#include "srsue/hdr/phy/phy_adapter.h"
+#endif
+
 #define Error(fmt, ...)                                                                                                \
   if (SRSRAN_DEBUG_ENABLED)                                                                                            \
   logger.error(fmt, ##__VA_ARGS__)
@@ -200,6 +204,9 @@ void sf_worker::work_imp()
   }
 
   /***** Uplink Generation + Transmission *******/
+#ifdef PHY_ADAPTER_ENABLE
+  phy_adapter::ue_ul_tx_init();
+#endif
 
   /* If TTI+4 is an uplink subframe (TODO: Support short PRACH and SRS in UpPts special subframes) */
   if ((srsran_sfidx_tdd_type(tdd_config, TTI_TX(tti) % 10) == SRSRAN_TDD_SF_U) || cell.frame_type == SRSRAN_FDD) {

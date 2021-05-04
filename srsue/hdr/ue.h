@@ -41,6 +41,8 @@
 
 #include "ue_metrics_interface.h"
 
+#include "libemanelte/mhalue.h"
+
 namespace srsue {
 
 /*******************************************************************************
@@ -76,6 +78,10 @@ typedef struct {
 } general_args_t;
 
 typedef struct {
+  bool daemonize;
+} runtime_args_t;
+
+typedef struct {
   srsran::rf_args_t rf;
   trace_args_t      trace;
   log_args_t        log;
@@ -86,6 +92,9 @@ typedef struct {
   gw_args_t    gw;
 
   general_args_t general;
+
+  runtime_args_t runtime;
+  EMANELTE::MHAL::mhal_config_t mhal;
 } all_args_t;
 
 /*******************************************************************************

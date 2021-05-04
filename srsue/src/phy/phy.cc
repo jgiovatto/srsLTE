@@ -27,6 +27,10 @@
 #include "srsran/srsran.h"
 #include "srsue/hdr/phy/phy.h"
 
+#ifdef PHY_ADAPTER_ENABLE
+#include "srsue/hdr/phy/phy_adapter.h"
+#endif
+
 #define Error(fmt, ...)                                                                                                \
   if (SRSRAN_DEBUG_ENABLED)                                                                                            \
   logger_phy.error(fmt, ##__VA_ARGS__)
@@ -538,6 +542,10 @@ bool phy::set_scell(srsran_cell_t cell_info, uint32_t cc_idx, uint32_t earfcn)
       double ul_freq = srsran_band_fu(common.get_ul_earfcn(earfcn)) * 1e6;
       radio->set_rx_freq(cc_idx, dl_freq);
       radio->set_tx_freq(cc_idx, ul_freq);
+
+#ifdef PHY_ADAPTER_ENABLE
+      phy_adapter::ue_set_frequency(cc_idx, dl_freq, ul_freq); // rx/tx
+#endif
     }
 
     // Set secondary serving cell synchronization

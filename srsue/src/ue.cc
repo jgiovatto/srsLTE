@@ -33,6 +33,11 @@
 #include <iostream>
 #include <string>
 
+#ifdef PHY_ADAPTER_ENABLE
+#include "srsue/hdr/phy/phy_adapter.h"
+#include "libemanelte/uestatisticmanager.h"
+#endif
+
 using namespace srsran;
 
 namespace srsue {
@@ -274,6 +279,13 @@ int ue::parse_args(const all_args_t& args_)
   // Set UE category
   args.stack.rrc.ue_category = (uint32_t)strtoul(args.stack.rrc.ue_category_str.c_str(), nullptr, 10);
 
+#ifdef PHY_ADAPTER_ENABLE
+  UESTATS::initialize(args.general.metrics_period_secs);
+
+  phy_adapter::ue_initialize(1, args.mhal);
+  phy_adapter::ue_start();
+#endif
+
   // Consider Carrier Aggregation support if more than one
   args.stack.rrc.support_ca = (args.phy.nof_lte_carriers > 1);
 
@@ -285,6 +297,9 @@ void ue::stop()
   // tear down UE in reverse order
   if (stack) {
     stack->stop();
+#ifdef PHY_ADAPTER_ENABLE
+    phy_adapter::ue_stop();
+#endif
   }
 
   if (gw_inst) {
@@ -327,6 +342,10 @@ bool ue::get_metrics(ue_metrics_t* m)
   stack->get_metrics(&m->stack);
   gw_inst->get_metrics(m->gw, m->stack.mac[0].nof_tti);
   m->sys = sys_proc.get_metrics();
+
+  UESTATS::setRRCState(rrc_state_text[m->stack.rrc.state]);
+  UESTATS::setEMMState(emm_state_text(m->stack.nas.state));
+
   return true;
 }
 

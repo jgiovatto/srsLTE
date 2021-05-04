@@ -36,6 +36,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "libemanelte/uestatisticmanager.h"
+
 namespace srsue {
 
 gw::gw() : thread("GW"), logger(srslog::fetch_basic_logger("GW", false)), tft_matcher(logger) {}
@@ -134,6 +136,10 @@ void gw::write_pdu(uint32_t lcid, srsran::unique_byte_buffer_t pdu)
     // Only handle IPv4 and IPv6 packets
     struct iphdr* ip_pkt = (struct iphdr*)pdu->msg;
     if (ip_pkt->version == 4 || ip_pkt->version == 6) {
+#ifdef PHY_ADAPTER_ENABLE
+      if(ip_pkt->version == 4)
+        UESTATS::updateDownlinkTraffic(ip_pkt->saddr, ip_pkt->daddr, pdu->N_bytes);
+#endif
       int n = write(tun_fd, pdu->msg, pdu->N_bytes);
       if (n > 0 && (pdu->N_bytes != (uint32_t)n)) {
         logger.warning("DL TUN/TAP write failure. Wanted to write %d B but only wrote %d B.", pdu->N_bytes, n);
@@ -163,6 +169,11 @@ void gw::write_pdu_mch(uint32_t lcid, srsran::unique_byte_buffer_t pdu)
     if (!if_up) {
       logger.warning("TUN/TAP not up - dropping gw RX message");
     } else {
+#ifdef PHY_ADAPTER_ENABLE
+      struct iphdr *iph = (struct iphdr *) pdu->msg;
+      if(iph->version == 4)
+        UESTATS::updateDownlinkTraffic(iph->saddr, iph->daddr, pdu->N_bytes);
+#endif
       int n = write(tun_fd, pdu->msg, pdu->N_bytes);
       if (n > 0 && (pdu->N_bytes != (uint32_t)n)) {
         logger.warning("DL TUN/TAP write failure");
@@ -345,6 +356,10 @@ void gw::run_thread()
       if (stack->is_lcid_enabled(lcid)) {
         pdu->set_timestamp();
         ul_tput_bytes += pdu->N_bytes;
+#ifdef PHY_ADAPTER_ENABLE
+            if (ip_pkt->version == 4)
+            UESTATS::updateUplinkTraffic(ip_pkt->saddr, ip_pkt->daddr, pdu->N_bytes);
+#endif
         stack->write_sdu(lcid, std::move(pdu));
         do {
           pdu = srsran::make_byte_buffer();
@@ -472,6 +487,9 @@ int gw::setup_if_addr4(uint32_t ip_addr, char* err_str)
       return SRSRAN_ERROR_CANT_START;
     }
     current_ip_addr = ip_addr;
+#ifdef PHY_ADAPTER_ENABLE
+    UESTATS::setIpAddress(htonl(ip_addr), inet_addr(args.tun_dev_netmask.c_str()));
+#endif
   }
   return SRSRAN_SUCCESS;
 }

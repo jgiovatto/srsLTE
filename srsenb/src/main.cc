@@ -45,6 +45,10 @@
 #include "srsenb/hdr/metrics_stdout.h"
 #include "srsran/common/enb_events.h"
 
+#ifdef PHY_ADAPTER_ENABLE
+#include "srsenb/hdr/metrics_ostatistic.h"
+#endif
+
 using namespace std;
 using namespace srsenb;
 namespace bpo = boost::program_options;
@@ -250,6 +254,18 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     ("coreless.ip_netmask", bpo::value<string>(&args->stack.coreless.gw_args.tun_dev_netmask)->default_value("255.255.255.0"), "Netmask of the TUN device")
     ("coreless.drb_lcid", bpo::value<uint8_t>(&args->stack.coreless.drb_lcid)->default_value(4), "LCID of the dummy DRB")
     ("coreless.rnti", bpo::value<uint16_t >(&args->stack.coreless.rnti)->default_value(1234), "RNTI of the dummy user")
+
+    ("runtime.daemonize", 
+      bpo::value<bool>(&args->runtime.daemonize)->default_value(false),
+       "Run this process as a daemon")
+
+    ("mhal.emane_configfile",
+      bpo::value<string>(&args->mhal.emane_configfile)->default_value("emanelte.xml"),
+       "Embedded EMANE emulator configuration file")
+
+    ("mhal.statistic_service_endpoint",
+      bpo::value<string>(&args->mhal.statistic_service_endpoint)->default_value("0.0.0.0:47100"),
+       "Statistic service endpoint")
     ;
 
   // Positional options - config file location
@@ -498,7 +514,15 @@ int main(int argc, char* argv[])
   srsran::metrics_hub<enb_metrics_t> metricshub;
   metrics_stdout                     metrics_screen;
 
-  cout << "---  Software Radio Systems LTE eNodeB  ---" << endl << endl;
+  srsran_debug_handle_crash(argc, argv);
+  parse_args(&args, argc, argv);
+
+  if(args.runtime.daemonize) {
+    cout << "Running as a daemon\n";
+    int ret = daemon(1, 0);
+  } else {
+    cout << "---  Software Radio Systems LTE eNodeB  ---" << endl << endl;
+  }
 
   srsran_debug_handle_crash(argc, argv);
   parse_args(&args, argc, argv);
@@ -566,8 +590,18 @@ int main(int argc, char* argv[])
     json_metrics.set_handle(enb.get());
   }
 
+#ifdef PHY_ADAPTER_ENABLE
+  metrics_ostatistic metrics_ostatistic;
+  metricshub.add_listener(&metrics_ostatistic);
+  metrics_ostatistic.set_handle(enb.get());
+#endif
+
   // create input thread
-  std::thread input(&input_loop, &metrics_screen, (enb_command_interface*)enb.get());
+  std::thread input{};
+
+  if(! args.runtime.daemonize) {
+    input = std::thread(&input_loop, &metrics_screen, (enb_command_interface*)enb.get());
+  }
 
   if (running) {
     if (args.gui.enable) {
@@ -585,7 +619,9 @@ int main(int argc, char* argv[])
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  input.join();
+  if(! args.runtime.daemonize) {
+    input.join();
+  }
   metricshub.stop();
   enb->stop();
   cout << "---  exiting  ---" << endl;

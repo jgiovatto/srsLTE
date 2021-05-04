@@ -24,6 +24,10 @@
 #include "srsran/interfaces/phy_interface_types.h"
 #include "srsran/srsran.h"
 
+#ifdef PHY_ADAPTER_ENABLE
+#include "srsue/hdr/phy/phy_adapter.h"
+#endif
+
 #define Error(fmt, ...)                                                                                                \
   if (SRSRAN_DEBUG_ENABLED)                                                                                            \
   logger.error(fmt, ##__VA_ARGS__)
@@ -122,6 +126,10 @@ bool prach::set_cell(srsran_cell_t cell_, srsran_prach_cfg_t prach_cfg)
     Error("Initiating PRACH library");
     return false;
   }
+
+#ifdef PHY_ADAPTER_ENABLE
+  phy_adapter::ue_set_prach_freq_offset(prach_cfg.freq_offset);
+#endif
 
   buffer_bitmask.reset();
   len             = prach_obj.N_seq + prach_obj.N_cp;
@@ -241,12 +249,17 @@ cf_t* prach::generate(float cfo, uint32_t* nof_sf, float* target_power)
     return nullptr;
   }
 
+#ifndef PHY_ADAPTER_ENABLE // ALINK_XXX_MEMORY
   // Correct CFO before transmission
   srsran_cfo_correct(&cfo_h, buffer[f_idx][preamble_idx], signal_buffer, cfo / srsran_symbol_sz(cell.nof_prb));
-
+#endif
   // pad guard symbols with zeros
   uint32_t nsf = (len - 1) / SRSRAN_SF_LEN_PRB(cell.nof_prb) + 1;
+#ifndef PHY_ADAPTER_ENABLE
   srsran_vec_cf_zero(&signal_buffer[len], (nsf * SRSRAN_SF_LEN_PRB(cell.nof_prb) - len));
+#else
+  phy_adapter::ue_ul_put_prach(preamble_idx);
+#endif
 
   *nof_sf = nsf;
 

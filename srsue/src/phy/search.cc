@@ -22,6 +22,10 @@
 #include "srsue/hdr/phy/search.h"
 #include "srsran/common/standard_streams.h"
 
+#ifdef PHY_ADAPTER_ENABLE
+#include "srsue/hdr/phy/phy_adapter.h"
+#endif
+
 #define Error(fmt, ...)                                                                                                \
   if (SRSRAN_DEBUG_ENABLED)                                                                                            \
   logger.error(fmt, ##__VA_ARGS__)
@@ -115,12 +119,16 @@ search::ret_code search::run(srsran_cell_t* cell_, std::array<uint8_t, SRSRAN_BC
   Info("SYNC:  Searching for cell...");
   srsran::console(".");
 
+#ifdef PHY_ADAPTER_ENABLE
+  ret = phy_adapter::ue_dl_cellsearch_scan(&cs, found_cells, force_N_id_2, &max_peak_cell);
+#else
   if (force_N_id_2 >= 0 && force_N_id_2 < 3) {
     ret           = srsran_ue_cellsearch_scan_N_id_2(&cs, force_N_id_2, &found_cells[force_N_id_2]);
     max_peak_cell = force_N_id_2;
   } else {
     ret = srsran_ue_cellsearch_scan(&cs, found_cells, &max_peak_cell);
   }
+#endif
 
   if (ret < 0) {
     Error("SYNC:  Error decoding MIB: Error searching PSS");
@@ -154,6 +162,11 @@ search::ret_code search::run(srsran_cell_t* cell_, std::array<uint8_t, SRSRAN_BC
 
   /* Find and decode MIB */
   int sfn_offset;
+#ifdef PHY_ADAPTER_ENABLE
+  ret = phy_adapter::ue_dl_mib_search(&cs, &ue_mib_sync, &new_cell);
+  if (ret == 1) {
+    phy_adapter::ue_set_bandwidth(new_cell.nof_prb);
+#else
   ret = srsran_ue_mib_sync_decode(&ue_mib_sync, 40, bch_payload.data(), &new_cell.nof_ports, &sfn_offset);
   if (ret == 1) {
     srsran_pbch_mib_unpack(bch_payload.data(), &new_cell, NULL);
@@ -161,7 +174,7 @@ search::ret_code search::run(srsran_cell_t* cell_, std::array<uint8_t, SRSRAN_BC
     std::array<uint8_t, SRSRAN_BCH_PAYLOAD_LEN / 8> mib_packed;
     srsran_bit_pack_vector(bch_payload.data(), mib_packed.data(), SRSRAN_BCH_PAYLOAD_LEN);
     std::copy(std::begin(mib_packed), std::end(mib_packed), std::begin(bch_payload));
-
+#endif
     fprintf(stdout,
             "Found Cell:  Mode=%s, PCI=%d, PRB=%d, Ports=%d, CFO=%.1f KHz\n",
             new_cell.frame_type ? "TDD" : "FDD",

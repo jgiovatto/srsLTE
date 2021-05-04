@@ -33,6 +33,8 @@
 #include <boost/program_options.hpp>
 #include <iostream>
 
+#include "libemanelte/epcstatisticmanager.h"
+
 using namespace std;
 using namespace srsepc;
 namespace bpo = boost::program_options;
@@ -58,10 +60,20 @@ typedef struct {
 } log_args_t;
 
 typedef struct {
+  bool daemonize;
+} runtime_args_t;
+
+typedef struct{
+  std::string statistic_service_endpoint;
+}mhal_args_t;
+
+typedef struct {
   mme_args_t  mme_args;
   hss_args_t  hss_args;
   spgw_args_t spgw_args;
   log_args_t  log_args;
+  runtime_args_t runtime;
+  mhal_args_t   mhal;
 } all_args_t;
 
 /**********************************************************************
@@ -146,6 +158,14 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     ("log.all_hex_limit", bpo::value<int>(&args->log_args.all_hex_limit)->default_value(32),  "ALL log hex dump limit")
 
     ("log.filename", bpo::value<string>(&args->log_args.filename)->default_value("/tmp/epc.log"),"Log filename")
+
+    ("runtime.daemonize",   
+      bpo::value<bool>(&args->runtime.daemonize)->default_value(false),
+       "Run this process as a daemon")
+
+    ("mhal.statistic_service_endpoint",
+      bpo::value<string>(&args->mhal.statistic_service_endpoint)->default_value("0.0.0.0:47100"),
+       "Statistic service endpoint")
     ;
 
   // Positional options - config file location
@@ -366,14 +386,20 @@ int main(int argc, char* argv[])
 {
   srsran_register_signal_handler();
 
-  // print build info
-  cout << endl << get_build_string() << endl;
-
-  cout << endl << "---  Software Radio Systems EPC  ---" << endl << endl;
   srsran_debug_handle_crash(argc, argv);
 
   all_args_t args;
   parse_args(&args, argc, argv);
+
+  if(args.runtime.daemonize) {
+    cout << "Running as a daemon\n";
+    int ret = daemon(1, 0);
+  } else {
+    // print build info
+    cout << endl << get_build_string() << endl;
+
+    cout << endl <<"---  Software Radio Systems EPC  ---" << endl << endl;
+  }
 
   // Setup logging.
   log_sink = (args.log_args.filename == "stdout") ? srslog::create_stdout_sink()
@@ -442,6 +468,10 @@ int main(int argc, char* argv[])
     cout << "Error initializing SP-GW" << endl;
     exit(1);
   }
+
+#ifdef PHY_ADAPTER_ENABLE
+  EPCSTATS::initialize(args.mhal.statistic_service_endpoint);
+#endif
 
   mme->start();
   spgw->start();

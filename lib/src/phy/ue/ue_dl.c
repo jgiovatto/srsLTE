@@ -278,11 +278,13 @@ int srsran_ue_dl_set_mbsfn_area_id(srsran_ue_dl_t* q, uint16_t mbsfn_area_id)
 {
   int ret = SRSRAN_ERROR_INVALID_INPUTS;
   if (q != NULL) {
+#ifndef PHY_ADAPTER_ENABLE
     ret = SRSRAN_ERROR;
     if (srsran_chest_dl_set_mbsfn_area_id(&q->chest, mbsfn_area_id)) {
       ERROR("Error setting MBSFN area ID ");
       return ret;
     }
+#endif
     if (srsran_pmch_set_area_id(&q->pmch, mbsfn_area_id)) {
       ERROR("Error setting MBSFN area ID ");
       return ret;

@@ -24,6 +24,10 @@
 
 #include "srsenb/hdr/phy/lte/cc_worker.h"
 
+#ifdef PHY_ADAPTER_ENABLE
+#include "srsenb/hdr/phy/phy_adapter.h"
+#endif
+
 #define Error(fmt, ...)                                                                                                \
   if (SRSRAN_DEBUG_ENABLED)                                                                                            \
   logger.error(fmt, ##__VA_ARGS__)
@@ -214,7 +218,9 @@ void cc_worker::work_ul(const srsran_ul_sf_cfg_t& ul_sf_cfg, stack_interface_phy
   logger.set_context(ul_sf.tti);
 
   // Process UL signal
+#ifndef PHY_ADAPTER_ENABLE
   srsran_enb_ul_fft(&enb_ul);
+#endif
 
   // Decode pending UL grants for the tti they were scheduled
   decode_pusch(ul_grants.pusch, ul_grants.nof_grants);
@@ -233,6 +239,10 @@ void cc_worker::work_dl(const srsran_dl_sf_cfg_t&            dl_sf_cfg,
 
   // Put base signals (references, PBCH, PCFICH and PSS/SSS) into the resource grid
   srsran_enb_dl_put_base(&enb_dl, &dl_sf);
+
+#ifdef PHY_ADAPTER_ENABLE
+  phy_adapter::enb_dl_cc_tx_init(&enb_dl, tti_tx_dl, dl_grants.cfi, cc_idx);
+#endif
 
   // Put DL grants to resource grid. PDSCH data will be encoded as well.
   if (dl_sf_cfg.sf_type == SRSRAN_SF_NORM) {
@@ -322,7 +332,11 @@ void cc_worker::decode_pusch_rnti(stack_interface_phy_lte::ul_sched_grant_t& ul_
   ul_cfg.pusch.softbuffers.rx = ul_grant.softbuffer_rx;
   pusch_res.data              = ul_grant.data;
   if (pusch_res.data) {
+#ifndef PHY_ADAPTER_ENABLE
     if (srsran_enb_ul_get_pusch(&enb_ul, &ul_sf, &ul_cfg.pusch, &pusch_res)) {
+#else
+    if (phy_adapter::enb_ul_cc_get_pusch(&enb_ul, &ul_sf, &ul_cfg.pusch, &pusch_res, rnti, cc_idx)) {
+#endif
       Error("Decoding PUSCH for RNTI %x", rnti);
       return;
     }
@@ -412,7 +426,11 @@ int cc_worker::decode_pucch()
       // If ret is more than success, UCI is present
       if (ret > SRSRAN_SUCCESS) {
         // Decode PUCCH
+#ifndef PHY_ADAPTER_ENABLE
         if (srsran_enb_ul_get_pucch(&enb_ul, &ul_sf, &ul_cfg.pucch, &pucch_res)) {
+#else
+        if (phy_adapter::enb_ul_cc_get_pucch(&enb_ul, &ul_sf, &ul_cfg.pucch, &pucch_res, cc_idx)) {
+#endif
           Error("Error getting PUCCH");
           continue;
         }
@@ -447,7 +465,11 @@ int cc_worker::encode_phich(stack_interface_phy_lte::ul_sched_ack_t* acks, uint3
 {
   for (uint32_t i = 0; i < nof_acks; i++) {
     if (acks[i].rnti && ue_db.count(acks[i].rnti)) {
+#ifndef PHY_ADAPTER_ENABLE
       srsran_enb_dl_put_phich(&enb_dl, &ue_db[acks[i].rnti]->phich_grant, acks[i].ack);
+#else
+      phy_adapter::enb_dl_cc_put_phich(&enb_dl, &ue_db[acks[i].rnti]->phich_grant, &acks[i], cc_idx);
+#endif
 
       Info("PHICH: rnti=0x%x, hi=%d, I_lowest=%d, n_dmrs=%d, tti_tx_dl=%d",
            acks[i].rnti,
@@ -479,7 +501,12 @@ int cc_worker::encode_pdcch_ul(stack_interface_phy_lte::ul_sched_grant_t* grants
         }
       }
 
+
+#ifndef PHY_ADAPTER_ENABLE
       if (srsran_enb_dl_put_pdcch_ul(&enb_dl, &dci_cfg, &grants[i].dci)) {
+#else
+      if (phy_adapter::enb_dl_cc_put_pdcch_ul(&enb_dl, &dci_cfg, &grants[i].dci, i, cc_idx)) {
+#endif
         Error("Error putting PUSCH %d", i);
         return SRSRAN_ERROR;
       }
@@ -514,7 +541,11 @@ int cc_worker::encode_pdcch_dl(stack_interface_phy_lte::dl_sched_grant_t* grants
         }
       }
 
+#ifndef PHY_ADAPTER_ENABLE
       if (srsran_enb_dl_put_pdcch_dl(&enb_dl, &dci_cfg, &grants[i].dci)) {
+#else
+      if (phy_adapter::enb_dl_cc_put_pdcch_dl(&enb_dl, &dci_cfg, &grants[i], i, cc_idx)) {
+#endif
         ERROR("Error putting PDCCH %d", i);
         return SRSRAN_ERROR;
       }
@@ -541,7 +572,11 @@ int cc_worker::encode_pmch(stack_interface_phy_lte::dl_sched_grant_t* grant, srs
   pmch_cfg.pdsch_cfg.softbuffers.tx[0] = &temp_mbsfn_softbuffer;
 
   // Encode PMCH
+#ifndef PHY_ADAPTER_ENABLE
   if (srsran_enb_dl_put_pmch(&enb_dl, &pmch_cfg, grant->data[0])) {
+#else
+  if (phy_adapter::enb_dl_cc_put_pmch(&enb_dl, &pmch_cfg, grant, cc_idx)) {
+#endif
     Error("Error putting PMCH");
     return SRSRAN_ERROR;
   }
@@ -588,7 +623,11 @@ int cc_worker::encode_pdsch(stack_interface_phy_lte::dl_sched_grant_t* grants, u
       }
 
       // Encode PDSCH
+#ifndef PHY_ADAPTER_ENABLE
       if (srsran_enb_dl_put_pdsch(&enb_dl, &dl_cfg.pdsch, grants[i].data)) {
+#else
+      if (phy_adapter::enb_dl_cc_put_pdsch_dl(&enb_dl, &dl_cfg.pdsch, &grants[i], i, cc_idx)) {
+#endif
         Error("Error putting PDSCH %d", i);
         return SRSRAN_ERROR;
       }

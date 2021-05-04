@@ -28,6 +28,10 @@
 #include <algorithm>
 #include <unistd.h>
 
+#ifdef PHY_ADAPTER_ENABLE
+#include "srsue/hdr/phy/phy_adapter.h"
+#endif
+
 #define Error(fmt, ...)                                                                                                \
   if (SRSRAN_DEBUG_ENABLED)                                                                                            \
   phy_logger.error(fmt, ##__VA_ARGS__)
@@ -303,6 +307,10 @@ bool sync::cell_select_init(phy_cell_t new_cell)
     return false;
   }
 
+#ifdef PHY_ADAPTER_ENABLE
+  phy_adapter::ue_set_cell(&new_cell);
+#endif
+
   Info("Cell Select: Going to IDLE");
   phy_state.go_idle();
   worker_com->reset();
@@ -428,6 +436,7 @@ void sync::run_camping_in_sync_state(lte::sf_worker*      lte_worker,
   phy_lib_logger.set_context(tti);
   phy_logger.set_context(tti);
 
+#ifndef PHY_ADAPTER_ENABLE
   // Check tti is synched with ue_sync
   if (srsran_ue_sync_get_sfidx(&ue_sync) != tti % 10) {
     uint32_t sfn = tti / 10;
@@ -473,7 +482,7 @@ void sync::run_camping_in_sync_state(lte::sf_worker*      lte_worker,
       phy_logger.warning("SFN not yet synchronized, sending out-of-sync");
     }
   }
-
+#endif
   Debug("SYNC:  Worker %d synchronized", lte_worker->get_id());
 
   metrics.sfo   = srsran_ue_sync_get_sfo(&ue_sync);
@@ -563,7 +572,11 @@ void sync::run_camping_state()
   }
 
   // Primary Cell (PCell) Synchronization
+#ifndef PHY_ADAPTER_ENABLE
   switch (srsran_ue_sync_zerocopy(&ue_sync, sync_buffer.to_cf_t(), lte_worker->get_buffer_len())) {
+#else
+  switch (phy_adapter::ue_dl_sync_search(&ue_sync, tti)) {
+#endif
     case 1:
       run_camping_in_sync_state(lte_worker, nr_worker, sync_buffer);
       break;
@@ -870,6 +883,12 @@ bool sync::set_frequency()
     radio_h->set_rx_freq(0, set_dl_freq);
     radio_h->set_tx_freq(0, set_ul_freq);
 
+#ifdef PHY_ADAPTER_ENABLE
+    phy_adapter::ue_set_earfcn(set_dl_freq, set_ul_freq, current_earfcn); // rx/tx
+    phy_adapter::ue_set_frequency(0, set_dl_freq, set_ul_freq);           // rx/tx
+    phy_adapter::ue_set_sync(this);
+#endif
+
     ul_dl_factor = (float)(set_ul_freq / set_dl_freq);
 
     srsran_ue_sync_reset(&ue_sync);
@@ -924,7 +943,11 @@ int sync::radio_recv_fnc(srsran::rf_buffer_t& data, srsran_timestamp_t* rx_time)
   srsran::rf_timestamp_t& rf_timestamp = (rx_time == nullptr) ? dummy_ts : last_rx_time;
 
   // Receive
+#ifndef PHY_ADAPTER_ENABLE
   if (not radio_h->rx_now(data, rf_timestamp)) {
+#else
+  if (not phy_adapter::ue_dl_read_frame(last_rx_time.get_ptr(0))) {
+#endif
     return SRSRAN_ERROR;
   }
 

@@ -23,6 +23,10 @@
 #include "srsran/interfaces/enb_mac_interfaces.h"
 #include "srsran/srsran.h"
 
+#ifdef PHY_ADAPTER_ENABLE
+#include "srsenb/hdr/phy/phy_adapter.h"
+#endif
+
 namespace srsenb {
 
 int prach_worker::init(const srsran_cell_t&      cell_,
@@ -108,9 +112,11 @@ int prach_worker::new_tti(uint32_t tti_rx, cf_t* buffer_rx)
       return -1;
     }
     if (current_buffer->nof_samples + SRSRAN_SF_LEN_PRB(cell.nof_prb) < sf_buffer_sz) {
+#ifndef PHY_ADAPTER_ENABLE // MEMORY
       memcpy(&current_buffer->samples[sf_cnt * SRSRAN_SF_LEN_PRB(cell.nof_prb)],
              buffer_rx,
              sizeof(cf_t) * SRSRAN_SF_LEN_PRB(cell.nof_prb));
+#endif
       current_buffer->nof_samples += SRSRAN_SF_LEN_PRB(cell.nof_prb);
       if (sf_cnt == 0) {
         current_buffer->tti = tti_rx;
@@ -138,6 +144,7 @@ int prach_worker::run_tti(sf_buffer* b)
 {
   uint32_t prach_nof_det = 0;
   if (srsran_prach_tti_opportunity(&prach, b->tti, -1)) {
+#ifndef PHY_ADAPTER_ENABLE
     // Detect possible PRACHs
     if (srsran_prach_detect_offset(&prach,
                                    prach_cfg.freq_offset,
@@ -147,6 +154,14 @@ int prach_worker::run_tti(sf_buffer* b)
                                    prach_offsets,
                                    prach_p2avg,
                                    &prach_nof_det)) {
+#else
+    if(phy_adapter::enb_ul_cc_get_prach(prach_indices, 
+                                        prach_offsets, 
+                                        prach_p2avg, 
+                                        sizeof(prach_indices) / sizeof(prach_indices[0]),
+                                        prach_nof_det,
+                                        cc_idx)) {
+#endif
       logger.error("Error detecting PRACH");
       return SRSRAN_ERROR;
     }

@@ -29,6 +29,11 @@
 #include "srsran/radio/radio_null.h"
 #include <iostream>
 
+#ifdef PHY_ADAPTER_ENABLE
+#include "srsenb/hdr/phy/phy_adapter.h"
+#include "libemanelte/enbstatisticmanager.h"
+#endif
+
 namespace srsenb {
 
 enb::enb(srslog::sink& log_sink) :
@@ -188,7 +193,22 @@ int enb::parse_args(const all_args_t& args_, rrc_cfg_t& _rrc_cfg)
 {
   // set member variable
   args = args_;
-  return enb_conf_sections::parse_cfg_files(&args, &_rrc_cfg, &phy_cfg);
+
+  int result = enb_conf_sections::parse_cfg_files(&args, &_rrc_cfg, &phy_cfg);
+
+#ifdef PHY_ADAPTER_ENABLE
+  if(result != SRSRAN_ERROR)
+   {
+     ENBSTATS::initialize(args.general.metrics_period_secs);
+
+     phy_adapter::enb_initialize(1, 
+                                 phy_cfg.phy_cell_cfg,
+                                 args.mhal, 
+                                 &_rrc_cfg);
+   }
+#endif
+
+ return result;
 }
 
 void enb::start_plot()

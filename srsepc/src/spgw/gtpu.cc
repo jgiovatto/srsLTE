@@ -34,6 +34,8 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 
+#include "libemanelte/epcstatisticmanager.h"
+
 namespace srsepc {
 
 /**************************************
@@ -238,6 +240,10 @@ void spgw::gtpu::handle_sgi_pdu(srsran::unique_byte_buffer_t msg)
   // Handle SGi packet
   if (usr_found == false && ctr_found == false) {
     m_logger.debug("Packet for unknown UE.");
+#ifdef PHY_ADAPTER_ENABLE
+    EPCSTATS::updateDstNotFound(iph->saddr, iph->daddr, ntohs(iph->tot_len));
+#endif
+
   } else if (usr_found == false && ctr_found == true) {
     m_logger.debug("Packet for attached UE that is not ECM connected.");
     m_logger.debug("Triggering Donwlink Notification Requset.");
@@ -248,6 +254,10 @@ void spgw::gtpu::handle_sgi_pdu(srsran::unique_byte_buffer_t msg)
     m_logger.error("User plane tunnel found without a control plane tunnel present.");
   } else {
     send_s1u_pdu(enb_fteid, msg.get());
+
+#ifdef PHY_ADAPTER_ENABLE
+    EPCSTATS::updateDownlinkTraffic(iph->saddr, iph->daddr, ntohs(iph->tot_len));
+#endif
   }
 }
 
@@ -263,6 +273,11 @@ void spgw::gtpu::handle_s1u_pdu(srsran::byte_buffer_t* msg)
     m_logger.error("Could not write to TUN interface.");
   } else {
     m_logger.debug("Forwarded packet to TUN interface. Bytes= %d/%d", n, msg->N_bytes);
+#ifdef PHY_ADAPTER_ENABLE
+    const struct iphdr *iph = (const struct iphdr *) msg->msg;
+    if(iph && iph->version == 4)
+      EPCSTATS::updateUplinkTraffic(iph->saddr, iph->daddr, ntohs(iph->tot_len));
+#endif
   }
   return;
 }

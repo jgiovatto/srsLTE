@@ -26,6 +26,10 @@
 
 #include <assert.h>
 
+#ifdef PHY_ADAPTER_ENABLE
+#include "srsenb/hdr/phy/phy_adapter.h" 
+#endif
+
 using namespace std;
 using namespace asn1::rrc;
 
@@ -143,8 +147,12 @@ void phy_common::worker_end(void* tx_sem_id, srsran::rf_buffer_t& buffer, srsran
     dl_channel->run(buffer.to_cf_t(), buffer.to_cf_t(), buffer.get_nof_samples(), tx_time.get(0));
   }
 
+#ifndef PHY_ADAPTER_ENABLE
   // Always transmit on single radio
   radio->tx(buffer, tx_time);
+#else
+  phy_adapter::enb_dl_send_signal(tx_time.get(0).full_secs, tx_time.get(0).frac_secs);
+#endif
 
   // Allow next TTI to transmit
   semaphore.release();

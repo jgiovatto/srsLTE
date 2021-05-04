@@ -26,6 +26,8 @@
 #include <iostream>
 #include <signal.h>
 
+#include "libemanelte/mbmsstatisticmanager.h"
+
 using namespace std;
 using namespace srsepc;
 namespace bpo = boost::program_options;
@@ -46,8 +48,18 @@ typedef struct {
 } log_args_t;
 
 typedef struct {
+  bool daemonize;
+} runtime_args_t;
+
+typedef struct{
+  std::string statistic_service_endpoint;
+}mhal_args_t;
+
+typedef struct {
   mbms_gw_args_t mbms_gw_args;
   log_args_t     log_args;
+  runtime_args_t runtime;
+  mhal_args_t   mhal;
 } all_args_t;
 
 /**********************************************************************
@@ -91,6 +103,14 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     ("log.all_hex_limit", bpo::value<int>(&args->log_args.all_hex_limit)->default_value(32),  "ALL log hex dump limit")
 
     ("log.filename",      bpo::value<string>(&args->log_args.filename)->default_value("/tmp/mbms.log"),"Log filename")
+
+    ("runtime.daemonize", 
+      bpo::value<bool>(&args->runtime.daemonize)->default_value(false),
+       "Run this process as a daemon")
+
+    ("mhal.statistic_service_endpoint",
+      bpo::value<string>(&args->mhal.statistic_service_endpoint)->default_value("0.0.0.0:47101"),
+       "Statistic service endpoint")
     ;
 
   // Positional options - config file location
@@ -167,13 +187,19 @@ void parse_args(all_args_t* args, int argc, char* argv[])
 
 int main(int argc, char* argv[])
 {
-  cout << endl << "---  Software Radio Systems MBMS  ---" << endl << endl;
   signal(SIGINT, sig_int_handler);
   signal(SIGTERM, sig_int_handler);
   signal(SIGHUP, sig_int_handler);
 
   all_args_t args;
   parse_args(&args, argc, argv);
+
+if(args.runtime.daemonize) {
+    cout << "Running as a daemon\n";
+    int ret = daemon(1, 0);
+  } else {
+    cout << endl <<"---  Software Radio Systems MBMS  ---" << endl << endl;
+  }
 
   srslog::sink* log_sink = (args.log_args.filename == "stdout") ? srslog::create_stdout_sink()
                                                                 : srslog::create_file_sink(args.log_args.filename);
@@ -203,6 +229,10 @@ int main(int argc, char* argv[])
     cout << "Error initializing MBMS-GW" << endl;
     exit(1);
   }
+
+#ifdef PHY_ADAPTER_ENABLE
+  MBMSSTATS::initialize(args.mhal.statistic_service_endpoint);
+#endif
 
   mbms_gw->start();
   while (running) {

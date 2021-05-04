@@ -130,6 +130,8 @@ if (STOP_ON_WARNING)
   add_definitions(-DSTOP_ON_WARNING)
 endif()
 
+option(ENABLE_PHY_ADAPTER "Enable PHY Adapter for use with emane" ON)
+
 ########################################################################
 # Find dependencies
 ########################################################################
@@ -311,6 +313,38 @@ if(Backward_FOUND)
     message(STATUS "Backward-cpp found, but external libraries are missing.")
   endif()
 endif()
+
+if(ENABLE_PHY_ADAPTER)
+  # emanelte
+  find_package(emanelte)
+  if(emanelte_FOUND)
+    include_directories(${emanelte_INCLUDE_DIRS})
+    link_directories(${emanelte_LIBRARY_DIRS})
+    message(STATUS "Found emanelte package")
+  else(emanelte_FOUND)
+    message(FATAL_ERROR "Unable to find emanelte package with CMAKE_MODULE_PATH=${CMAKE_MODULE_PATH}")
+  endif(emanelte_FOUND)
+
+  # ostatistic
+  find_package(ostatistic)
+  if(ostatistic_FOUND)
+    include_directories(${ostatistic_INCLUDE_DIRS})
+    link_directories(${ostatistic_LIBRARY_DIRS})
+    message(STATUS "Found ostatistic package required to build srsLTE with PHY_ADAPTER")
+  else(ostatistic_FOUND)
+    message(FATAL_ERROR "Unable to find ostatistic package required to build srsLTE with PHY_ADAPTER")
+  endif(ostatistic_FOUND)
+
+  # protobuf
+  find_package(protobuf)
+  if(protobuf_FOUND)
+    include_directories(${protobuf_INCLUDE_DIRS})
+    link_directories(${protobuf_LIBRARY_DIRS})
+    message(STATUS "Found Protobuf package required to build srsLTE with PHY_ADAPTER")
+  else(protobuf_FOUND)
+    message(FATAL_ERROR "Unable to find protobuf package required to build srsLTE with PHY_ADAPTER")
+  endif(protobuf_FOUND)
+endif(ENABLE_PHY_ADAPTER)
 
 ########################################################################
 # Install Dirs
@@ -522,6 +556,14 @@ if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
 endif()
+
+if(ENABLE_PHY_ADAPTER)
+  message(STATUS "ENABLE PHY_ADAPTER")
+  set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -DPHY_ADAPTER_ENABLE")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DPHY_ADAPTER_ENABLE")
+else(ENABLE_PHY_ADAPTER)
+  message(STATUS "DISABLE PHY_ADAPTER")
+endif(ENABLE_PHY_ADAPTER)
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU")
   # Increase inlining limit to allow gcc compilation on e.g. RPi2

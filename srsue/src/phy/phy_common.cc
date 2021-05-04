@@ -25,6 +25,10 @@
 #include "srsran/srsran.h"
 #include "srsue/hdr/phy/phy_common.h"
 
+#ifdef PHY_ADAPTER_ENABLE
+#include "srsue/hdr/phy/phy_adapter.h"
+#endif
+
 #define Error(fmt, ...)                                                                                                \
   if (SRSRAN_DEBUG_ENABLED)                                                                                            \
   logger.error(fmt, ##__VA_ARGS__)
@@ -549,6 +553,7 @@ void phy_common::worker_end(void*                   tx_sem_id,
   // Wait for the green light to transmit in the current TTI
   semaphore.wait(tx_sem_id);
 
+#ifndef PHY_ADAPTER_ENABLE
   // If this is for NR, save Tx buffers...
   if (is_nr) {
     nr_tx_buffer       = buffer;
@@ -574,14 +579,18 @@ void phy_common::worker_end(void*                   tx_sem_id,
 
   // Add Time Alignment
   tx_time.sub((double)ta.get_sec());
+#endif
 
   // For each radio, transmit
   if (tx_enable) {
     if (ul_channel) {
       ul_channel->run(buffer.to_cf_t(), buffer.to_cf_t(), buffer.get_nof_samples(), tx_time.get(0));
     }
-
+#ifndef PHY_ADAPTER_ENABLE
     radio_h->tx(buffer, tx_time);
+#else
+    phy_adapter::ue_ul_send_signal(tx_time.get(0).full_secs, tx_time.get(0).frac_secs, cell);
+#endif
   } else {
     if (radio_h->is_continuous_tx()) {
       if (is_pending_tx_end) {
@@ -633,6 +642,7 @@ void phy_common::update_measurements(uint32_t                     cc_idx,
 {
   bool insync = true;
   {
+#ifndef PHY_ADAPTER_ENABLE
     std::unique_lock<std::mutex> lock(meas_mutex);
 
     float snr_ema_coeff = args->snr_ema_coeff;
@@ -739,6 +749,7 @@ void phy_common::update_measurements(uint32_t                     cc_idx,
       }
     }
 
+#endif
     // Store metrics
     ch_metrics_t ch = {};
     ch.n            = avg_noise[cc_idx];
@@ -748,6 +759,16 @@ void phy_common::update_measurements(uint32_t                     cc_idx,
     ch.pathloss     = pathloss[cc_idx];
     ch.sinr         = avg_sinr_db[cc_idx];
     ch.sync_err     = chest_res.sync_error;
+
+    logger.debug("cc_idx %d, noise %3.3f, rsrp %3.3f, rsrq %3.3f, rssi %3.3f, pathloss %3.3f, sinr % 3.3f, sync_err %f\n",
+                cc_idx,
+                ch.n,
+                ch.rsrp,
+                ch.rsrq,
+                ch.rssi,
+                ch.pathloss,
+                ch.sinr,
+                ch.sync_err);
 
     set_ch_metrics(cc_idx, ch);
 

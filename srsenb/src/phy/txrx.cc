@@ -26,6 +26,10 @@
 
 #include "srsenb/hdr/phy/txrx.h"
 
+#ifdef PHY_ADAPTER_ENABLE
+#include "srsenb/hdr/phy/phy_adapter.h"
+#endif
+
 #define Error(fmt, ...)                                                                                                \
   if (SRSRAN_DEBUG_ENABLED)                                                                                            \
   logger.error(fmt, ##__VA_ARGS__)
@@ -109,6 +113,10 @@ void txrx::run_thread()
                     worker_com->get_nof_prb(cc_idx));
     radio_h->set_tx_freq(rf_port, tx_freq_hz);
     radio_h->set_rx_freq(rf_port, rx_freq_hz);
+
+#ifdef PHY_ADAPTER_ENABLE
+    phy_adapter::enb_set_frequency(cc_idx, rx_freq_hz, tx_freq_hz);
+#endif 
   }
 
   // Set channel emulator sampling rate
@@ -120,6 +128,10 @@ void txrx::run_thread()
 
   // Set TTI so that first TX is at tti=0
   tti = TTI_SUB(0, FDD_HARQ_DELAY_UL_MS + 1);
+
+#ifdef PHY_ADAPTER_ENABLE
+  phy_adapter::enb_start();
+#endif 
 
   // Main loop
   while (running) {
@@ -167,7 +179,11 @@ void txrx::run_thread()
     }
 
     buffer.set_nof_samples(sf_len);
+#ifndef PHY_ADAPTER_ENABLE
     radio_h->rx_now(buffer, timestamp);
+#else
+    phy_adapter::enb_ul_get_signal(tti, timestamp.get_ptr(0));
+#endif
 
     if (ul_channel) {
       ul_channel->run(buffer.to_cf_t(), buffer.to_cf_t(), sf_len, timestamp.get(0));

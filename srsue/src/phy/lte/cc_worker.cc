@@ -24,6 +24,10 @@
 #include "srsran/common/standard_streams.h"
 #include "srsue/hdr/phy/lte/cc_worker.h"
 
+#ifdef PHY_ADAPTER_ENABLE
+#include "srsue/hdr/phy/phy_adapter.h"
+#endif
+
 #define Error(fmt, ...)                                                                                                \
   if (SRSRAN_DEBUG_ENABLED)                                                                                            \
   logger.error(fmt, ##__VA_ARGS__)
@@ -243,11 +247,13 @@ bool cc_worker::work_dl_regular()
       srsran_ue_dl_set_mi_manual(&ue_dl, i);
     }
 
+#ifndef PHY_ADAPTER_ENABLE
     /* Do FFT and extract PDCCH LLR, or quit if no actions are required in this subframe */
     if (srsran_ue_dl_decode_fft_estimate(&ue_dl, &sf_cfg_dl, &ue_dl_cfg) < 0) {
       Error("Getting PDCCH FFT estimate");
       return false;
     }
+#endif
 
     // Look for DL and UL dci(s) if the serving cell is active and it is NOT a secondary serving cell without
     // cross-carrier scheduling is enabled
@@ -323,11 +329,13 @@ bool cc_worker::work_dl_mbsfn(srsran_mbsfn_cfg_t mbsfn_cfg)
   chest_mbsfn_cfg.mbsfn_area_id = mbsfn_cfg.mbsfn_area_id;
   ue_dl_cfg.chest_cfg           = chest_mbsfn_cfg;
 
+#ifndef PHY_ADAPTER_ENABLE
   /* Do FFT and extract PDCCH LLR, or quit if no actions are required in this subframe */
   if (srsran_ue_dl_decode_fft_estimate(&ue_dl, &sf_cfg_dl, &ue_dl_cfg) < 0) {
     Error("Getting PDCCH FFT estimate");
     return false;
   }
+#endif
 
   // Look for DL and UL dci(s) if the serving cell is active and it is NOT a secondary serving cell without
   // cross-carrier scheduling is enabled
@@ -393,7 +401,11 @@ int cc_worker::decode_pdcch_dl()
       Debug("PDCCH looking for rnti=0x%x", dl_rnti);
       ue_dl_cfg.cfg.dci.cif_enabled = i > 0;
       ue_dl_cfg.cfg.dci_common_ss   = (cc_idx == 0);
+#ifndef PHY_ADAPTER_ENABLE
       nof_grants                    = srsran_ue_dl_find_dl_dci(&ue_dl, &sf_cfg_dl, &ue_dl_cfg, dl_rnti, dci);
+#else
+      nof_grants = phy_adapter::ue_dl_cc_find_dl_dci(&ue_dl, &sf_cfg_dl, &ue_dl_cfg, dl_rnti, dci, cc_idx);
+#endif
       if (nof_grants < 0) {
         Error("Looking for DL grants");
         return -1;
@@ -449,7 +461,11 @@ int cc_worker::decode_pdsch(srsran_pdsch_ack_resource_t            ack_resource,
 
   // Run PDSCH decoder
   if (decode_enable) {
+#ifndef PHY_ADAPTER_ENABLE
     if (srsran_ue_dl_decode_pdsch(&ue_dl, &sf_cfg_dl, &ue_dl_cfg.cfg.pdsch, pdsch_dec)) {
+#else
+    if (phy_adapter::ue_dl_cc_decode_pdsch(&ue_dl, &sf_cfg_dl, &ue_dl_cfg.cfg.pdsch, pdsch_dec, cc_idx)) {
+#endif
       Error("ERROR: Decoding PDSCH");
     }
   }
@@ -507,7 +523,11 @@ int cc_worker::decode_pmch(mac_interface_phy_lte::tb_action_dl_t* action, srsran
   if (action->tb[0].enabled) {
     srsran_softbuffer_rx_reset_tbs(pmch_cfg.pdsch_cfg.softbuffers.rx[0], pmch_cfg.pdsch_cfg.grant.tb[0].tbs);
 
+#ifndef PHY_ADAPTER_ENABLE
     if (srsran_ue_dl_decode_pmch(&ue_dl, &sf_cfg_dl, &pmch_cfg, &pmch_dec)) {
+#else
+    if (phy_adapter::ue_dl_cc_decode_pmch(&ue_dl, &sf_cfg_dl, &pmch_cfg, &pmch_dec, cc_idx)) {
+#endif
       Error("Decoding PMCH");
       return -1;
     }
@@ -547,7 +567,11 @@ void cc_worker::decode_phich()
   for (uint32_t I_phich = 0; I_phich < 2; I_phich++) {
     phich_grant.I_phich = I_phich;
     if (phy->get_ul_pending_ack(&sf_cfg_dl, cc_idx, &phich_grant, &dci_ul)) {
+#ifndef PHY_ADAPTER_ENABLE
       if (srsran_ue_dl_decode_phich(&ue_dl, &sf_cfg_dl, &ue_dl_cfg, &phich_grant, &phich_res)) {
+#else
+      if (phy_adapter::ue_dl_cc_decode_phich(&ue_dl, &sf_cfg_dl, &ue_dl_cfg, &phich_grant, &phich_res, dci_ul.rnti, cc_idx)) {
+#endif
         Error("Decoding PHICH");
       }
       phy->set_ul_received_ack(&sf_cfg_dl, cc_idx, phich_res.ack_value, I_phich, &dci_ul);
@@ -704,7 +728,11 @@ int cc_worker::decode_pdcch_ul()
     for (int i = 0; i < (ue_dl_cfg.cfg.dci.cif_present ? 2 : 1) && !nof_grants; i++) {
       ue_dl_cfg.cfg.dci.cif_enabled = i > 0;
       ue_dl_cfg.cfg.dci_common_ss   = (cc_idx == 0);
+#ifndef PHY_ADAPTER_ENABLE
       nof_grants                    = srsran_ue_dl_find_ul_dci(&ue_dl, &sf_cfg_dl, &ue_dl_cfg, ul_rnti, dci);
+#else
+      nof_grants = phy_adapter::ue_dl_cc_find_ul_dci(&ue_dl, &sf_cfg_dl, &ue_dl_cfg, ul_rnti, dci, cc_idx);
+#endif
       if (nof_grants < 0) {
         Error("Looking for UL grants");
         return -1;
@@ -767,7 +795,11 @@ bool cc_worker::encode_uplink(mac_interface_phy_lte::tb_action_ul_t* action, srs
   }
 
   // Encode signal
+#ifndef PHY_ADAPTER_ENABLE
   int ret = srsran_ue_ul_encode(&ue_ul, &sf_cfg_ul, &ue_ul_cfg, &data);
+#else
+  int ret = phy_adapter::ue_ul_encode(&ue_ul, &sf_cfg_ul, &ue_ul_cfg, &data, cc_idx);
+#endif
   if (ret < 0) {
     Error("Encoding UL cc=%d", cc_idx);
   }
