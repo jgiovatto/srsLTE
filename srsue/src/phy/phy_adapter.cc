@@ -350,6 +350,28 @@ static inline uint64_t getRxFrequency(uint32_t cc_idx)
 
 
 // see sf_worker::update_measurements() -> cc_worker::update_measurements()
+// lib/include/srsran/phy/ch_estimation/chest_dl.h
+/*
+typedef struct SRSRAN_API {
+  cf_t*    ce[SRSRAN_MAX_PORTS][SRSRAN_MAX_PORTS];
+  uint32_t nof_re;
+  float    noise_estimate;
+  float    noise_estimate_dbm;
+  float    snr_db;
+  float    snr_ant_port_db[SRSRAN_MAX_PORTS][SRSRAN_MAX_PORTS];
+  float    rsrp;
+  float    rsrp_dbm;
+  float    rsrp_neigh;
+  float    rsrp_port_dbm[SRSRAN_MAX_PORTS];
+  float    rsrp_ant_port_dbm[SRSRAN_MAX_PORTS][SRSRAN_MAX_PORTS];
+  float    rsrq;
+  float    rsrq_db;
+  float    rsrq_ant_port_db[SRSRAN_MAX_PORTS][SRSRAN_MAX_PORTS];
+  float    rssi_dbm;
+  float    cfo;
+  float    sync_error;
+} srsran_chest_dl_res_t; */
+
 static void ue_dl_update_chest_i(srsran_chest_dl_res_t * chest_res, float snr_db, float noise_db)
 {
     //  from faux_rf
@@ -769,29 +791,6 @@ int ue_dl_read_frame(srsran_timestamp_t* rx_time)
 }
 
 
-/*typedef struct SRSRAN_API {
-  uint32_t            cell_id;
-  srsran_cp_t         cp;
-  srsran_frame_type_t frame_type;
-  float               peak; 
-  float               mode; 
-  float               psr;
-  float               cfo; 
-} srsran_ue_cellsearch_result_t;
-
-typedef enum SRSRAN_API { SRSRAN_FDD = 0, SRSRAN_TDD = 1 } srsran_frame_type_t;
-
-typedef struct SRSRAN_API {
-  srsran_ue_sync_t ue_sync;
-  cf_t             *sf_buffer[SRSRAN_MAX_PORTS];
-  uint32_t         nof_rx_antennas;
-  uint32_t         max_frames;
-  uint32_t         nof_valid_frames;  // number of 5 ms frames to scan 
-  uint32_t         *mode_ntimes;
-  uint8_t          *mode_counted; 
-  srsran_ue_cellsearch_result_t *candidates; 
-} srsran_ue_cellsearch_t; */
-
 // 1 initial state cell search
 int ue_dl_cellsearch_scan(srsran_ue_cellsearch_t * cs,
                           srsran_ue_cellsearch_result_t * res,
@@ -947,57 +946,6 @@ int ue_dl_cellsearch_scan(srsran_ue_cellsearch_t * cs,
   return n_id2s.size();
 }
 
-/* typedef struct SRSRAN_API {
-  srsran_ue_sync_t              ue_sync;
-  cf_t                          *sf_buffer[SRSRAN_MAX_PORTS];
-  uint32_t                      nof_rx_antennas;
-  uint32_t                      max_frames;
-  uint32_t                      nof_valid_frames;  // number of 5 ms frames to scan 
-  uint32_t                      *mode_ntimes;
-  uint8_t                       *mode_counted; 
-  srsran_ue_cellsearch_result_t *candidates; 
-} srsran_ue_cellsearch_t;
-
-typedef struct {
-  srsran_ue_mib_t  ue_mib; 
-  srsran_ue_sync_t ue_sync; 
-  cf_t             *sf_buffer[SRSRAN_MAX_PORTS];
-  uint32_t         nof_rx_antennas;
-} srsran_ue_mib_sync_t;
-
-typedef struct SRSRAN_API {
-  srsran_sync_t         sfind;
-  cf_t*                 sf_symbols[SRSRAN_MAX_PORTS];
-  srsran_ofdm_t         fft;
-  srsran_pbch_t         pbch;
-  srsran_chest_dl_t     chest;
-  srsran_chest_dl_res_t chest_res;
-  uint8_t               bch_payload[SRSRAN_BCH_PAYLOAD_LEN];
-  uint32_t              nof_tx_ports; 
-  uint32_t              sfn_offset; 
-  uint32_t              frame_cnt; 
-} srsran_ue_mib_t;
-
-typedef struct SRSRAN_API {
-  cf_t*    ce[SRSRAN_MAX_PORTS][SRSRAN_MAX_PORTS];
-  uint32_t nof_re;
-  float    noise_estimate;
-  float    noise_estimate_dbm;
-  float    snr_db;
-  float    snr_ant_port_db[SRSRAN_MAX_PORTS][SRSRAN_MAX_PORTS];
-  float    rsrp;
-  float    rsrp_dbm;
-  float    rsrp_neigh_dbm;
-  float    rsrp_port_dbm[SRSRAN_MAX_PORTS];
-  float    rsrp_ant_port_dbm[SRSRAN_MAX_PORTS][SRSRAN_MAX_PORTS];
-  float    rsrq;
-  float    rsrq_db;
-  float    rsrq_ant_port_db[SRSRAN_MAX_PORTS][SRSRAN_MAX_PORTS];
-  float    rssi_dbm;
-  float    cfo;
-  float    sync_error;
-} srsran_chest_dl_res_t; */
-
 // 2 mib search
 int ue_dl_mib_search(const srsran_ue_cellsearch_t * cs,
                      srsran_ue_mib_sync_t * ue_mib_sync,
@@ -1101,49 +1049,6 @@ int ue_dl_mib_search(const srsran_ue_cellsearch_t * cs,
   return 0;
 }
 
-
-/*typedef struct SRSRAN_API {
-  srsran_sync_t s        find;
-  srsran_sync_t          strack;
-  uint32_t               max_prb;
-  srsran_agc_t           agc; 
-  bool                   do_agc; 
-  uint32_t               agc_period; 
-  int                    decimate;
-  srsran_timestamp_t     last_timestamp;
-  uint32_t               nof_rx_antennas; 
-  srsran_ue_sync_state_t state;
-  uint32_t               frame_len; 
-  uint32_t               fft_size;
-  uint32_t               nof_recv_sf;
-  uint32_t               nof_avg_find_frames;
-  uint32_t               frame_find_cnt;
-  uint32_t               sf_len;
-  uint64_t               frame_ok_cnt;
-  uint32_t               frame_no_cnt; 
-  uint32_t               frame_total_cnt; 
-  uint32_t               frame_number; // not used
-  srsran_cell_t          cell; 
-  uint32_t               sf_idx;
-  bool                   cfo_is_copied;
-  bool                   cfo_correct_enable_track;
-  bool                   cfo_correct_enable_find;
-  float                  cfo_current_value;
-  float                  cfo_loop_bw_pss;
-  float                  cfo_loop_bw_ref;
-  float                  cfo_pss_min;
-  float                  cfo_ref_min;
-  float                  cfo_ref_max;
-  uint32_t               pss_stable_cnt;
-  uint32_t               pss_stable_timeout;
-  bool                   pss_is_stable;
-  uint32_t               peak_idx;
-  int                    next_rf_sample_offset;
-  int                    last_sample_offset; 
-  float                  mean_sample_offset; 
-  uint32_t               sample_offset_correct_period;
-  float                  sfo_ema; 
-} srsran_ue_sync_t; */
 
 // 3 system frame search
 int ue_dl_system_frame_search(srsran_ue_sync_t * ue_sync, uint32_t * sfn)
@@ -1258,27 +1163,6 @@ float ue_dl_get_rssi(uint32_t cell_id, uint32_t cc_idx)
    return rssi;
 }
 
-/*
-typedef struct SRSRAN_API {
-  uint32_t L;    // Aggregation level
-  uint32_t ncce; // Position of first CCE of the dci
-} srsran_dci_location_t;
-
-typedef struct SRSRAN_API {
-  uint8_t               payload[SRSRAN_DCI_MAX_BITS];
-  uint32_t              nof_bits;
-  srsran_dci_location_t location;
-  srsran_dci_format_t   format;
-  uint16_t              rnti;
-} srsran_dci_msg_t;
-
-typedef struct SRSRAN_API {
-  srsran_dl_cfg_t       cfg;
-  srsran_chest_dl_cfg_t chest_cfg;
-  uint32_t              last_ri;
-  float                 snr_to_cqi_offset;
-} srsran_ue_dl_cfg_t; */
-
 // see ue_dl_find_dl_dc
 // int srsran_ue_dl_find_dl_dci(srsran_ue_dl_t*     q,
 //                              srsran_dl_sf_cfg_t* sf,
@@ -1338,14 +1222,8 @@ int ue_dl_cc_find_dl_dci(srsran_ue_dl_t*     q,
 
           ue_dl_update_chest_i(&q->chest_res, pdsch_result.second.sinr_dB_, pdsch_result.second.noiseFloor_dBm_);
 
-#ifdef DEBUG_HEX
-          InfoHex(dl_dci_message_data.data(), dl_dci_message_data.size(),
-                  "PDCCH:%s dl_dci ref id %u, rnti 0x%hx, dci_len %zu\n", 
-                  __func__, dci_message.refid(), rnti, dl_dci_message_data.size());
-#else
           Info("PDCCH:%s dl_dci ref id %u, rnti 0x%hx, dci_len %zu\n", 
                 __func__, dci_message.refid(), rnti, dl_dci_message_data.size());
-#endif
 
           // Unpack DCI messages see lib/src/phy/phch/dci.c
           for (int i = 0; i < nof_msg; i++) {
@@ -1381,19 +1259,6 @@ int ue_dl_cc_find_dl_dci(srsran_ue_dl_t*     q,
   return nof_msg;
 }
 
-/*
-typedef struct SRSRAN_API {
-  uint32_t L;    // Aggregation level
-  uint32_t ncce; // Position of first CCE of the dci
-} srsran_dci_location_t;
-
-typedef struct SRSRAN_API {
-  uint8_t               payload[SRSRAN_DCI_MAX_BITS];
-  uint32_t              nof_bits;
-  srsran_dci_location_t location;
-  srsran_dci_format_t   format;
-  uint16_t              rnti;
-} srsran_dci_msg_t; */
 
 // see lib/src/phy/ue/ue_dl.c
 int ue_dl_cc_find_ul_dci(srsran_ue_dl_t*     q,
@@ -1456,72 +1321,6 @@ int ue_dl_cc_find_ul_dci(srsran_ue_dl_t*     q,
   return nof_msg;
 }
 
-/* typedef struct SRSRAN_API {
-  srsran_cell_t cell;
-  uint32_t      nof_rx_antennas;
-  uint16_t      current_mbsfn_area_id;
-  uint16_t      pregen_rnti;
-   
-  srsran_pcfich_t pcfich;
-  srsran_pdcch_t  pdcch;
-  srsran_pdsch_t  pdsch;
-  srsran_pmch_t   pmch;
-  srsran_phich_t  phich;
-
-  srsran_regs_t regs[MI_MAX_REGS];
-  uint32_t      mi_manual_index; 
-  bool          mi_auto;
-
-  srsran_chest_dl_t     chest;
-  srsran_chest_dl_res_t chest_res;
-  srsran_ofdm_t         fft[SRSRAN_MAX_PORTS];
-  srsran_ofdm_t         fft_mbsfn;
-
-  // Variables for blind DCI search
-  dci_blind_search_t current_ss_ue[MI_MAX_REGS][3][10];
-  dci_blind_search_t current_ss_common[MI_MAX_REGS][3]; 
-  srsran_dci_msg_t   pending_ul_dci_msg[SRSRAN_MAX_DCI_MSG];
-  uint32_t           pending_ul_dci_count;
-} srsran_ue_dl_t;
-
-typedef struct SRSRAN_API {
-  srsran_tdd_config_t tdd_config;
-  uint32_t            tti;
-  uint32_t            cfi;
-  srsran_sf_t         sf_type;
-  uint32_t            non_mbsfn_region;
-} srsran_dl_sf_cfg_t;
-
-typedef struct SRSRAN_API {
-  srsran_tx_scheme_t tx_scheme;
-  uint32_t           pmi;
-  bool               prb_idx[2][SRSRAN_MAX_PRB];
-  uint32_t           nof_prb;
-  uint32_t           nof_re;
-  uint32_t           nof_symb_slot[2];
-  srsran_ra_tb_t     tb[SRSRAN_MAX_CODEWORDS];
-  int                last_tbs[SRSRAN_MAX_CODEWORDS];
-  uint32_t           nof_tb;
-  uint32_t           nof_layers;
-} srsran_pdsch_grant_t;
-
-typedef struct SRSRAN_API {
-  srsran_pdsch_grant_t  grant;
-  uint16_t              rnti;
-  uint32_t              max_nof_iterations;
-  srsran_mimo_decoder_t decoder_type;
-  float                 p_a;
-  uint32_t              p_b;
-  float                 rs_power;
-  bool                  power_scale;
-  bool                  csi_enable;
-} srsran_pdsch_cfg_t;
-
-typedef struct {
-  uint8_t* payload;
-  bool     crc;
-  float    avg_iterations_block;
-} srsran_pdsch_res_t; */
 
 // see lib/src/phy/phch/pdsch.c srsran_pdsch_decode()
 int ue_dl_cc_decode_pdsch(srsran_ue_dl_t*     q,
@@ -1551,14 +1350,8 @@ int ue_dl_cc_decode_pdsch(srsran_ue_dl_t*     q,
 
              ue_dl_update_chest_i(&q->chest_res, pdsch_result.second.sinr_dB_, pdsch_result.second.noiseFloor_dBm_);
 
-#ifdef DEBUG_HEX
-             InfoHex(pdsch_data.data(), pdsch_data.size(),
-                     "PDSCH:%s: rnti 0x%hx, refid %d, tb[%d], payload %zu bytes, snr %f\n",
-                     __func__, rnti, pdsch_message.refid(), tb, pdsch_data.size(), q->chest_res.snr_db);
-#else
              Info("PDSCH:%s: rnti 0x%hx, refid %d, tb[%d], payload %zu bytes, snr %f\n",
                    __func__, rnti, pdsch_message.refid(), tb, pdsch_data.size(), q->chest_res.snr_db);
-#endif
            }
          else
            {
@@ -1570,29 +1363,6 @@ int ue_dl_cc_decode_pdsch(srsran_ue_dl_t*     q,
   return SRSRAN_SUCCESS;
 }
 
-
-/* typedef struct SRSRAN_API {
-  uint32_t n_prb_lowest;
-  uint32_t n_dmrs;
-  uint32_t I_phich;
-} srsran_phich_grant_t;
-
-typedef struct SRSRAN_API {
-  uint32_t ngroup;
-  uint32_t nseq;
-} srsran_phich_resource_t;
-
-typedef struct SRSRAN_API {
-  bool  ack_value;
-  float distance;
-} srsran_phich_res_t;
-
-typedef struct SRSRAN_API {
-  srsran_dl_cfg_t       cfg;
-  srsran_chest_dl_cfg_t chest_cfg;
-  uint32_t              last_ri;
-  float                 snr_to_cqi_offset;
-} srsran_ue_dl_cfg_t; */
 
 // see lib/src/phy/ue/ue_dl.c
 int ue_dl_cc_decode_phich(srsran_ue_dl_t*       q,
@@ -1656,70 +1426,6 @@ int ue_dl_cc_decode_phich(srsran_ue_dl_t*       q,
 }
 
 
-/* typedef struct SRSRAN_API {
-  srsran_cell_t cell;
-  uint32_t      nof_rx_antennas;
-  uint16_t      current_mbsfn_area_id;
-  uint16_t      pregen_rnti;
-   
-  srsran_pcfich_t pcfich;
-  srsran_pdcch_t  pdcch;
-  srsran_pdsch_t  pdsch;
-  srsran_pmch_t   pmch;
-  srsran_phich_t  phich;
-
-  srsran_regs_t regs[MI_MAX_REGS];
-  uint32_t      mi_manual_index; 
-  bool          mi_auto;
-
-  srsran_chest_dl_t     chest;
-  srsran_chest_dl_res_t chest_res;
-  srsran_ofdm_t         fft[SRSRAN_MAX_PORTS];
-  srsran_ofdm_t         fft_mbsfn;
-
-  // Variables for blind DCI search
-  dci_blind_search_t current_ss_ue[MI_MAX_REGS][3][10];
-  dci_blind_search_t current_ss_common[MI_MAX_REGS][3]; 
-  srsran_dci_msg_t   pending_ul_dci_msg[SRSRAN_MAX_DCI_MSG];
-  uint32_t           pending_ul_dci_count;
-} srsran_ue_dl_t;
-
-typedef struct SRSRAN_API {
-  srsran_tx_scheme_t tx_scheme;
-  uint32_t           pmi;
-  bool               prb_idx[2][SRSRAN_MAX_PRB];
-  uint32_t           nof_prb;
-  uint32_t           nof_re;
-  uint32_t           nof_symb_slot[2];
-  srsran_ra_tb_t     tb[SRSRAN_MAX_CODEWORDS];
-  int                last_tbs[SRSRAN_MAX_CODEWORDS];
-  uint32_t           nof_tb;
-  uint32_t           nof_layers;
-} srsran_pdsch_grant_t;
-
-typedef struct SRSRAN_API {
-  srsran_pdsch_grant_t  grant;
-  uint16_t              rnti;
-  uint32_t              max_nof_iterations;
-  srsran_mimo_decoder_t decoder_type;
-  float                 p_a;
-  uint32_t              p_b;
-  float                 rs_power;
-  bool                  power_scale;
-  bool                  csi_enable;
-} srsran_pdsch_cfg_t;
-
-typedef struct SRSRAN_API {
-  srsran_pdsch_cfg_t pdsch_cfg;
-  uint16_t           area_id;
-} srsran_pmch_cfg_t;
-
-typedef struct {
-  uint8_t* payload;
-  bool     crc;
-  float    avg_iterations_block;
-} srsran_pdsch_res_t; */
-
 int ue_dl_cc_decode_pmch(srsran_ue_dl_t*     q,
                          srsran_dl_sf_cfg_t* sf,
                          srsran_pmch_cfg_t*  cfg,
@@ -1757,14 +1463,9 @@ int ue_dl_cc_decode_pmch(srsran_ue_dl_t*     q,
                      data[tb].avg_iterations_block = 1;
 
                      data[tb].crc = true;
-#ifdef DEBUG_HEX
-                     InfoHex(pmch.data().data(), pmch.data().size(),
-                             "PMCH:%s: cc %u, areaid %d, tb[%d], payload %zu bytes, snr %f\n",
-                             __func__, cc_idx, area_id, tb, pmch.data().size(), q->chest_res.snr_db);
-#else
+
                      Info("PMCH:%s: cc %u, areaid %d, tb[%d], payload %zu bytes, snr %f\n",
                           __func__, cc_idx, area_id, tb, pmch.data().size(), q->chest_res.snr_db);
-#endif
                    }
                   else
                    {
@@ -1879,73 +1580,6 @@ void ue_ul_put_prach(int index)
 }
 
 
-/*typedef struct SRSRAN_API {
-  srsran_cell_t    cell;
-  uint16_t         current_rnti;
-  bool             signals_pregenerated;
-  srsran_pusch_t   pusch;
-  srsran_pucch_t   pucch;
-  srsran_ra_ul_pusch_hopping_t hopping;
-} srsran_ue_ul_t;
-
- typedef struct SRSRAN_API {
-  uint16_t         rnti;
-  srsran_uci_cfg_t uci_cfg;
-
-  // Common configuration
-  uint32_t delta_pucch_shift;
-  uint32_t n_rb_2;
-  uint32_t N_cs;
-  uint32_t N_pucch_1;
-  bool     group_hopping_en; // common pusch config
-
-  // Dedicated PUCCH configuration
-  uint32_t I_sr;
-  bool     sr_configured;
-  uint32_t n_pucch_1[4]; // 4 n_pucch resources specified by RRC
-  uint32_t n_pucch_2;
-  uint32_t n_pucch_sr;
-  bool     simul_cqi_ack;
-  bool     tdd_ack_bundle; // if false, multiplex
-  bool     sps_enabled;
-  uint32_t tpc_for_pucch;
-
-  // Release 10 CA specific
-  srsran_ack_nack_feedback_mode_t ack_nack_feedback_mode;
-  uint32_t                        n1_pucch_an_cs[SRSRAN_PUCCH_SIZE_AN_CS][SRSRAN_PUCCH_NOF_AN_CS];
-  uint32_t                        n3_pucch_an_list[SRSRAN_PUCCH_SIZE_AN_CS];
-
-  // Other configuration
-  float threshold_format1;
-  float threshold_data_valid_format1a;
-  float threshold_data_valid_format2;
-
-  // PUCCH configuration generated during a call to encode/decode
-  srsran_pucch_format_t format;
-  uint32_t              n_pucch;
-  uint8_t               pucch2_drs_bits[SRSRAN_PUCCH2_MAX_DMRS_BITS];
-} srsran_pucch_cfg_t; 
-
-typedef struct SRSRAN_API {
-  // Uplink config (includes common and dedicated variables)
-  srsran_pucch_cfg_t                pucch;
-  srsran_pusch_cfg_t                pusch;
-  srsran_pusch_hopping_cfg_t        hopping;
-  srsran_ue_ul_powerctrl_t          power_ctrl;
-  srsran_refsignal_dmrs_pusch_cfg_t dmrs;
-  srsran_refsignal_srs_cfg_t        srs;
-} srsran_ul_cfg_t;
-
-typedef struct SRSRAN_API {
-  srsran_ul_cfg_t ul_cfg;
-  bool            grant_available;
-  uint32_t        cc_idx;
-  bool            normalize_en;
-  bool            cfo_en;
-  float           cfo_tol;
-  float           cfo_value;
-} srsran_ue_ul_cfg_t; */
-
 int ue_ul_put_pucch_i(srsran_ue_ul_t* q, 
                       srsran_ul_sf_cfg_t* sf,
                       srsran_ue_ul_cfg_t* cfg,
@@ -2049,80 +1683,13 @@ int ue_ul_put_pucch_i(srsran_ue_ul_t* q,
    grant_message->set_rnti(rnti);
    grant_message->set_uci(&uci_value2, sizeof(srsran_uci_value_t));
 
-#ifdef DEBUG_HEX
-   InfoHex(&uci_value2, sizeof(srsran_uci_value_t), 
-           "PUCCH:%s: rnti 0x%hx\n", __func__, rnti);
-#else
    Debug("PUCCH:%s: rnti 0x%hx\n", __func__, rnti);
-#endif
 
    // signal ready
    return 1;
 }
 
 
-
-/* typedef struct SRSRAN_API {
-  srsran_mod_t mod;
-  int          tbs;
-  int          rv;
-  uint32_t     nof_bits;
-  uint32_t     cw_idx;
-  bool         enabled;
-} srsran_ra_tb_t;
-
- typedef struct SRSRAN_API {
-  bool           is_from_rar;
-  uint32_t       L_prb;
-  uint32_t       n_prb[2];       // rb_start after frequency hopping
-  uint32_t       n_prb_tilde[2]; // rb_start after frequency hopping per retx
-  uint32_t       freq_hopping;
-  uint32_t       nof_re;
-  uint32_t       nof_symb;
-  srsran_ra_tb_t tb;
-  srsran_ra_tb_t last_tb;
-  uint32_t       n_dmrs;
-} srsran_pusch_grant_t;
-
-typedef struct SRSRAN_API {
-  srsran_uci_cfg_ack_t ack;
-  srsran_cqi_cfg_t     cqi;
-  bool                 is_scheduling_request_tti;
-} srsran_uci_cfg_t;
-
-typedef struct SRSRAN_API {
-  uint16_t                rnti;
-  srsran_uci_cfg_t        uci_cfg;
-  srsran_uci_offset_cfg_t uci_offset;
-  srsran_pusch_grant_t    grant;
-
-  uint32_t max_nof_iterations;
-  uint32_t last_O_cqi;
-  uint32_t K_segm;
-  uint32_t current_tx_nb;
-  bool     csi_enable;
-  bool     enable_64qam;
-
-  union {
-    srsran_softbuffer_tx_t* tx;
-    srsran_softbuffer_rx_t* rx;
-  } softbuffers;
-
-  bool     meas_time_en;
-  uint32_t meas_time_value;
-} srsran_pusch_cfg_t; 
-
-typedef struct SRSRAN_API {
-  bool                   scheduling_request;
-  srsran_cqi_value_t     cqi;
-  srsran_uci_value_ack_t ack;
-  uint8_t                ri; // Only 1-bit supported for RI
-} srsran_uci_value_t;
-
-typedef struct SRSRAN_API {
-  uint8_t*           ptr;
-  srsran_uci_value_t uci;
-} srsran_pusch_data_t; */
 static int ue_ul_put_pusch_i(srsran_pusch_cfg_t* cfg, srsran_pusch_data_t* data, uint32_t cc_idx)
 {
    std::lock_guard<std::mutex> lock(ul_mutex_);
@@ -2167,12 +1734,7 @@ static int ue_ul_put_pusch_i(srsran_pusch_cfg_t* cfg, srsran_pusch_data_t* data,
    // payload
    grant_message->set_payload(data->ptr, bits_to_bytes(grant->tb.tbs));
 
-#ifdef DEBUG_HEX
-   InfoHex(data->ptr, bits_to_bytes(grant->tb.tbs), 
-           "PUSCH:%s: rnti 0x%hx\n", __func__, rnti);
-#else
    Info("PUSCH:%s: rnti 0x%hx\n", __func__, rnti);
-#endif
 
    UESTATS::putULGrant(rnti);
 
@@ -2180,53 +1742,6 @@ static int ue_ul_put_pusch_i(srsran_pusch_cfg_t* cfg, srsran_pusch_data_t* data,
    return 1;
 }
 
-
-/* typedef struct SRSRAN_API {
-  srsran_cell_t    cell;
-  uint16_t         current_rnti;
-  bool             signals_pregenerated;
-  srsran_pusch_t   pusch;
-  srsran_pucch_t   pucch;
-  srsran_ra_ul_pusch_hopping_t hopping;
-} srsran_ue_ul_t;
-
-typedef struct SRSRAN_API {
-  srsran_tdd_config_t tdd_config;
-  uint32_t            tti;
-  bool                shortened;
-} srsran_ul_sf_cfg_t;
-
-typedef struct SRSRAN_API {
-  // Uplink config (includes common and dedicated variables)
-  srsran_pucch_cfg_t                pucch;
-  srsran_pusch_cfg_t                pusch;
-  srsran_pusch_hopping_cfg_t        hopping;
-  srsran_ue_ul_powerctrl_t          power_ctrl;
-  srsran_refsignal_dmrs_pusch_cfg_t dmrs;
-  srsran_refsignal_srs_cfg_t        srs;
-} srsran_ul_cfg_t;
-
-typedef struct SRSRAN_API {
-  srsran_ul_cfg_t ul_cfg;
-  bool            grant_available;
-  uint32_t        cc_idx;
-  bool            normalize_en;
-  bool            cfo_en;
-  float           cfo_tol;
-  float           cfo_value;
-} srsran_ue_ul_cfg_t;
-
-typedef struct SRSRAN_API {
-  bool                   scheduling_request;
-  srsran_cqi_value_t     cqi;
-  srsran_uci_value_ack_t ack;
-  uint8_t                ri; // Only 1-bit supported for RI
-} srsran_uci_value_t;
-
-typedef struct SRSRAN_API {
-  uint8_t*           ptr;
-  srsran_uci_value_t uci;
-} srsran_pusch_data_t; */
 
 // see lib/src/phy/ue/ue_ul.c
 // srsran_ue_ul_encode(srsran_ue_ul_t* q, 

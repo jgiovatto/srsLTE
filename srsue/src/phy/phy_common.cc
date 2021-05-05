@@ -553,7 +553,6 @@ void phy_common::worker_end(void*                   tx_sem_id,
   // Wait for the green light to transmit in the current TTI
   semaphore.wait(tx_sem_id);
 
-#ifndef PHY_ADAPTER_ENABLE
   // If this is for NR, save Tx buffers...
   if (is_nr) {
     nr_tx_buffer       = buffer;
@@ -577,6 +576,7 @@ void phy_common::worker_end(void*                   tx_sem_id,
     tx_enable = true;
   }
 
+#ifndef PHY_ADAPTER_ENABLE
   // Add Time Alignment
   tx_time.sub((double)ta.get_sec());
 #endif
@@ -748,7 +748,20 @@ void phy_common::update_measurements(uint32_t                     cc_idx,
         avg_snr_db[cc_idx] = SRSRAN_VEC_EMA(chest_res.snr_db, avg_snr_db[cc_idx], snr_ema_coeff);
       }
     }
+#else
+     const float rssi = phy_adapter::ue_dl_get_rssi(cell.id, cc_idx);
+     // XXX TODO FIXME convert to correct units
+     avg_noise   [cc_idx] = 0;
+     pathloss    [cc_idx] = 0;
 
+     avg_rsrp_dbm[cc_idx] = rssi;
+     avg_rsrp    [cc_idx] = rssi;
+
+     avg_rsrq_db [cc_idx] = rssi;
+     avg_rssi_dbm[cc_idx] = rssi;
+
+     avg_sinr_db [cc_idx] = rssi;
+     avg_snr_db  [cc_idx] = rssi;
 #endif
     // Store metrics
     ch_metrics_t ch = {};
