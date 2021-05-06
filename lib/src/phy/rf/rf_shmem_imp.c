@@ -24,7 +24,7 @@
  *
  */
 
-// J Giovatto Oct 03, 2018
+// J Giovatto May 06, 2021
 // The approach is simple the enb and ue transmit raw IQ data which
 // would have been sent to the radio device driver (UHD) etc. Samples
 // are sent and received verbatim except in the case where the ue is in
@@ -37,7 +37,8 @@
 
 // changes to ue and enb conf resp:
 // device_name = shmemrf
-// device_args = ue or enb
+// device_args = type=[ue|enb] 
+// options: loss=tx loss default  0%
 
 // the device stop routine may not be called so check ipcs for orphaned shared mem segments
 // cleaup using key_id:
@@ -46,17 +47,9 @@
 
 // running as sudo/root will allow real time priorities to take effect
 // 1) sudo ./srsepc ./epc.conf
-// 2) sudo ./srsue  ./ue.conf
-// 3) sudo ./srsenb ./enb.conf
+// 2) sudo ./srsenb ./enb.conf.fauxrf
+// 3) sudo ./srsue  ./ue.conf.fauxrf
 
-// J Giovatto March 18, 2019
-// added support to control loss externally using netcat
-// enb listens on port 12000 and ue on 12001 (pass via args todo)
-// for example using netcat to set the enb tx loss to 100%
-// echo "100" | ncat -u localhost 12000
-
-// J Giovatto May 20, 2020
-// noted all prb values (6-100) are working !
 
 #include <string.h>
 #include <stdio.h>
@@ -126,11 +119,6 @@ static char rf_shmem_node_type = ' ';
 #define RF_SHMEM_DBUG(_fmt, ...) RF_SHMEM_LOG(rf_shmem_log_dbug, 'D', _fmt, ##__VA_ARGS__)
 #define RF_SHMEM_INFO(_fmt, ...) RF_SHMEM_LOG(rf_shmem_log_info, 'I', _fmt, ##__VA_ARGS__)
 
-#define RF_SHMEM_LOG_FUNC_TODO fprintf(stderr, "XXX_TODO file:%s func:%s line:%d XXX_TODO\n", \
-                                       __FILE__,                                              \
-                                       __func__,                                              \
-                                       __LINE__);
-
 // bytes per sample
 #define RF_SHMEM_BYTES_X_SAMPLE(x) ((x)*sizeof(cf_t))
 
@@ -144,8 +132,8 @@ static char rf_shmem_node_type = ' ';
 #define RF_SHMEM_NUM_SF_X_FRAME 10
 
 static const struct timeval tv_zero = {0,0};
-static struct timeval tv_step       = {0, 1000}; // 1 sf
-static struct timeval tv_4step      = {0, 4000}; // 4 sf
+static const struct timeval tv_sf   = {0, 1000}; // 1 sf
+static const struct timeval tv_4sf  = {0, 4000}; // 4 sf
 
 // msg element meta data
 typedef struct {
@@ -224,9 +212,8 @@ typedef struct {
    void *                    shm_ul[SRSRAN_MAX_CARRIERS];       // ul shared mem
    rf_shmem_segment_t *      rx_segment[SRSRAN_MAX_CARRIERS];   // rx bins
    rf_shmem_segment_t *      tx_segment[SRSRAN_MAX_CARRIERS];   // tx bins
-   int                       tx_loss;                           // random loss 0=none, 100=all
+   uint32_t                  tx_loss;                           // random loss 0=none, 100=all
    uint32_t                  num_carriers; 
-   int                       ctrl_sock;                         // sock control  
 } rf_shmem_state_t;
 
 
@@ -245,7 +232,7 @@ static inline time_t tv_to_usec(const struct timeval * tv)
 
 static inline uint32_t get_bin(const struct timeval * tv)
  {
-   return (tv_to_usec(tv) / tv_to_usec(&tv_step)) % RF_SHMEM_NUM_SF_X_FRAME;
+   return (tv_to_usec(tv) / tv_to_usec(&tv_sf)) % RF_SHMEM_NUM_SF_X_FRAME;
  }
 
 static void rf_shmem_handle_error(void * arg, srsran_rf_error_t error)
@@ -288,7 +275,6 @@ static rf_shmem_state_t rf_shmem_state = { .dev_name        = "shmemrf",
                                            .tx_segment      = {NULL},
                                            .tx_loss         = 0,
                                            .num_carriers    = 0,
-                                           .ctrl_sock       = -1,
                                          };
 
 #define RF_SHMEM_GET_STATE(h)  if(!h) printf("NULL handle in call to %s !!!\n", __func__); \
@@ -366,49 +352,6 @@ static int rf_shmem_resample(double srate_in,
    }
 }
 
-
-static int rf_shmem_open_ctrl_sock(rf_shmem_state_t * state)
-{
-   if(state->ctrl_sock < 0)
-    {
-      const int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-
-      if(s < 0)
-       {
-         RF_SHMEM_WARN("failed to get ctrl_sock %s", strerror(errno));
-
-         return -1;
-       }
-      else
-       {
-         struct sockaddr_in sin;
-         sin.sin_family      = AF_INET;
-         sin.sin_addr.s_addr = INADDR_ANY;
-         sin.sin_port        = rf_shmem_is_enb(state) ? 
-                               htons(12000) : 
-                               htons(12001); // TODO pass via args
-
-         if(bind(s, (const struct sockaddr *) &sin, sizeof(sin)) < 0)
-          {
-             RF_SHMEM_WARN("failed to bind ctrl_sock %s, %s:%d",
-                           strerror(errno), 
-                           inet_ntoa(sin.sin_addr),
-                           ntohs(sin.sin_port));
-
-            return -1;
-          }
-        else
-          {
-            RF_SHMEM_INFO("bind ctrl_sock %s:%d", inet_ntoa(sin.sin_addr), ntohs(sin.sin_port));
-
-            state->ctrl_sock = s;
-
-          }
-       }
-    }
-  
-   return 0;
-}
 
 
 static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t carrier)
@@ -622,35 +565,11 @@ static void rf_shmem_wait_next_tti(void *h, struct timeval * tv_ref)
 
    _state->tv_this_tti = _state->tv_next_tti;
 
-   timeradd(&_state->tv_next_tti, &tv_step, &_state->tv_next_tti);
+   timeradd(&_state->tv_next_tti, &tv_sf, &_state->tv_next_tti);
 
    gettimeofday(tv_ref, NULL);
 }
 
-
-// XXX TODO create a thread for this
-#if 0
-static void * rf_shmem_get_loss(void * h)
-{
-   RF_SHMEM_GET_STATE(h);
-
-   // check for loss change
-   char buff[256] = {0};
-
-   const int n = recv(_state->ctrl_sock, buff, sizeof(buff)-1, MSG_DONTWAIT);
-
-   if(n > 0)
-     {
-       const int val = atoi(buff); 
- 
-       RF_SHMEM_INFO("set tx loss to from %d to %d", _state->tx_loss, val);
-
-       _state->tx_loss = val;
-     }
-
-   return NULL;
-}
-#endif
 
 
 // ************ begin RF API ************
@@ -682,7 +601,7 @@ int rf_shmem_start_rx_stream(void *h, bool now)
 
    // initial tti and next
    _state->tv_this_tti = _state->tv_sos;
-   timeradd(&_state->tv_sos, &tv_step, &_state->tv_next_tti);
+   timeradd(&_state->tv_sos, &tv_sf, &_state->tv_next_tti);
 
    RF_SHMEM_INFO("start rx stream, time_0 %ld:%06ld, next_tti %ld:%06ld", 
                  _state->tv_sos.tv_sec, 
@@ -716,7 +635,7 @@ int rf_shmem_stop_rx_stream(void *h)
 
 void rf_shmem_flush_buffer(void *h)
  {
-   RF_SHMEM_LOG_FUNC_TODO;
+   RF_SHMEM_INFO("todo");
  }
 
 
@@ -728,7 +647,7 @@ bool rf_shmem_has_rssi(void *h)
 
 float rf_shmem_get_rssi(void *h)
  {
-   const float rssi = 0.0;
+   const float rssi = 1.0;
 
    RF_SHMEM_INFO("rssi %4.3f", rssi);
 
@@ -758,73 +677,45 @@ int rf_shmem_open_multi(char *args, void **h, uint32_t nof_channels)
    *h = NULL;
 
    if(! (nof_channels < SRSRAN_MAX_CARRIERS))
-     {
-        RF_SHMEM_INFO("channels %u !< MAX %u", nof_channels, SRSRAN_MAX_CARRIERS);
+    {
+      RF_SHMEM_INFO("channels %u !< MAX %u", nof_channels, SRSRAN_MAX_CARRIERS);
 
-        return -1;
-     }
+      return -1;
+    }
 
    rf_shmem_state_t * state = &rf_shmem_state;
 
    state->num_carriers = nof_channels;
 
-   if(args && strncmp(args, "enb", strlen("enb")) == 0)
+   if(args && strlen(args))
     {
-      state->nodetype = RF_SHMEM_NTYPE_ENB;
-    }
-   else if(args && strncmp(args, "ue", strlen("ue")) == 0)
-    {
-      state->nodetype = RF_SHMEM_NTYPE_UE;
-    }
-   else
-    {
-      if(!args)
+      char tmp_str[256] = {0};
+ 
+      parse_string(args, "type", -1, tmp_str);
+
+      if(! strncmp(tmp_str, "enb", strlen("enb")))
        {
-         RF_SHMEM_WARN("expected node type enb or ue\n");
+         state->nodetype = RF_SHMEM_NTYPE_ENB;
+       }
+      else if(! strncmp(tmp_str, "ue", strlen("ue")))
+       {
+         state->nodetype = RF_SHMEM_NTYPE_UE;
        }
       else
        {
          RF_SHMEM_WARN("unexpected node type %s\n", args);
        }
 
-      return -1;
-    }
-
-   uint32_t temp_val = 1;
-
-   // the driver runs the TTI, 1 msec might be too small for some systems.
-   parse_uint32(args, "time_scale", 0, &temp_val);
-
-   // not fully integrated with HARQ delay and past/gap samples see radio.cc tx()
-   if(temp_val != 1)
-    {
-      RF_SHMEM_INFO("time_scale not fully integrated\n");
-
-      // tv_step.tv_usec  *= temp_val;
-      // tv_4step.tv_usec *= temp_val;
-    }
-
-   temp_val = 0;
-
-   // percent of tx loss
-   parse_uint32(args, "tx_loss", 0, &temp_val);
-
-   if(temp_val > 0)
-    {
-      if(temp_val > 100)
+      if(state->nodetype == RF_SHMEM_NTYPE_NONE)
        {
-         temp_val = 100;
-       } 
+          RF_SHMEM_WARN("expected type ue or end\n");
 
-       state->tx_loss = temp_val;
-     }
+          return -1;
+       }
 
-   if(rf_shmem_open_ctrl_sock(state) < 0)
-    {
-      RF_SHMEM_WARN("could not create control carrier");
-
-      return -1;
+      parse_uint32(args, "loss", -1, &state->tx_loss);
     }
+
 
    for(uint32_t carrier = 0; carrier < nof_channels; ++carrier)
     {
@@ -904,10 +795,6 @@ int rf_shmem_close(void *h)
       }
     }
 
-   close(_state->ctrl_sock);
-
-   _state->ctrl_sock = -1;
- 
    return 0;
  }
 
@@ -1193,7 +1080,7 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
    // all tx are 4 tti in the future
    // code base may advance timespec slightly which can mess up our bin index
    // so we just force the tx_time here to be exactly 4 sf ahead
-   timeradd(&_state->tv_this_tti, &tv_4step, &tv_tx_tti);
+   timeradd(&_state->tv_this_tti, &tv_4sf, &tv_tx_tti);
 
    gettimeofday(&tv_now, NULL);
 
@@ -1256,7 +1143,9 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
              {
                cf_t * q = (cf_t*)data[carrier];
 
-               // XXX TODO I/Q data from multiple UL transmission needs to be summed
+               RF_SHMEM_WARN("summing");
+
+               // XXX TODO I/Q data for multiple UL transmission needs to be summed
                for(int i = 0; i < nsamples; ++i)
                 {
                   // is this correct, just sum iq data ???

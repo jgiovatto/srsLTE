@@ -45,7 +45,7 @@ continuous_tx     = 0
 
 # Example for shmem rf
 device_name = shmemrf
-device_args = ue
+device_args = type=ue
 #####################################################################
 # EUTRA RAT configuration
 # 

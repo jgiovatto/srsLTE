@@ -83,7 +83,7 @@ rx_gain = 40
 
 # Example for shmem rf
 device_name = shmemrf
-device_args = enb
+device_args = type=enb
 
 #####################################################################
 # Packet capture configuration
