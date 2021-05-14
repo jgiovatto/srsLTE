@@ -1,0 +1,18 @@
+The demo experiments use lxc containers for each UE, eNB, EPC and MBMS application instance.
+
+The UE and eNB communicate via a shared memory address space using the shmemrf device.
+
+The eNB commiuncates with the EPC and MBMS via ethnet bridge interface.
+
+These demos use a package called letce2 which is a lightweight experiment template configuration environment 
+that provides hierarchical mechanisms for generating configuration from templates.
+
+See : https://github.com/adjacentlink/letce2
+For more on building and installing this package.
+
+The majority of the configuration is handled in the boostrap config file in each the exp-xx directories.
+
+The supplied demo.env will allow each demo experiment to run without installing and of the applications in this project,
+it basically sets you PATH and LD_LIBRARY_PATH env variables.
+
+The default cmake build target directory is "build_fauxrf" change this in the demo.env if needed or create a symlink etc.

@@ -46,8 +46,13 @@ typedef struct {
 } log_args_t;
 
 typedef struct {
+  bool daemonize;
+} runtime_args_t;
+
+typedef struct {
   mbms_gw_args_t mbms_gw_args;
   log_args_t     log_args;
+  runtime_args_t runtime;
 } all_args_t;
 
 /**********************************************************************
@@ -91,6 +96,9 @@ void parse_args(all_args_t* args, int argc, char* argv[])
     ("log.all_hex_limit", bpo::value<int>(&args->log_args.all_hex_limit)->default_value(32),  "ALL log hex dump limit")
 
     ("log.filename",      bpo::value<string>(&args->log_args.filename)->default_value("/tmp/mbms.log"),"Log filename")
+
+    // run as a daemon
+    ("runtime.daemonize", bpo::value<bool>(&args->runtime.daemonize)->default_value(false), "Run this process as a daemon")
     ;
 
   // Positional options - config file location
@@ -167,13 +175,19 @@ void parse_args(all_args_t* args, int argc, char* argv[])
 
 int main(int argc, char* argv[])
 {
-  cout << endl << "---  Software Radio Systems MBMS  ---" << endl << endl;
   signal(SIGINT, sig_int_handler);
   signal(SIGTERM, sig_int_handler);
   signal(SIGHUP, sig_int_handler);
 
   all_args_t args;
   parse_args(&args, argc, argv);
+
+if(args.runtime.daemonize) {
+    cout << "Running as a daemon\n";
+    int ret = daemon(1, 0);
+  } else {
+    cout << endl <<"---  Software Radio Systems MBMS  ---" << endl << endl;
+  }
 
   srslog::sink* log_sink = (args.log_args.filename == "stdout") ? srslog::create_stdout_sink()
                                                                 : srslog::create_file_sink(args.log_args.filename);

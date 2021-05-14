@@ -106,6 +106,10 @@ struct general_args_t {
   uint32_t    max_mac_ul_kos;
 };
 
+typedef struct {
+  bool daemonize;
+} runtime_args_t;
+
 struct all_args_t {
   enb_args_t        enb;
   enb_files_t       enb_files;
@@ -115,6 +119,7 @@ struct all_args_t {
   general_args_t    general;
   phy_args_t        phy;
   stack_args_t      stack;
+  runtime_args_t runtime;
 };
 
 struct rrc_cfg_t;

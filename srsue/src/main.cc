@@ -457,6 +457,9 @@ static int parse_args(all_args_t* args, int argc, char* argv[])
     ("vnf.type", bpo::value<string>(&args->phy.vnf_args.type)->default_value("ue"), "VNF instance type [gnb,ue]")
     ("vnf.addr", bpo::value<string>(&args->phy.vnf_args.bind_addr)->default_value("localhost"), "Address to bind VNF interface")
     ("vnf.port", bpo::value<uint16_t>(&args->phy.vnf_args.bind_port)->default_value(3334), "Bind port")
+
+    // run as a daemon
+    ("runtime.daemonize", bpo::value<bool>(&args->runtime.daemonize)->default_value(false), "Run the process as a daemon")
     ;
 
   // Positional options - config file location
@@ -655,6 +658,11 @@ int main(int argc, char* argv[])
     return err;
   }
 
+  if(args.runtime.daemonize) {
+    cout << "Running as a daemon\n";
+    int ret = daemon(1, 0);
+  }
+
   // Setup logging.
   log_sink = (args.log.filename == "stdout")
                  ? srslog::create_stdout_sink()
@@ -708,8 +716,10 @@ int main(int argc, char* argv[])
     }
   }
 
-  pthread_t input;
-  pthread_create(&input, nullptr, &input_loop, &args);
+  pthread_t input = {0};
+  if(! args.runtime.daemonize) {
+    pthread_create(&input, nullptr, &input_loop, &args);
+  }
 
   cout << "Attaching UE..." << endl;
   ue.switch_on();
@@ -723,8 +733,10 @@ int main(int argc, char* argv[])
   }
 
   ue.switch_off();
-  pthread_cancel(input);
-  pthread_join(input, nullptr);
+  if(input) {
+    pthread_cancel(input);
+    pthread_join(input, nullptr);
+  }
   metricshub.stop();
   metrics_file.stop();
   ue.stop();
