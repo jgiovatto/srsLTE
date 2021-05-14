@@ -1,0 +1,19 @@
+#!/bin/bash -
+
+top_dir=$1
+node_name=$2
+start_time=$3
+
+echo "top_dir: $top_dir"
+echo "node_name: $node_name"
+echo "start_time: $start_time"
+
+cd $top_dir/$node_name
+
+cp -f $top_dir/../templates/ue/dot_fftw_wisdom $top_dir/$node_name/.fftw_wisdom
+
+rm -f .ctxt
+
+sleep 10
+
+srsue ue.conf

@@ -37,8 +37,7 @@
 
 // changes to ue and enb conf resp:
 // device_name = shmemrf
-// device_args = type=[ue|enb] 
-// options: loss=tx loss default  0%
+// device_args = type=[ue|enb] loss[0 100]
 
 // the device stop routine may not be called so check ipcs for orphaned shared mem segments
 // cleaup using key_id:
@@ -50,6 +49,7 @@
 // 2) sudo ./srsenb ./enb.conf.fauxrf
 // 3) sudo ./srsue  ./ue.conf.fauxrf
 
+// see https://github.com/pgorczak/srslte-docker-emulated for running on docker
 
 #include <string.h>
 #include <stdio.h>
