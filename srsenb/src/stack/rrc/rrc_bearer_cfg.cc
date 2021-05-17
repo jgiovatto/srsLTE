@@ -114,6 +114,8 @@ bool security_cfg_handler::set_security_capabilities(const asn1::s1ap::ue_securi
       case srsran::INTEGRITY_ALGORITHM_ID_EIA0:
         // Null integrity is not supported
         logger.info("Skipping EIA0 as RRC integrity algorithm. Null integrity is not supported.");
+        sec_cfg.integ_algo = srsran::INTEGRITY_ALGORITHM_ID_EIA0;
+        integ_algo_found   = true;
         break;
       case srsran::INTEGRITY_ALGORITHM_ID_128_EIA1:
         // “first bit” – 128-EIA1,
@@ -211,6 +213,14 @@ bearer_cfg_handler::bearer_cfg_handler(uint16_t rnti_, const rrc_cfg_t& cfg_, gt
   rnti(rnti_), cfg(&cfg_), gtpu(gtpu_), logger(&srslog::fetch_basic_logger("RRC"))
 {}
 
+void bearer_cfg_handler::reestablish_bearers(bearer_cfg_handler&& old_rnti_bearers)
+{
+  erab_info_list = std::move(old_rnti_bearers.erab_info_list);
+  erabs          = std::move(old_rnti_bearers.erabs);
+  current_drbs   = std::move(old_rnti_bearers.current_drbs);
+  old_rnti_bearers.current_drbs.clear();
+}
+
 int bearer_cfg_handler::add_erab(uint8_t                                            erab_id,
                                  const asn1::s1ap::erab_level_qos_params_s&         qos,
                                  const asn1::bounded_bitstring<1, 160, true, true>& addr,
@@ -223,8 +233,26 @@ int bearer_cfg_handler::add_erab(uint8_t                                        
     cause.set_radio_network().value = asn1::s1ap::cause_radio_network_opts::unknown_erab_id;
     return SRSRAN_ERROR;
   }
-  uint8_t lcid  = erab_id - 2; // Map e.g. E-RAB 5 to LCID 3 (==DRB1)
-  uint8_t drbid = erab_id - 4;
+
+  uint8_t lcid = 3; // first E-RAB with DRB1 gets LCID3
+  for (const auto& drb : current_drbs) {
+    if (drb.lc_ch_id == lcid) {
+      lcid++;
+    }
+  }
+  if (lcid > srsran::MAX_LTE_LCID) {
+    logger->error("Can't allocate LCID for ERAB id=%d", erab_id);
+    cause.set_radio_network().value = asn1::s1ap::cause_radio_network_opts::radio_res_not_available;
+    return SRSRAN_ERROR;
+  }
+
+  // We currently have this static mapping between LCID->DRB ID
+  uint8_t drbid = lcid - 2;
+  if (drbid > srsran::MAX_LTE_DRB_ID) {
+    logger->error("Can't allocate DRB ID for ERAB id=%d", erab_id);
+    cause.set_radio_network().value = asn1::s1ap::cause_radio_network_opts::radio_res_not_available;
+    return SRSRAN_ERROR;
+  }
 
   auto qci_it = cfg->qci_cfg.find(qos.qci);
   if (qci_it == cfg->qci_cfg.end() or not qci_it->second.configured) {
@@ -240,6 +268,7 @@ int bearer_cfg_handler::add_erab(uint8_t                                        
   const rrc_cfg_qci_t& qci_cfg = qci_it->second;
 
   erabs[erab_id].id         = erab_id;
+  erabs[erab_id].lcid       = lcid;
   erabs[erab_id].qos_params = qos;
   erabs[erab_id].address    = addr;
   erabs[erab_id].teid_out   = teid_out;
@@ -307,9 +336,10 @@ int bearer_cfg_handler::release_erab(uint8_t erab_id)
     return SRSRAN_ERROR;
   }
 
-  uint8_t drb_id = erab_id - 4;
+  lte_drb drb_id = lte_lcid_to_drb(it->second.lcid);
+  srsran::rem_rrc_obj_id(current_drbs, (uint8_t)drb_id);
 
-  srsran::rem_rrc_obj_id(current_drbs, drb_id);
+  rem_gtpu_bearer(erab_id);
 
   erabs.erase(it);
   erab_info_list.erase(erab_id);
@@ -319,8 +349,6 @@ int bearer_cfg_handler::release_erab(uint8_t erab_id)
 
 void bearer_cfg_handler::release_erabs()
 {
-  // TODO: notify GTPU layer for each ERAB
-  erabs.clear();
   while (not erabs.empty()) {
     release_erab(erabs.begin()->first);
   }
@@ -375,7 +403,7 @@ srsran::expected<uint32_t> bearer_cfg_handler::add_gtpu_bearer(uint32_t         
   erab_t::gtpu_tunnel bearer;
   bearer.teid_out                   = teid_out;
   bearer.addr                       = addr;
-  srsran::expected<uint32_t> teidin = gtpu->add_bearer(rnti, erab.id - 2, addr, teid_out, props);
+  srsran::expected<uint32_t> teidin = gtpu->add_bearer(rnti, erab.lcid, addr, teid_out, props);
   if (teidin.is_error()) {
     logger->error("Adding erab_id=%d to GTPU", erab_id);
     return srsran::default_error_t();
@@ -388,12 +416,11 @@ srsran::expected<uint32_t> bearer_cfg_handler::add_gtpu_bearer(uint32_t         
 void bearer_cfg_handler::rem_gtpu_bearer(uint32_t erab_id)
 {
   auto it = erabs.find(erab_id);
-  if (it != erabs.end()) {
-    // Map e.g. E-RAB 5 to LCID 3 (==DRB1)
-    gtpu->rem_bearer(rnti, erab_id - 2);
-  } else {
-    logger->error("Removing erab_id=%d to GTPU\n", erab_id);
+  if (it == erabs.end()) {
+    logger->warning("Removing erab_id=%d from GTPU", erab_id);
+    return;
   }
+  gtpu->rem_bearer(rnti, it->second.lcid);
 }
 
 void bearer_cfg_handler::fill_pending_nas_info(asn1::rrc::rrc_conn_recfg_r8_ies_s* msg)
@@ -410,16 +437,19 @@ void bearer_cfg_handler::fill_pending_nas_info(asn1::rrc::rrc_conn_recfg_r8_ies_
   // Add E-RAB info message for the E-RABs
   if (msg->rr_cfg_ded.drb_to_add_mod_list_present) {
     for (const drb_to_add_mod_s& drb : msg->rr_cfg_ded.drb_to_add_mod_list) {
-      uint8_t erab_id = drb.drb_id + 4;
-      auto    it      = erab_info_list.find(erab_id);
-      if (it != erab_info_list.end()) {
-        const std::vector<uint8_t>& erab_info = it->second;
+      uint32_t lcid    = drb_to_lcid((lte_drb)drb.drb_id);
+      auto     erab_it = std::find_if(
+          erabs.begin(), erabs.end(), [lcid](const std::pair<uint8_t, erab_t>& e) { return e.second.lcid == lcid; });
+      uint32_t erab_id = erab_it->second.id;
+      auto     info_it = erab_info_list.find(erab_id);
+      if (info_it != erab_info_list.end()) {
+        const std::vector<uint8_t>& erab_info = info_it->second;
         logger->info(&erab_info[0], erab_info.size(), "connection_reconf erab_info -> nas_info rnti 0x%x", rnti);
         msg->ded_info_nas_list[idx].resize(erab_info.size());
         memcpy(msg->ded_info_nas_list[idx].data(), &erab_info[0], erab_info.size());
-        erab_info_list.erase(it);
+        erab_info_list.erase(info_it);
       } else {
-        logger->debug("Not adding NAS message to connection reconfiguration. E-RAB id %d", erab_id);
+        logger->info("Not adding NAS message to connection reconfiguration. E-RAB id %d", erab_id);
       }
       idx++;
     }
