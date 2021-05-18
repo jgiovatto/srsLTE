@@ -96,6 +96,8 @@ uint16_t compute_mac_i(uint16_t                            crnti,
 
   // Compute MAC-I
   switch (integ_algo) {
+    case srsran::INTEGRITY_ALGORITHM_ID_EIA0:
+      return 0;
     case srsran::INTEGRITY_ALGORITHM_ID_128_EIA1:
       srsran::security_128_eia1(&k_rrc_int[16],
                                 0xffffffff, // 32-bit all to ones
@@ -115,7 +117,7 @@ uint16_t compute_mac_i(uint16_t                            crnti,
                                 mac_key);
       break;
     default:
-      printf("Unsupported integrity algorithm %d.", integ_algo);
+      srsran::console_stderr("ERROR: Unsupported integrity algorithm %d.\n", integ_algo);
   }
 
   uint16_t short_mac_i = (((uint16_t)mac_key[2] << 8u) | (uint16_t)mac_key[3]);
@@ -580,7 +582,7 @@ rrc::ue::rrc_mobility::s1_source_ho_st::start_enb_status_transfer(const asn1::s1
 
   for (const auto& erab_pair : rrc_ue->bearer_list.get_erabs()) {
     s1ap_interface_rrc::bearer_status_info b    = {};
-    uint8_t                                lcid = erab_pair.second.id - 2u;
+    uint8_t                                lcid = erab_pair.second.lcid;
     b.erab_id                                   = erab_pair.second.id;
     srsran::pdcp_lte_state_t pdcp_state         = {};
     if (not rrc_enb->pdcp->get_bearer_state(rrc_ue->rnti, lcid, &pdcp_state)) {
@@ -923,6 +925,7 @@ bool rrc::ue::rrc_mobility::apply_ho_prep_cfg(const ho_prep_info_r8_ies_s&      
       erabs_failed_to_setup.back().erab_id = erab.erab_id;
       erabs_failed_to_setup.back().cause.set_transport().value =
           asn1::s1ap::cause_transport_opts::transport_res_unavailable;
+      rrc_ue->bearer_list.release_erab(erab.erab_id);
       continue;
     }
   }
@@ -995,12 +998,12 @@ void rrc::ue::rrc_mobility::handle_status_transfer(s1_target_ho_st& s, const sta
       logger.warning("The E-RAB Id=%d is not recognized", erab_item.erab_id);
       continue;
     }
-    const auto& drbs  = rrc_ue->bearer_list.get_established_drbs();
-    uint8_t     drbid = erab_item.erab_id - 4;
-    auto        drb_it =
-        std::find_if(drbs.begin(), drbs.end(), [drbid](const drb_to_add_mod_s& drb) { return drb.drb_id == drbid; });
+    const auto& drbs   = rrc_ue->bearer_list.get_established_drbs();
+    lte_drb     drbid  = lte_lcid_to_drb(erab_it->second.lcid);
+    auto        drb_it = std::find_if(
+        drbs.begin(), drbs.end(), [drbid](const drb_to_add_mod_s& drb) { return (lte_drb)drb.drb_id == drbid; });
     if (drb_it == drbs.end()) {
-      logger.warning("The DRB id=%d does not exist", erab_item.erab_id - 4);
+      logger.warning("The DRB id=%d does not exist", (int)drbid);
     }
 
     srsran::pdcp_lte_state_t drb_state{};

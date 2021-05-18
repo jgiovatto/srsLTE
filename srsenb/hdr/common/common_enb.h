@@ -26,6 +26,7 @@
                               INCLUDES
 *******************************************************************************/
 
+#include "srsran/adt/circular_map.h"
 #include "srsran/common/common_lte.h"
 #include <stdint.h>
 
@@ -50,12 +51,20 @@ constexpr uint32_t drb_to_lcid(lte_drb drb_id)
 {
   return srb_to_lcid(lte_srb::srb2) + static_cast<uint32_t>(drb_id);
 }
+constexpr lte_drb lte_lcid_to_drb(uint32_t lcid)
+{
+  return srsran::is_lte_drb(lcid) ? static_cast<lte_drb>(lcid - srb_to_lcid(lte_srb::srb2)) : lte_drb::invalid;
+}
 
 // Cat 3 UE - Max number of DL-SCH transport block bits received within a TTI
 // 3GPP 36.306 Table 4.1.1
 #define SRSENB_MAX_BUFFER_SIZE_BITS 102048
 #define SRSENB_MAX_BUFFER_SIZE_BYTES 12756
 #define SRSENB_BUFFER_HEADER_OFFSET 1024
+
+/// Typedef of circular map container which key corresponding to rnti value and that can be used across layers
+template <typename UEObject>
+using rnti_map_t = srsran::static_circular_map<uint16_t, UEObject, SRSENB_MAX_UES>;
 
 } // namespace srsenb
 

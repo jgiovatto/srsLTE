@@ -130,6 +130,12 @@ if (STOP_ON_WARNING)
   add_definitions(-DSTOP_ON_WARNING)
 endif()
 
+# Test for Atomics
+include(CheckAtomic)
+if(NOT HAVE_CXX_ATOMICS_WITHOUT_LIB OR NOT HAVE_CXX_ATOMICS64_WITHOUT_LIB)
+    set(ATOMIC_LIBS "atomic")
+endif()
+
 option(ENABLE_PHY_ADAPTER "Enable PHY Adapter for use with emane" ON)
 
 ########################################################################

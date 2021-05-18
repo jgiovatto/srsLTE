@@ -90,7 +90,7 @@ dl_earfcn = 3050
 # nas_filename:      File path to use for NAS packet capture
 #####################################################################
 [pcap]
-enable = none
+enable = false
 mac_filename = /tmp/ue_mac.pcap
 mac_nr_filename = /tmp/ue_mac_nr.pcap
 nas_filename = /tmp/ue_nas.pcap
@@ -117,7 +117,8 @@ nas_filename = /tmp/ue_nas.pcap
 #####################################################################
 [log]
 all_level = warning
-phy_lib_level = warning
+phy_level = warning
+mac_level = warning
 all_hex_limit = 32
 filename = stdout
 file_max_size = -1

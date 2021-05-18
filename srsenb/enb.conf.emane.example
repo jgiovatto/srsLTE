@@ -149,9 +149,9 @@ client_port = 5847
 #                If set to negative, a single log file will be created.
 #####################################################################
 [log]
-all_level = info
-mac_level = info
-phy_level = warn
+all_level = warning
+mac_level = warning
+phy_level = warning
 all_hex_limit = 32
 filename = stdout
 file_max_size = -1

@@ -64,7 +64,7 @@ public:
 
   struct tunnel {
     uint16_t rnti      = SRSRAN_INVALID_RNTI;
-    uint32_t lcid      = srsran::MAX_NOF_BEARERS;
+    uint32_t lcid      = srsran::INVALID_LCID;
     uint32_t teid_in   = 0;
     uint32_t teid_out  = 0;
     uint32_t spgw_addr = 0;
@@ -128,8 +128,8 @@ private:
   pdcp_interface_gtpu*      pdcp = nullptr;
   srslog::basic_logger&     logger;
 
-  srsran::static_circular_map<uint16_t, ue_lcid_tunnel_list, SRSENB_MAX_UES> ue_teidin_db;
-  tunnel_list_t                                                              tunnels;
+  rnti_map_t<ue_lcid_tunnel_list> ue_teidin_db;
+  tunnel_list_t                   tunnels;
 };
 
 using gtpu_tunnel_state = gtpu_tunnel_manager::tunnel_state;
