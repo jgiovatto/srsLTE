@@ -10,12 +10,11 @@ that provides hierarchical mechanisms for generating configuration from template
 See : https://github.com/adjacentlink/letce2
 For more on building and installing this package.
 
-The majority of the configuration is handled in the boostrap config file in each the exp-xx directories.
+The majority of the configuration is handled in the boostrap.cfg config file in each the shmemrf or zmq directories,
+other configuration can be found in the templates directory.
 
 The supplied demo.env will allow each demo experiment to run without installing and of the applications in this project,
 it basically sets you PATH and LD_LIBRARY_PATH env variables.
-
-
 
 The default cmake build target directory is "build_fauxrf" change this in the demo.env if needed or create a symlink etc.
 To build the experiment configuration just run 'make'.
@@ -48,7 +47,6 @@ Run 'tree' to view the generated config files.
 ├── letce2.cfg
 ├── Makefile
 ├── manifest
-├── README
 ├── ue-01
 │   ├── init
 │   ├── init.local
