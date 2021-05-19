@@ -5,8 +5,8 @@ all:
                 lxc \
                 build \
                 bootstrap.cfg \
-		../templates/common/experiment.cfg \
-		../templates/common/container.cfg
+		../../templates/common/experiment.cfg \
+		../../templates/common/container.cfg
 
 clean:
 	letce2 lxc clean

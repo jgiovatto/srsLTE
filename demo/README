@@ -1,6 +1,6 @@
 The demo experiments use lxc containers for each UE, eNB, EPC and MBMS application instance.
 
-The UE and eNB communicate via a shared memory address space using the shmemrf device or zmq ipc.
+The UE and eNB communicate via a shared memory address space using the shmem rf device or zmq rf.
 
 The eNB commiuncates with the EPC and MBMS via ethnet bridge interface.
 
@@ -10,7 +10,7 @@ that provides hierarchical mechanisms for generating configuration from template
 See : https://github.com/adjacentlink/letce2
 For more on building and installing this package.
 
-The majority of the configuration is handled in the boostrap.cfg config file in each the shmemrf or zmq directories,
+The majority of the configuration is handled in the boostrap.cfg config file in each the shmem or zmq directories,
 other configuration can be found in the templates directory.
 
 The supplied demo.env will allow each demo experiment to run without installing and of the applications in this project,
@@ -18,6 +18,11 @@ it basically sets you PATH and LD_LIBRARY_PATH env variables.
 
 The default cmake build target directory is "build_fauxrf" change this in the demo.env if needed or create a symlink etc.
 To build the experiment configuration just run 'make'.
+
+Directory zmq and shmem each have 2 demos, 
+1) 1 enb with carrier aggregation and 2 ues that connect to 1 of the enb carriers.
+2) 2 enb w/o carrier aggregation and 2 ues each connecting to an enb.
+
 
 Run 'tree' to view the generated config files.
 #tree
@@ -64,7 +69,7 @@ Run 'tree' to view the generated config files.
 .
 
 
-To start and experiment run 'letce2 lxc start -e ../demo.env'
+To start and experiment run 'letce2 lxc start -e ../../demo.env'
 
 To check the containers status run 'sudo lxc-ls -f'
 
