@@ -1,0 +1,15 @@
+#!/bin/bash -
+
+top_dir=$1
+node_name=$2
+start_time=$3
+
+echo "top_dir: $top_dir"
+echo "node_name: $node_name"
+echo "start_time: $start_time"
+
+cd "$top_dir/$node_name"
+
+# delay enb startup so that epc is ready for S1 connection
+sleep 5
+srsenb enb.conf
