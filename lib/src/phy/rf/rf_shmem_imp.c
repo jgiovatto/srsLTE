@@ -32,8 +32,8 @@
 // "jammming" of the data stream my be desireable by substiting some random values.
 // Shared memory was chosen over unix/inet sockets to allow for the fastest
 // data transfer and possible combining IQ data in a single buffer. Each ul and dl subframe
-// worth of iqdata and metadata is held in a "bin" where tx bin index is 4 sf 
-// ahead of the rx bin index. 
+// worth of iqdata and metadata is held in a "sf_bin" where tx sf_bin index is 4 sf 
+// ahead of the rx sf_bin index. 
 //
 // The enb creates a shared memory segment for each channel or band, to keep things simple
 // we simple use the earfcn id. So far a 2 carrier enb we set 2 shared memory segments or bands.
@@ -154,7 +154,7 @@ typedef struct {
 
 
 // sf len at nprb=100 is 184320 bytes or 23040 samples
-// subtract the other fields of the struct to align mem size to 256k per bin
+// subtract the other fields of the struct to align mem size to 256k per sf_bin
 // to avoid shmget failure
 #define RF_SHMEM_MAX_CF_LEN RF_SHMEM_SAMPLES_X_BYTE((256000 - sizeof(rf_shmem_element_meta_t)))
 
@@ -164,7 +164,7 @@ typedef struct {
   cf_t                    iqdata[RF_SHMEM_MAX_CF_LEN]; // data
 } rf_shmem_element_t;
 
-sem_t * sem[SRSRAN_MAX_CHANNELS][RF_SHMEM_NUM_SF_X_FRAME] = {{0}};  // element r/w bin locks
+sem_t * sem[SRSRAN_MAX_CHANNELS][RF_SHMEM_NUM_SF_X_FRAME] = {{0}};  // element r/w sf_bin locks
 
 // msg element bins 1 for each sf (tti)
 typedef struct {
@@ -237,7 +237,7 @@ static inline time_t tv_to_usec(const struct timeval * tv)
  }
 
 
-static inline uint32_t get_bin(const struct timeval * tv)
+static inline uint32_t get_sf_bin(const struct timeval * tv)
  {
    return (tv_to_usec(tv) / tv_to_usec(&tv_sf)) % RF_SHMEM_NUM_SF_X_FRAME;
  }
@@ -462,7 +462,7 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t channel)
    }
 
 
-  // shared sems, 1 for each bin
+  // shared sems, 1 for each sf_bin
   for(int sf = 0; sf < RF_SHMEM_NUM_SF_X_FRAME; ++sf)
    {
      snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_SEM_FMT, state->bands[channel], sf);
@@ -957,31 +957,31 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
       // wait for the next tti
       rf_shmem_wait_next_tti(h, &tv_now);
 
-      // find bin for this tti
-      const uint32_t bin = get_bin(&_state->tv_this_tti);
+      // find sf_bin for this tti
+      const uint32_t sf_bin = get_sf_bin(&_state->tv_this_tti);
 
       for(uint32_t channel = 0; channel < _state->nof_channels; ++channel)
        { 
          if(data[channel] && _state->rx_freq[channel])
           {
-            // lock this bin
-            if(sem_wait(sem[channel][bin]) < 0)
+            // lock this sf_bin
+            if(sem_wait(sem[channel][sf_bin]) < 0)
              {
                RF_SHMEM_WARN("sem_wait error %s", strerror(errno));
              }
 
             memset(data[channel], 0x0, nbytes);
 
-            rf_shmem_element_t * element = &_state->rx_segment[channel]->elements[bin];
+            rf_shmem_element_t * element = &_state->rx_segment[channel]->elements[sf_bin];
  
 #ifdef RF_SHMEM_DEBUG_MODE
             char logbuff[256] = {0};
-            RF_SHMEM_INFO("RX, TTI %ld:%06ld, channel %u, bin %u, offset %u, %s", 
+            RF_SHMEM_INFO("RX, TTI %ld:%06ld, channel %u, sf_bin %u, offset %u, %s", 
                            _state->tv_this_tti.tv_sec, _state->tv_this_tti.tv_usec, 
-                           channel, bin, offset[channel], printMsg(element, logbuff, sizeof(logbuff)));
+                           channel, sf_bin, offset[channel], printMsg(element, logbuff, sizeof(logbuff)));
 #endif
       
-            // check current tti w/bin tti 
+            // check current tti w/sf_bin tti 
             if(timercmp(&_state->tv_this_tti, &element->meta.tv_tx_tti, ==))
              {
                const int result = rf_shmem_resample(element->meta.tx_srate,
@@ -995,13 +995,12 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
 
             if(rf_shmem_is_enb(_state))
              {
-               // enb clear ul bin on every rx
-               // ue leaves data for other ue(s) to read
+               // enb clear ul sf_bin after every read
                memset(element, 0x0, sizeof(*element));
              }
 
             // unlock
-            sem_post(sem[channel][bin]);
+            sem_post(sem[channel][sf_bin]);
           }
        }
     }
@@ -1051,7 +1050,7 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
    struct timeval tv_now, tv_tx_tti;
 
    // all tx are 4 tti in the future
-   // code base may advance timespec slightly which can mess up our bin index
+   // code base may advance timespec slightly which can mess up our sf_bin index
    // so we just force the tx_time here to be exactly 4 sf ahead
    timeradd(&_state->tv_this_tti, &tv_4sf, &tv_tx_tti);
 
@@ -1077,29 +1076,29 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
     {
       const uint32_t nbytes = RF_SHMEM_BYTES_X_SAMPLE(nsamples);
 
-      // get the bin for this tx_tti
-      const uint32_t bin = get_bin(&tv_tx_tti);
+      // get the sf_bin for this tx_tti
+      const uint32_t sf_bin = get_sf_bin(&tv_tx_tti);
 
       for(uint32_t channel = 0; channel < _state->nof_channels; ++channel)
        {
          if(data[channel] && _state->tx_freq[channel])
           {
-            // lock this bin
-            if(sem_wait(sem[channel][bin]) < 0)
+            // lock this sf_bin
+            if(sem_wait(sem[channel][sf_bin]) < 0)
              {
                RF_SHMEM_WARN("sem_wait error %s", strerror(errno));
              }
 
-            rf_shmem_element_t * element = &_state->tx_segment[channel]->elements[bin];
+            rf_shmem_element_t * element = &_state->tx_segment[channel]->elements[sf_bin];
 
             // 1 and only 1 enb
             if(rf_shmem_is_enb(_state))
              {
-               // clear stale dl bin before tx
+               // clear stale dl sf_bin before tx
                memset(element, 0x0, sizeof(*element));
              }
 
-            // is a fresh bin entry
+            // is a fresh sf_bin entry
             if(element->meta.nof_sf == 0)
              {
                memcpy(element->iqdata, data[channel], nbytes);
@@ -1130,12 +1129,12 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
             ++element->meta.nof_sf;
 #if 0
             char logbuff[256] = {0};
-            RF_SHMEM_INFO("TX, TTI %ld:%06ld, channel %u, bin %u, %s", 
-                          _state->tv_this_tti.tv_sec, _state->tv_this_tti.tv_usec, channel, bin, printMsg(element, logbuff, sizeof(logbuff)));
+            RF_SHMEM_INFO("TX, TTI %ld:%06ld, channel %u, sf_bin %u, %s", 
+                          _state->tv_this_tti.tv_sec, _state->tv_this_tti.tv_usec, channel, sf_bin, printMsg(element, logbuff, sizeof(logbuff)));
 #endif
 
             // unlock
-            sem_post(sem[channel][bin]);
+            sem_post(sem[channel][sf_bin]);
           }
        }
     }

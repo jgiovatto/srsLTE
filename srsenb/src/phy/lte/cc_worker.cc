@@ -429,7 +429,7 @@ int cc_worker::decode_pucch()
         }
 
         // Logging
-        if (logger.info.enabled()) {
+        if (logger.debug.enabled()) {
           char str[512];
           srsran_pucch_rx_info(&ul_cfg.pucch, &pucch_res, str, sizeof(str));
           logger.info("PUCCH: cc=%d; %s", cc_idx, str);
@@ -488,7 +488,7 @@ int cc_worker::encode_pdcch_ul(stack_interface_phy_lte::ul_sched_grant_t* grants
       if (logger.info.enabled()) {
         char str[512];
         srsran_dci_ul_info(&grants[i].dci, str, 512);
-        logger.info("PDCCH: cc=%d, %s, tti_tx_dl=%d", cc_idx, str, tti_tx_dl);
+        logger.info("PDCCH_UL: cc=%d, %s, tti_tx_dl=%d", cc_idx, str, tti_tx_dl);
       }
     }
   }
@@ -523,7 +523,7 @@ int cc_worker::encode_pdcch_dl(stack_interface_phy_lte::dl_sched_grant_t* grants
         // Logging
         char str[512];
         srsran_dci_dl_info(&grants[i].dci, str, 512);
-        logger.info("PDCCH: cc=%d, %s, tti_tx_dl=%d", cc_idx, str, tti_tx_dl);
+        logger.info("PDCCH_DL: cc=%d, %s, tti_tx_dl=%d", cc_idx, str, tti_tx_dl);
       }
     }
   }
