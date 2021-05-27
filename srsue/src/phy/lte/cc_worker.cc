@@ -781,7 +781,7 @@ bool cc_worker::encode_uplink(mac_interface_phy_lte::tb_action_ul_t* action, srs
   }
 
   // Logging
-  if (logger.info.enabled()) {
+  if (logger.debug.enabled()) {
     char str[512];
     if (srsran_ue_ul_info(&ue_ul_cfg, &sf_cfg_ul, &data.uci, str, 512)) {
       logger.info("%s", str);
