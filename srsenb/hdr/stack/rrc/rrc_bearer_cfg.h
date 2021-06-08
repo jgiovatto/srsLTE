@@ -78,7 +78,8 @@ public:
       uint32_t teid_in  = 0;
       uint32_t addr     = 0;
     };
-    uint8_t                                     id = 0;
+    uint8_t                                     id   = 0;
+    uint8_t                                     lcid = 0;
     asn1::s1ap::erab_level_qos_params_s         qos_params;
     asn1::bounded_bitstring<1, 160, true, true> address;
     uint32_t                                    teid_out = 0;
@@ -87,6 +88,9 @@ public:
   };
 
   bearer_cfg_handler(uint16_t rnti_, const rrc_cfg_t& cfg_, gtpu_interface_rrc* gtpu_);
+
+  /// Called after RRCReestablishmentComplete, to add E-RABs of old rnti
+  void reestablish_bearers(bearer_cfg_handler&& old_rnti_bearers);
 
   int  add_erab(uint8_t                                            erab_id,
                 const asn1::s1ap::erab_level_qos_params_s&         qos,

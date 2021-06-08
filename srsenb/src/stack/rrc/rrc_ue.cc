@@ -20,10 +20,10 @@
  */
 
 #include "srsenb/hdr/stack/rrc/rrc_ue.h"
+#include "srsenb/hdr/common/common_enb.h"
 #include "srsenb/hdr/stack/rrc/mac_controller.h"
 #include "srsenb/hdr/stack/rrc/rrc_mobility.h"
 #include "srsenb/hdr/stack/rrc/ue_rr_cfg.h"
-#include "srsran/adt/pool/mem_pool.h"
 #include "srsran/asn1/rrc_utils.h"
 #include "srsran/common/enb_events.h"
 #include "srsran/common/int_helpers.h"
@@ -523,10 +523,16 @@ void rrc::ue::handle_rrc_con_reest_req(rrc_conn_reest_request_s* msg)
                                     static_cast<unsigned>(rrc_event_type::con_reest_req),
                                     static_cast<unsigned>(procedure_result_code::none),
                                     rnti);
+  const rrc_conn_reest_request_r8_ies_s& req_r8   = msg->crit_exts.rrc_conn_reest_request_r8();
+  uint16_t                               old_rnti = req_r8.ue_id.c_rnti.to_number();
+
+  srsran::console(
+      "User 0x%x requesting RRC Reestablishment as 0x%x. Cause: %s\n", rnti, old_rnti, req_r8.reest_cause.to_string());
 
   if (not parent->s1ap->is_mme_connected()) {
     parent->logger.error("MME isn't connected. Sending Connection Reject");
-    send_connection_reject(procedure_result_code::error_mme_not_connected);
+    send_connection_reest_rej(procedure_result_code::error_mme_not_connected);
+    srsran::console("User 0x%x RRC Reestablishment Request rejected\n", rnti);
     return;
   }
   parent->logger.debug("rnti=0x%x, phyid=0x%x, smac=0x%x, cause=%s",
@@ -535,7 +541,6 @@ void rrc::ue::handle_rrc_con_reest_req(rrc_conn_reest_request_s* msg)
                        (uint32_t)msg->crit_exts.rrc_conn_reest_request_r8().ue_id.short_mac_i.to_number(),
                        msg->crit_exts.rrc_conn_reest_request_r8().reest_cause.to_string());
   if (is_idle()) {
-    uint16_t               old_rnti = msg->crit_exts.rrc_conn_reest_request_r8().ue_id.c_rnti.to_number();
     uint16_t               old_pci  = msg->crit_exts.rrc_conn_reest_request_r8().ue_id.pci;
     const enb_cell_common* old_cell = parent->cell_common_list->get_pci(old_pci);
     auto                   ue_it    = parent->users.find(old_rnti);
@@ -590,9 +595,13 @@ void rrc::ue::handle_rrc_con_reest_req(rrc_conn_reest_request_s* msg)
     } else {
       parent->logger.error("Received ConnectionReestablishment for rnti=0x%x without context", old_rnti);
       send_connection_reest_rej(procedure_result_code::error_unknown_rnti);
+      srsran::console(
+          "User 0x%x RRC Reestablishment Request rejected. Cause: no rnti=0x%x context available\n", rnti, old_rnti);
     }
   } else {
     parent->logger.error("Received ReestablishmentRequest from an rnti=0x%x not in IDLE", rnti);
+    send_connection_reest_rej(procedure_result_code::error_unknown_rnti);
+    srsran::console("ERROR: User 0x%x requesting Reestablishment is not in RRC_IDLE\n", rnti);
   }
 }
 
@@ -663,8 +672,8 @@ void rrc::ue::handle_rrc_con_reest_complete(rrc_conn_reest_complete_s* msg, srsr
   parent->pdcp->enable_integrity(rnti, srb_to_lcid(lte_srb::srb1));
   parent->pdcp->enable_encryption(rnti, srb_to_lcid(lte_srb::srb1));
 
-  // Reestablish current DRBs during ConnectionReconfiguration
-  bearer_list = std::move(parent->users.at(old_reest_rnti)->bearer_list);
+  // Reestablish E-RABs of old rnti during ConnectionReconfiguration
+  bearer_list.reestablish_bearers(std::move(parent->users.at(old_reest_rnti)->bearer_list));
 
   // remove old RNTI
   parent->rem_user_thread(old_reest_rnti);
@@ -1083,6 +1092,7 @@ int rrc::ue::setup_erab(uint16_t                                           erab_
   }
   if (bearer_list.add_gtpu_bearer(erab_id) != SRSRAN_SUCCESS) {
     cause.set_radio_network().value = asn1::s1ap::cause_radio_network_opts::radio_res_not_available;
+    bearer_list.release_erab(erab_id);
     return SRSRAN_ERROR;
   }
   return SRSRAN_SUCCESS;
@@ -1330,7 +1340,7 @@ void rrc::ue::apply_pdcp_srb_updates(const rr_cfg_ded_s& pending_rr_cfg)
 void rrc::ue::apply_pdcp_drb_updates(const rr_cfg_ded_s& pending_rr_cfg)
 {
   for (uint8_t drb_id : pending_rr_cfg.drb_to_release_list) {
-    parent->pdcp->del_bearer(rnti, drb_id + 2);
+    parent->pdcp->del_bearer(rnti, drb_to_lcid((lte_drb)drb_id));
   }
   for (const drb_to_add_mod_s& drb : pending_rr_cfg.drb_to_add_mod_list) {
     // Configure DRB1 in PDCP
@@ -1352,7 +1362,7 @@ void rrc::ue::apply_pdcp_drb_updates(const rr_cfg_ded_s& pending_rr_cfg)
   // If reconf due to reestablishment, recover PDCP state
   if (state == RRC_STATE_REESTABLISHMENT_COMPLETE) {
     for (const auto& erab_pair : bearer_list.get_erabs()) {
-      uint16_t lcid  = erab_pair.second.id - 2;
+      uint16_t lcid  = erab_pair.second.lcid;
       bool     is_am = parent->cfg.qci_cfg[erab_pair.second.qos_params.qci].rlc_cfg.type().value ==
                    asn1::rrc::rlc_cfg_c::types_opts::am;
       if (is_am) {
@@ -1380,7 +1390,7 @@ void rrc::ue::apply_rlc_rb_updates(const rr_cfg_ded_s& pending_rr_cfg)
   }
   if (pending_rr_cfg.drb_to_release_list.size() > 0) {
     for (uint8_t drb_id : pending_rr_cfg.drb_to_release_list) {
-      parent->rlc->del_bearer(rnti, drb_id + 2);
+      parent->rlc->del_bearer(rnti, drb_to_lcid((lte_drb)drb_id));
     }
   }
   for (const drb_to_add_mod_s& drb : pending_rr_cfg.drb_to_add_mod_list) {
