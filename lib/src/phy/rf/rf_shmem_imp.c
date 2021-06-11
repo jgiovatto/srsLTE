@@ -25,7 +25,7 @@
  */
 
 // J Giovatto May 06, 2021
-// The approach is simple the enb and ue transmit raw IQ data which
+// The approach is simple, the enb and ue transmit raw IQ data which
 // would have been sent to the radio device driver (UHD) etc. Samples
 // are sent and received verbatim except in the case where the ue is in
 // cell search where downsampling is applied. At some point some artifical
@@ -35,25 +35,25 @@
 // worth of iqdata and metadata is held in a "sf_bin" where tx sf_bin index is 4 sf 
 // ahead of the rx sf_bin index. 
 //
-// The enb creates a shared memory segment for each channel or band, to keep things simple
-// we simple use the earfcn id. So far a 2 carrier enb we set 2 shared memory segments or bands.
-// A shared semaphore syncronization object is created for each subframe within a band.
+// The enb creates a shared memory segment for each channel or port, to keep things simple
+// we simple use the earfcn id. So far a 2 carrier enb we set 2 shared memory segments or ports.
+// A shared semaphore syncronization object is created for each subframe within a port.
 //
-// Each ue can then attach to a particular shared memory segment again specified by the band id.
+// Each ue can then attach to a particular shared memory segment again specified by the port id.
 //
 // see /dev/shm for shared memory segemnts, these may be orphaned if close is not called on termination.
 //
 // below we see the semaphores and shmem objects list in /dev/shm
-// sem.shmemrf_sem_band_2850_sf_00  sem.shmemrf_sem_band_2850_sf_04  sem.shmemrf_sem_band_2850_sf_08  sem.shmemrf_sem_band_3050_sf_02  sem.shmemrf_sem_band_3050_sf_06  shmemrf_shmem_dl_band_2850
-// sem.shmemrf_sem_band_2850_sf_01  sem.shmemrf_sem_band_2850_sf_05  sem.shmemrf_sem_band_2850_sf_09  sem.shmemrf_sem_band_3050_sf_03  sem.shmemrf_sem_band_3050_sf_07  shmemrf_shmem_dl_band_3050
-// sem.shmemrf_sem_band_2850_sf_02  sem.shmemrf_sem_band_2850_sf_06  sem.shmemrf_sem_band_3050_sf_00  sem.shmemrf_sem_band_3050_sf_04  sem.shmemrf_sem_band_3050_sf_08  shmemrf_shmem_ul_band_2850
-// sem.shmemrf_sem_band_2850_sf_03  sem.shmemrf_sem_band_2850_sf_07  sem.shmemrf_sem_band_3050_sf_01  sem.shmemrf_sem_band_3050_sf_05  sem.shmemrf_sem_band_3050_sf_09  shmemrf_shmem_ul_band_3050
+// sem.shmemrf_sem_port_0_sf_00  sem.shmemrf_sem_port_0_sf_04  sem.shmemrf_sem_port_0_sf_08  sem.shmemrf_sem_port_1_sf_02  sem.shmemrf_sem_port_1_sf_06  shmemrf_shmem_dl_port_0
+// sem.shmemrf_sem_port_0_sf_01  sem.shmemrf_sem_port_0_sf_05  sem.shmemrf_sem_port_0_sf_09  sem.shmemrf_sem_port_1_sf_03  sem.shmemrf_sem_port_1_sf_07  shmemrf_shmem_dl_port_1
+// sem.shmemrf_sem_port_0_sf_02  sem.shmemrf_sem_port_0_sf_06  sem.shmemrf_sem_port_1_sf_00  sem.shmemrf_sem_port_1_sf_04  sem.shmemrf_sem_port_1_sf_08  shmemrf_shmem_ul_port_0
+// sem.shmemrf_sem_port_0_sf_03  sem.shmemrf_sem_port_0_sf_07  sem.shmemrf_sem_port_1_sf_01  sem.shmemrf_sem_port_1_sf_05  sem.shmemrf_sem_port_1_sf_09  shmemrf_shmem_ul_port_1
 //
 //
 // changes to ue and enb conf resp:
-// device_name = shmemrf
-// device_args = type=enb,band0=2850,band1=3050
-// device_args = type=ue,band0=2850
+// device_name = shmem
+// device_args = type=enb,port0=0,port1=1
+// device_args = type=ue,port0=0
 //
 // 1) sudo ./srsepc ./epc.conf
 // 2) sudo ./srsenb ./enb.conf.fauxrf
@@ -218,7 +218,7 @@ typedef struct {
    rf_shmem_segment_t *      tx_segment[SRSRAN_MAX_CHANNELS];   // tx bins
    uint32_t                  tx_loss;                           // random loss 0=none, 100=all
    uint32_t                  nof_channels;                      // num carriers/channels ???
-   char                      bands[SRSRAN_MAX_CHANNELS][256];   // shmem band ids
+   char                      ports[SRSRAN_MAX_CHANNELS][256];   // shmem port ids
 } rf_shmem_state_t;
 
 
@@ -254,7 +254,7 @@ static void rf_shmem_handle_error(void * arg, srsran_rf_error_t error)
           "unknown error");
 }
 
-static rf_shmem_state_t rf_shmem_state = { .dev_name      = "shmemrf",
+static rf_shmem_state_t rf_shmem_state = { .dev_name      = "shmem",
                                            .nodetype      = RF_SHMEM_NTYPE_NONE,
                                            .rx_gain       = 0.0,
                                            .tx_gain       = 0.0,
@@ -288,9 +288,9 @@ static rf_shmem_state_t rf_shmem_state = { .dev_name      = "shmemrf",
                                  rf_shmem_state_t *_state = (rf_shmem_state_t *)(h)
 
 
-#define  RF_SHMEM_DL_FMT  "/shmemrf_shmem_dl_band_%s"
-#define  RF_SHMEM_UL_FMT  "/shmemrf_shmem_ul_band_%s"
-#define  RF_SHMEM_SEM_FMT "/shmemrf_sem_band_%s_sf_%02d"
+#define  RF_SHMEM_DL_FMT  "/shmemrf_shmem_dl_port_%s"
+#define  RF_SHMEM_UL_FMT  "/shmemrf_shmem_ul_port_%s"
+#define  RF_SHMEM_SEM_FMT "/shmemrf_sem_port_%s_sf_%02d"
 
 static inline bool rf_shmem_is_enb(rf_shmem_state_t * state)
 {
@@ -386,7 +386,7 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t channel)
   // dl shm key
   char shmem_name[256];
 
-  snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_DL_FMT, state->bands[channel]);
+  snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_DL_FMT, state->ports[channel]);
 
   if((state->shm_dl_fd[channel] = shm_open(shmem_name, dl_shm_flags, mode)) < 0)
    {
@@ -404,7 +404,7 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t channel)
     }
    
 
-  snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_UL_FMT, state->bands[channel]);
+  snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_UL_FMT, state->ports[channel]);
 
   if((state->shm_ul_fd[channel] = shm_open(shmem_name, ul_shm_flags, mode)) < 0)
    {
@@ -465,7 +465,7 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t channel)
   // shared sems, 1 for each sf_bin
   for(int sf = 0; sf < RF_SHMEM_NUM_SF_X_FRAME; ++sf)
    {
-     snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_SEM_FMT, state->bands[channel], sf);
+     snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_SEM_FMT, state->ports[channel], sf);
 
      if(rf_shmem_is_enb(state))
       {
@@ -690,8 +690,8 @@ int rf_shmem_open_multi(char *args, void **h, uint32_t nof_channels)
 
    for(uint32_t channel = 0; channel < nof_channels; ++channel)
     {
-      // get the band id(s)
-      parse_string(args, "band", channel, state->bands[channel]);
+      // get the port id(s)
+      parse_string(args, "port", channel, state->ports[channel]);
 
       if(rf_shmem_open_ipc(state, channel) < 0)
        {
@@ -728,7 +728,7 @@ int rf_shmem_close(void *h)
           {
             munmap(_state->shm_dl[channel], RF_SHMEM_DATA_SEGMENT_SIZE);
 
-            snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_DL_FMT, _state->bands[channel]);
+            snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_DL_FMT, _state->ports[channel]);
 
             shm_unlink(shmem_name);
 
@@ -743,7 +743,7 @@ int rf_shmem_close(void *h)
           {
             munmap(_state->shm_ul[channel], RF_SHMEM_DATA_SEGMENT_SIZE);
 
-            snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_UL_FMT, _state->bands[channel]);
+            snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_UL_FMT, _state->ports[channel]);
 
             shm_unlink(shmem_name);
 
@@ -759,7 +759,7 @@ int rf_shmem_close(void *h)
        {
         if(sem[channel][sf])
          {
-           snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_SEM_FMT, _state->bands[channel], sf);
+           snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_SEM_FMT, _state->ports[channel], sf);
 
            sem_close(sem[channel][sf]);
 
@@ -1056,21 +1056,19 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
 
    gettimeofday(&tv_now, NULL);
 
-   // this msg tx tti time has passed, it should be 3+ into the future
+   // this msg tx tti time has passed, running late
    if(timercmp(&tv_tx_tti, &tv_now, <))
     {
       struct timeval tv_diff;
 
       timersub(&tv_tx_tti, &tv_now, &tv_diff);
 
-      ++_state->tx_nof_late;
-
-      RF_SHMEM_WARN("TX late, seqnum %lu, tx_tti %ld:%06ld, overrun %6.6lf, total late %zu",
-                    _state->tx_seqnum++,
-                    tv_tx_tti.tv_sec,
-                    tv_tx_tti.tv_usec,
-                    -rf_shmem_get_fs(&tv_diff),
-                    _state->tx_nof_late);
+      if((++_state->tx_nof_late % 10) == 0)
+        RF_SHMEM_WARN("TX late, tx_tti %ld:%06ld, overrun %6.6lf, total late %zu",
+                      tv_tx_tti.tv_sec,
+                      tv_tx_tti.tv_usec,
+                      -rf_shmem_get_fs(&tv_diff),
+                      _state->tx_nof_late);
     }
    else
     {
@@ -1091,18 +1089,19 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
 
             rf_shmem_element_t * element = &_state->tx_segment[channel]->elements[sf_bin];
 
-            // 1 and only 1 enb
-            if(rf_shmem_is_enb(_state))
+            if((channel == 0) && rf_shmem_is_enb(_state))
              {
-               // clear stale dl sf_bin before tx
+               // enb first channel clear stale dl sf_bin 
                memset(element, 0x0, sizeof(*element));
              }
 
             // is a fresh sf_bin entry
             if(element->meta.nof_sf == 0)
              {
+               // load the bin with i/q data
                memcpy(element->iqdata, data[channel], nbytes);
 
+               // set meta data
                element->meta.is_sob     = is_sob;
                element->meta.is_eob     = is_eob;
                element->meta.tx_srate   = _state->tx_srate;
@@ -1115,26 +1114,25 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
              {
                cf_t * q = (cf_t*)data[channel];
 
-               RF_SHMEM_WARN("summing");
-
-               // samples for multiple UL transmissions need to be combined ???
+               // combine
                for(int i = 0; i < nsamples; ++i)
                 {
-                  // XXX TODO FIXME is this correct ???
                   element->iqdata[i] += q[i];
                 }
              }
 
             // bump write count
             ++element->meta.nof_sf;
+
+            // unlock
+            sem_post(sem[channel][sf_bin]);
+
 #if 0
             char logbuff[256] = {0};
             RF_SHMEM_INFO("TX, TTI %ld:%06ld, channel %u, sf_bin %u, %s", 
                           _state->tv_this_tti.tv_sec, _state->tv_this_tti.tv_usec, channel, sf_bin, printMsg(element, logbuff, sizeof(logbuff)));
 #endif
 
-            // unlock
-            sem_post(sem[channel][sf_bin]);
           }
        }
     }
