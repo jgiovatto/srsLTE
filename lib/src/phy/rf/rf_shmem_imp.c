@@ -43,12 +43,7 @@
 //
 // see /dev/shm for shared memory segemnts, these may be orphaned if close is not called on termination.
 //
-// below we see the semaphores and shmem objects list in /dev/shm
-// sem.shmemrf_sem_port_0_sf_00  sem.shmemrf_sem_port_0_sf_04  sem.shmemrf_sem_port_0_sf_08  sem.shmemrf_sem_port_1_sf_02  sem.shmemrf_sem_port_1_sf_06  shmemrf_shmem_dl_port_0
-// sem.shmemrf_sem_port_0_sf_01  sem.shmemrf_sem_port_0_sf_05  sem.shmemrf_sem_port_0_sf_09  sem.shmemrf_sem_port_1_sf_03  sem.shmemrf_sem_port_1_sf_07  shmemrf_shmem_dl_port_1
-// sem.shmemrf_sem_port_0_sf_02  sem.shmemrf_sem_port_0_sf_06  sem.shmemrf_sem_port_1_sf_00  sem.shmemrf_sem_port_1_sf_04  sem.shmemrf_sem_port_1_sf_08  shmemrf_shmem_ul_port_0
-// sem.shmemrf_sem_port_0_sf_03  sem.shmemrf_sem_port_0_sf_07  sem.shmemrf_sem_port_1_sf_01  sem.shmemrf_sem_port_1_sf_05  sem.shmemrf_sem_port_1_sf_09  shmemrf_shmem_ul_port_1
-//
+// see the semaphores and shmem objects list in /dev/shm
 //
 // changes to ue and enb conf resp:
 // device_name = shmem
@@ -449,7 +444,7 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t channel)
      return -1;
    }
 
-  // set ul/dl bins to avoid ue/enb cross talk
+  // set ul/dl bins
   if(rf_shmem_is_enb(state))
    {
      state->tx_segment[channel] = (rf_shmem_segment_t *) state->shm_dl[channel];
@@ -974,7 +969,7 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
 
             rf_shmem_element_t * element = &_state->rx_segment[channel]->elements[sf_bin];
  
-#ifdef RF_SHMEM_DEBUG_MODE
+#if 0
             char logbuff[256] = {0};
             RF_SHMEM_INFO("RX, TTI %ld:%06ld, channel %u, sf_bin %u, offset %u, %s", 
                            _state->tv_this_tti.tv_sec, _state->tv_this_tti.tv_usec, 
@@ -993,9 +988,9 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
                offset[channel] += result;
              }
 
-            if(rf_shmem_is_enb(_state))
+            if(rf_shmem_is_enb(_state) && (channel == _state->nof_channels - 1))
              {
-               // enb clear ul sf_bin after every read
+               // last enb worker clear ul sf_bin
                memset(element, 0x0, sizeof(*element));
              }
 
@@ -1089,9 +1084,10 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
 
             rf_shmem_element_t * element = &_state->tx_segment[channel]->elements[sf_bin];
 
-            if((channel == 0) && rf_shmem_is_enb(_state))
+            // first enb worker clear bin
+            if(rf_shmem_is_enb(_state) && (channel == 0))
              {
-               // enb first channel clear stale dl sf_bin 
+               // clear dl sf_bin 
                memset(element, 0x0, sizeof(*element));
              }
 
