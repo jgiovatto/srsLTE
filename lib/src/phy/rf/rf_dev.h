@@ -264,7 +264,7 @@ static rf_dev_t dev_dummy = {
 #include "rf_shmem_imp.h"
 
 static rf_dev_t dev_shmem = {
-  .name                              = "shmemrf", 
+  .name                              = "shmem", 
   .srsran_rf_devname                 = rf_shmem_devname,
   .srsran_rf_start_rx_stream         = rf_shmem_start_rx_stream,
   .srsran_rf_stop_rx_stream          = rf_shmem_stop_rx_stream,
