@@ -24,22 +24,21 @@
  *
  */
 
-// J Giovatto May 06, 2021
+// J Giovatto June 13, 2021
 // The approach is simple, the enb and ue transmit raw IQ data which
 // would have been sent to the radio device driver (UHD) etc. Samples
 // are sent and received verbatim except in the case where the ue is in
-// cell search where downsampling is applied. At some point some artifical
-// "jammming" of the data stream my be desireable by substiting some random values.
+// cell search where downsampling is applied.
+//
 // Shared memory was chosen over unix/inet sockets to allow for the fastest
-// data transfer and possible combining IQ data in a single buffer. Each ul and dl subframe
-// worth of iqdata and metadata is held in a "sf_bin" where tx sf_bin index is 4 sf 
-// ahead of the rx sf_bin index. 
+// data transfer and possible combining IQ data in a single buffer and lowest cpu usage. 
+// Each ul and dl subframe worth of iqdata and metadata is held in a "sf_bin" 
+// where tx sf_bin index is 4 sf ahead of the rx sf_bin index. 
 //
-// The enb creates a shared memory segment for each channel or port, to keep things simple
-// we simple use the earfcn id. So far a 2 carrier enb we set 2 shared memory segments or ports.
-// A shared semaphore syncronization object is created for each subframe within a port.
+// The enb creates a shared memory segment for each channel.
+// A shared semaphore syncronization object is created for each subframe within a channel.
 //
-// Each ue can then attach to a particular shared memory segment again specified by the port id.
+// Each ue can then attach to a particular shared memory segment specified by the channel id.
 //
 // see /dev/shm for shared memory segemnts, these may be orphaned if close is not called on termination.
 //
@@ -47,8 +46,8 @@
 //
 // changes to ue and enb conf resp:
 // device_name = shmem
-// device_args = type=enb,port0=0,port1=1
-// device_args = type=ue,port0=0
+// device_args = type=enb,channel0=0,channel1=1
+// device_args = type=ue,channel0=0
 //
 // 1) sudo ./srsepc ./epc.conf
 // 2) sudo ./srsenb ./enb.conf.fauxrf
@@ -203,17 +202,16 @@ typedef struct {
    struct timeval            tv_this_tti;
    struct timeval            tv_next_tti;
    size_t                    tx_nof_late;
-   size_t                    tx_nof_drop;
    srsran_rf_info_t          rf_info;
    int                       shm_dl_fd[SRSRAN_MAX_CHANNELS];
    int                       shm_ul_fd[SRSRAN_MAX_CHANNELS];
-   void *                    shm_dl[SRSRAN_MAX_CHANNELS];       // dl shared mem
-   void *                    shm_ul[SRSRAN_MAX_CHANNELS];       // ul shared mem
-   rf_shmem_segment_t *      rx_segment[SRSRAN_MAX_CHANNELS];   // rx bins
-   rf_shmem_segment_t *      tx_segment[SRSRAN_MAX_CHANNELS];   // tx bins
-   uint32_t                  tx_loss;                           // random loss 0=none, 100=all
-   uint32_t                  nof_channels;                      // num carriers/channels ???
-   char                      ports[SRSRAN_MAX_CHANNELS][256];   // shmem port ids
+   void *                    shm_dl[SRSRAN_MAX_CHANNELS];        // dl shared mem
+   void *                    shm_ul[SRSRAN_MAX_CHANNELS];        // ul shared mem
+   rf_shmem_segment_t *      rx_segment[SRSRAN_MAX_CHANNELS];    // rx bins
+   rf_shmem_segment_t *      tx_segment[SRSRAN_MAX_CHANNELS];    // tx bins
+   double                    tx_level[SRSRAN_MAX_CHANNELS];      // tx level
+   uint32_t                  nof_channels;                       // num carriers/channels ???
+   char                      channels[SRSRAN_MAX_CHANNELS][256]; // shmem channel ids
 } rf_shmem_state_t;
 
 
@@ -241,7 +239,7 @@ static inline uint32_t get_sf_bin(const struct timeval * tv)
 static void rf_shmem_handle_error(void * arg, srsran_rf_error_t error)
 {
   // XXX TODO make use of this handler
-  printf("type %s", 
+  fprintf(stderr, "type %s", 
           error.type == SRSRAN_RF_ERROR_LATE      ? "late"      :
           error.type == SRSRAN_RF_ERROR_UNDERFLOW ? "underflow" :
           error.type == SRSRAN_RF_ERROR_OVERFLOW  ? "overflow"  :
@@ -267,7 +265,6 @@ static rf_shmem_state_t rf_shmem_state = { .dev_name      = "shmem",
                                            .tv_this_tti   = {},
                                            .tv_next_tti   = {},
                                            .tx_nof_late   = 0,
-                                           .tx_nof_drop   = 0,
                                            .rf_info       = {},
                                            .shm_dl_fd     = {-1},
                                            .shm_ul_fd     = {-1},
@@ -275,17 +272,17 @@ static rf_shmem_state_t rf_shmem_state = { .dev_name      = "shmem",
                                            .shm_ul        = {NULL},
                                            .rx_segment    = {NULL},
                                            .tx_segment    = {NULL},
-                                           .tx_loss       = 0,
+                                           .tx_level      = {1.0},
                                            .nof_channels  = 0,
                                          };
 
-#define RF_SHMEM_GET_STATE(h)  if(!h) printf("NULL handle in call to %s !!!\n", __func__); \
+#define RF_SHMEM_GET_STATE(h)  if(!h) fprintf(stderr, "NULL handle in call to %s !!!\n", __func__); \
                                  rf_shmem_state_t *_state = (rf_shmem_state_t *)(h)
 
 
-#define  RF_SHMEM_DL_FMT  "/shmemrf_shmem_dl_port_%s"
-#define  RF_SHMEM_UL_FMT  "/shmemrf_shmem_ul_port_%s"
-#define  RF_SHMEM_SEM_FMT "/shmemrf_sem_port_%s_sf_%02d"
+#define  RF_SHMEM_DL_FMT  "/shmem_dl_channel_%s"
+#define  RF_SHMEM_UL_FMT  "/shmem_ul_channel_%s"
+#define  RF_SHMEM_SEM_FMT "/sem_channel_%s_sf_%d"
 
 static inline bool rf_shmem_is_enb(rf_shmem_state_t * state)
 {
@@ -378,10 +375,10 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t channel)
      ul_shm_flags = O_RDWR;
    }
 
-  // dl shm key
-  char shmem_name[256];
+  // dl shm key name
+  char shmem_name[256] = {0};
 
-  snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_DL_FMT, state->ports[channel]);
+  snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_DL_FMT, state->channels[channel]);
 
   if((state->shm_dl_fd[channel] = shm_open(shmem_name, dl_shm_flags, mode)) < 0)
    {
@@ -399,7 +396,7 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t channel)
     }
    
 
-  snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_UL_FMT, state->ports[channel]);
+  snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_UL_FMT, state->channels[channel]);
 
   if((state->shm_ul_fd[channel] = shm_open(shmem_name, ul_shm_flags, mode)) < 0)
    {
@@ -460,7 +457,7 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t channel)
   // shared sems, 1 for each sf_bin
   for(int sf = 0; sf < RF_SHMEM_NUM_SF_X_FRAME; ++sf)
    {
-     snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_SEM_FMT, state->ports[channel], sf);
+     snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_SEM_FMT, state->channels[channel], sf);
 
      if(rf_shmem_is_enb(state))
       {
@@ -677,16 +674,14 @@ int rf_shmem_open_multi(char *args, void **h, uint32_t nof_channels)
           return -1;
        }
 
-      // get optional loss
-      parse_uint32(args, "loss", -1, &state->tx_loss);
     }
 
    int num_opened_channels = 0;
 
    for(uint32_t channel = 0; channel < nof_channels; ++channel)
     {
-      // get the port id(s)
-      parse_string(args, "port", channel, state->ports[channel]);
+      // get the channel id(s)
+      parse_string(args, "channel", channel, state->channels[channel]);
 
       if(rf_shmem_open_ipc(state, channel) < 0)
        {
@@ -695,6 +690,9 @@ int rf_shmem_open_multi(char *args, void **h, uint32_t nof_channels)
       else
        {
          RF_SHMEM_INFO("found channel %u", channel);
+
+         // get optional tx level
+         parse_double(args, "tx_level", channel, &state->tx_level[channel]);
 
          ++num_opened_channels;
        }
@@ -723,7 +721,7 @@ int rf_shmem_close(void *h)
           {
             munmap(_state->shm_dl[channel], RF_SHMEM_DATA_SEGMENT_SIZE);
 
-            snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_DL_FMT, _state->ports[channel]);
+            snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_DL_FMT, _state->channels[channel]);
 
             shm_unlink(shmem_name);
 
@@ -738,7 +736,7 @@ int rf_shmem_close(void *h)
           {
             munmap(_state->shm_ul[channel], RF_SHMEM_DATA_SEGMENT_SIZE);
 
-            snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_UL_FMT, _state->ports[channel]);
+            snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_UL_FMT, _state->channels[channel]);
 
             shm_unlink(shmem_name);
 
@@ -754,7 +752,7 @@ int rf_shmem_close(void *h)
        {
         if(sem[channel][sf])
          {
-           snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_SEM_FMT, _state->ports[channel], sf);
+           snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_SEM_FMT, _state->channels[channel], sf);
 
            sem_close(sem[channel][sf]);
 
@@ -933,8 +931,6 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
    // working in units of subframes
    const int nof_sf = (nsamples / (_state->rx_srate / 1000.0f));
 
-   RF_SHMEM_DBUG("nof_samples %u, nbytes %u, nof_sf %d", nsamples, nbytes, nof_sf);
-
    uint32_t offset[_state->nof_channels];
 
    for(uint32_t channel = 0; channel < _state->nof_channels; ++channel)
@@ -968,12 +964,11 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
             memset(data[channel], 0x0, nbytes);
 
             rf_shmem_element_t * element = &_state->rx_segment[channel]->elements[sf_bin];
- 
+
 #if 0
             char logbuff[256] = {0};
-            RF_SHMEM_INFO("RX, TTI %ld:%06ld, channel %u, sf_bin %u, offset %u, %s", 
-                           _state->tv_this_tti.tv_sec, _state->tv_this_tti.tv_usec, 
-                           channel, sf_bin, offset[channel], printMsg(element, logbuff, sizeof(logbuff)));
+            fprintf(stderr,"RX, %ld:%06ld, channel %u, sf_bin %u, offset %u, %s\n", 
+                    tv_now.tv_sec, tv_now.tv_usec, channel, sf_bin, offset[channel], printMsg(element, logbuff, sizeof(logbuff)));
 #endif
       
             // check current tti w/sf_bin tti 
@@ -1025,22 +1020,10 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
  {
    RF_SHMEM_GET_STATE(h);
 
-   RF_SHMEM_DBUG("msg len %d, sob %d, eob %d", nsamples, is_sob, is_eob);
-
    if(nsamples == 0)
     {
       return SRSRAN_SUCCESS;
     }
-
-   // some random loss the higher the number the more loss (0-100)
-   if(_state->tx_loss > 0)
-    {
-      if((rand() % 100) < _state->tx_loss)
-       {
-         ++_state->tx_nof_drop;
-         return SRSRAN_SUCCESS;
-       }
-    } 
 
    struct timeval tv_now, tv_tx_tti;
 
@@ -1072,6 +1055,7 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
       // get the sf_bin for this tx_tti
       const uint32_t sf_bin = get_sf_bin(&tv_tx_tti);
 
+      // each cc worker will map to a channel
       for(uint32_t channel = 0; channel < _state->nof_channels; ++channel)
        {
          if(data[channel] && _state->tx_freq[channel])
@@ -1091,12 +1075,11 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
                memset(element, 0x0, sizeof(*element));
              }
 
+            cf_t * q = (cf_t*)data[channel];
+
             // is a fresh sf_bin entry
             if(element->meta.nof_sf == 0)
              {
-               // load the bin with i/q data
-               memcpy(element->iqdata, data[channel], nbytes);
-
                // set meta data
                element->meta.is_sob     = is_sob;
                element->meta.is_eob     = is_eob;
@@ -1105,17 +1088,23 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
                element->meta.nof_bytes  = nbytes;
                element->meta.tv_tx_time = tv_now;
                element->meta.tv_tx_tti  = tv_tx_tti;
-             }
-            else
-             {
-               cf_t * q = (cf_t*)data[channel];
 
-               // combine
+               // load the bin with i/q data
                for(int i = 0; i < nsamples; ++i)
                 {
-                  element->iqdata[i] += q[i];
+                  if(_state->tx_level[channel] > 0.0)
+                    element->iqdata[i] = (q[i] * _state->tx_level[channel]);
                 }
-             }
+              }
+             else
+              {
+               for(int i = 0; i < nsamples; ++i)
+                {
+                  // combine the bin with i/q data
+                  if(_state->tx_level[channel] > 0.0)
+                    element->iqdata[i] += (q[i] * _state->tx_level[channel]);
+                }
+              }
 
             // bump write count
             ++element->meta.nof_sf;
@@ -1125,8 +1114,8 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
 
 #if 0
             char logbuff[256] = {0};
-            RF_SHMEM_INFO("TX, TTI %ld:%06ld, channel %u, sf_bin %u, %s", 
-                          _state->tv_this_tti.tv_sec, _state->tv_this_tti.tv_usec, channel, sf_bin, printMsg(element, logbuff, sizeof(logbuff)));
+            fprintf(stderr,"TX, %ld:%06ld, channel %u, sf_bin %u, %s\n", 
+                    tv_now.tv_sec, tv_now.tv_usec, channel, sf_bin, printMsg(element, logbuff, sizeof(logbuff)));
 #endif
 
           }
