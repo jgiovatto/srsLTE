@@ -49,8 +49,8 @@
 //
 // device_args = type=enb,channel0=0
 //
-// handover test, flip tx power every 5 sec from 1.0 to 0.05 on channel 0, channel 1 is constant at 0.5
-// device_args = type=enb,channel0=0,channel1=0,tx_level_cycle0=10,tx_level_adj0=-0.95,tx_level0=1.0,tx_level1=.5
+// handover test, adjust tx power every 5 sec from 1.0 to 0.25 on channel 0, channel 1 is constant at 0.5
+// device_args = type=enb,channel0=0,channel1=0,tx_level_cycle0=10,tx_level_adj0=-0.75,tx_level0=1.0,tx_level1=.5
 //
 // device_args = type=ue,channel0=0
 //
@@ -163,7 +163,7 @@ typedef struct {
   cf_t                    iqdata[RF_SHMEM_MAX_CF_LEN]; // data
 } rf_shmem_element_t;
 
-sem_t * sem[SRSRAN_MAX_CHANNELS][RF_SHMEM_NUM_SF_X_FRAME] = {{0}};  // element r/w sf_bin locks
+sem_t * sem[RF_SHMEM_NUM_SF_X_FRAME] = {NULL};  // element r/w sf_bin locks
 
 // msg element bins 1 for each sf (tti)
 typedef struct {
@@ -217,7 +217,7 @@ typedef struct {
    double                    tx_level[SRSRAN_MAX_CHANNELS];       // tx level
    double                    tx_level_adj[SRSRAN_MAX_CHANNELS];   // tx level adjustment
    uint32_t                  tx_level_cycle[SRSRAN_MAX_CHANNELS]; // tx level adjustment cycle
-   uint32_t                  nof_channels;                        // num carriers/channels ???
+   uint32_t                  nof_channels;                        // num channels
    char                      channels[SRSRAN_MAX_CHANNELS][256];  // shmem channel ids
 } rf_shmem_state_t;
 
@@ -315,7 +315,6 @@ static inline double rf_shmem_get_fs(const struct timeval *tv)
 }
 
 
-// XXX this could be a place where we introduce noise/jamming effects
 static int rf_shmem_resample(double srate_in, 
                              double srate_out, 
                              void * data_in, 
@@ -327,22 +326,6 @@ static int rf_shmem_resample(double srate_in,
    {
      const double sratio = srate_out / srate_in;
 
-     // 'upsample' unable to sync
-     if(sratio > 1.0)
-      { 
-        RF_SHMEM_WARN("srate %4.2lf/%4.2lf MHz, sratio %3.3lf, upsample may not decode",
-                     srate_in/1e6,
-                     srate_out/1e6,
-                     sratio);
-      }
-     else
-      {
-        RF_SHMEM_DBUG("srate %4.2lf/%4.2lf MHz, sratio %3.3lf",
-                     srate_in/1e6,
-                     srate_out/1e6,
-                     sratio);
-      }
-
      srsran_resample_arb_t r;
      srsran_resample_arb_init(&r, sratio, 0);
 
@@ -353,7 +336,7 @@ static int rf_shmem_resample(double srate_in,
    }
   else
    {
-     // no resampling needed
+     // no resampling needed, just copy
      memcpy(data_out, data_in, nbytes);
 
      return nbytes;
@@ -474,7 +457,7 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t channel)
         sem_unlink(shmem_name);
  
         // initial value 1
-        if((sem[channel][sf] = sem_open(shmem_name, O_CREAT, 0600, 1)) == NULL)
+        if((sem[sf] = sem_open(shmem_name, O_CREAT, 0600, 1)) == NULL)
          {
            RF_SHMEM_WARN("failed to create sem %s, %s", shmem_name, strerror(errno));
 
@@ -489,7 +472,7 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t channel)
       }
      else
       {
-        if((sem[channel][sf] = sem_open(shmem_name, 0)) == NULL)
+        if((sem[sf] = sem_open(shmem_name, 0)) == NULL)
          {
            RF_SHMEM_WARN("failed to open sem %s, %s", shmem_name, strerror(errno));
 
@@ -766,15 +749,15 @@ int rf_shmem_close(void *h)
 
       for(int sf = 0; sf < RF_SHMEM_NUM_SF_X_FRAME; ++sf)
        {
-        if(sem[channel][sf])
-         {
-           snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_SEM_FMT, _state->channels[channel], sf);
+         if(sem[sf])
+          {
+            snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_SEM_FMT, _state->channels[channel], sf);
 
-           sem_close(sem[channel][sf]);
+            sem_close(sem[sf]);
 
-           sem[channel][sf] = NULL;
-         }
-      }
+            sem[sf] = NULL;
+          }
+       }
     }
 
    return 0;
@@ -967,16 +950,16 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
       // find sf_bin for this tti
       const uint32_t sf_bin = get_sf_bin(&_state->tv_this_tti);
 
+      // lock this sf_bin
+      if(sem_wait(sem[sf_bin]) < 0)
+       {
+         RF_SHMEM_WARN("sem_wait error %s", strerror(errno));
+       }
+
       for(uint32_t channel = 0; channel < _state->nof_channels; ++channel)
        { 
          if(data[channel] && _state->rx_freq[channel])
           {
-            // lock this sf_bin
-            if(sem_wait(sem[channel][sf_bin]) < 0)
-             {
-               RF_SHMEM_WARN("sem_wait error %s", strerror(errno));
-             }
-
             memset(data[channel], 0x0, nbytes);
 
             rf_shmem_element_t * element = &_state->rx_segment[channel]->elements[sf_bin];
@@ -1004,11 +987,10 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
                // last enb worker clear ul sf_bin
                memset(element, 0x0, sizeof(*element));
              }
-
-            // unlock
-            sem_post(sem[channel][sf_bin]);
           }
        }
+      // unlock
+      sem_post(sem[sf_bin]);
     }
 
    // set rx timestamp to this tti
@@ -1071,17 +1053,17 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
       // get the sf_bin for this tx_tti
       const uint32_t sf_bin = get_sf_bin(&tv_tx_tti);
 
+      // lock this sf_bin
+      if(sem_wait(sem[sf_bin]) < 0)
+       {
+         RF_SHMEM_WARN("sem_wait error %s", strerror(errno));
+       }
+
       // each cc worker will map to a channel
       for(uint32_t channel = 0; channel < _state->nof_channels; ++channel)
        {
          if(data[channel] && _state->tx_freq[channel])
           {
-            // lock this sf_bin
-            if(sem_wait(sem[channel][sf_bin]) < 0)
-             {
-               RF_SHMEM_WARN("sem_wait error %s", strerror(errno));
-             }
-
             rf_shmem_element_t * element = &_state->tx_segment[channel]->elements[sf_bin];
 
             // first enb worker clear bin
@@ -1133,9 +1115,6 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
             // bump write count
             ++element->meta.nof_sf;
 
-            // unlock
-            sem_post(sem[channel][sf_bin]);
-
 #if 0
             char logbuff[256] = {0};
             fprintf(stderr,"TX, %ld:%06ld, channel %u, sf_bin %u, %s\n", 
@@ -1143,7 +1122,9 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
 #endif
 
           }
-       }
+        }
+      // unlock
+      sem_post(sem[sf_bin]);
     }
 
    return SRSRAN_SUCCESS;
