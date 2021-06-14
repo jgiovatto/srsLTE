@@ -90,10 +90,12 @@
 static bool rf_shmem_log_dbug = true;
 static bool rf_shmem_log_info = true;
 static bool rf_shmem_log_warn = true;
+static bool rf_shmem_log_cons = true;
 #else
 static bool rf_shmem_log_dbug = false;
 static bool rf_shmem_log_info = true;
 static bool rf_shmem_log_warn = true;
+static bool rf_shmem_log_cons = true;
 #endif
 
 static char rf_shmem_node_type = ' ';
@@ -122,6 +124,7 @@ static char rf_shmem_node_type = ' ';
 #define RF_SHMEM_WARN(_fmt, ...) RF_SHMEM_LOG(rf_shmem_log_warn, stderr, 'W', _fmt, ##__VA_ARGS__)
 #define RF_SHMEM_DBUG(_fmt, ...) RF_SHMEM_LOG(rf_shmem_log_dbug, stdout, 'D', _fmt, ##__VA_ARGS__)
 #define RF_SHMEM_INFO(_fmt, ...) RF_SHMEM_LOG(rf_shmem_log_info, stdout, 'I', _fmt, ##__VA_ARGS__)
+#define RF_SHMEM_CONS(_fmt, ...) RF_SHMEM_LOG(rf_shmem_log_cons, stderr, 'C', _fmt, ##__VA_ARGS__)
 
 // bytes per sample
 #define RF_SHMEM_BYTES_X_SAMPLE(x) ((x)*sizeof(cf_t))
@@ -141,14 +144,15 @@ static const struct timeval tv_4sf  = {0,4000}; // 4 sf
 
 // msg element meta data
 typedef struct {
-  uint64_t       seqnum;                      // seq num
-  uint32_t       nof_bytes;                   // num bytes
-  uint32_t       nof_sf;                      // num subframes
-  float          tx_srate;                    // tx sample rate
-  struct timeval tv_tx_tti;                   // tti time (tti + 4)
-  struct timeval tv_tx_time;                  // actual tx time
-  int            is_sob;                      // is start of burst
-  int            is_eob;                      // is end of burst
+  uint64_t       seqnum;          // seq num
+  uint32_t       nof_bytes;       // num bytes
+  uint32_t       nof_sf;          // num subframes
+  float          tx_srate;        // tx sample rate
+  struct timeval tv_tx_tti;       // tti time (tti + 4)
+  struct timeval tv_tx_time;      // actual tx time
+  int            is_sob;          // is start of burst
+  int            is_eob;          // is end of burst
+  uint32_t       tx_freq;         // tx frequency 
 } rf_shmem_element_meta_t;
 
 
@@ -868,7 +872,7 @@ double rf_shmem_set_rx_freq(void *h, uint32_t ch, double freq)
  {
    RF_SHMEM_GET_STATE(h);
 
-   RF_SHMEM_INFO("ch %u, freq %4.2lf MHz to %4.2lf MHz", 
+   RF_SHMEM_CONS("ch %u, freq %4.2lf MHz to %4.2lf MHz", 
                  ch, _state->rx_freq[ch] / 1e6, freq / 1e6);
 
    _state->rx_freq[ch] = freq;
@@ -881,12 +885,10 @@ double rf_shmem_set_tx_freq(void *h, uint32_t ch, double freq)
  {
    RF_SHMEM_GET_STATE(h);
 
-   if(_state->tx_freq[ch] != freq) {
-     RF_SHMEM_INFO("ch %u, freq %4.2lf MHz to %4.2lf MHz", 
-                   ch, _state->tx_freq[ch] / 1e6, freq / 1e6);
+   RF_SHMEM_CONS("ch %u, freq %4.2lf MHz to %4.2lf MHz", 
+                 ch, _state->tx_freq[ch] / 1e6, freq / 1e6);
 
-     _state->tx_freq[ch] = freq;
-   }
+   _state->tx_freq[ch] = freq;
 
    return _state->tx_freq[ch];
  }
@@ -963,7 +965,6 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
             memset(data[channel], 0x0, nbytes);
 
             rf_shmem_element_t * element = &_state->rx_segment[channel]->elements[sf_bin];
-
 #if 0
             char logbuff[256] = {0};
             fprintf(stderr,"RX, %ld:%06ld, channel %u, sf_bin %u, offset %u, %s\n", 
@@ -973,13 +974,20 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
             // check current tti w/sf_bin tti 
             if(timercmp(&_state->tv_this_tti, &element->meta.tv_tx_tti, ==))
              {
-               const int result = rf_shmem_resample(element->meta.tx_srate,
-                                                    _state->rx_srate,
-                                                    element->iqdata,
-                                                    ((uint8_t*)data[channel]) + offset[channel],
-                                                    element->meta.nof_bytes);
+               if(element->meta.nof_bytes && (element->meta.tx_freq != (uint32_t)(_state->rx_freq[channel] / 1e6)))
+                {
+                   RF_SHMEM_INFO("tx_freq %u != our rx_freq %u", element->meta.tx_freq, (uint32_t)(_state->rx_freq[channel] / 1e6));
+                }
+               else
+                {
+                 const int result = rf_shmem_resample(element->meta.tx_srate,
+                                                      _state->rx_srate,
+                                                      element->iqdata,
+                                                      ((uint8_t*)data[channel]) + offset[channel],
+                                                      element->meta.nof_bytes);
 
-               offset[channel] += result;
+                 offset[channel] += result;
+               }
              }
 
             if(rf_shmem_is_enb(_state) && (channel == _state->nof_channels - 1))
@@ -1084,6 +1092,7 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
                element->meta.nof_bytes  = nbytes;
                element->meta.tv_tx_time = tv_now;
                element->meta.tv_tx_tti  = tv_tx_tti;
+               element->meta.tx_freq    = (uint32_t)(_state->tx_freq[channel] / 1e6);
              }
 
             // get the tx multiplier
