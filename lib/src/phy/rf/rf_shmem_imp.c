@@ -46,7 +46,12 @@
 //
 // changes to ue and enb conf resp:
 // device_name = shmem
-// device_args = type=enb,channel0=0,channel1=1
+//
+// device_args = type=enb,channel0=0
+//
+// handover test, flip tx power every 5 sec from 1.0 to 0.05 on channel 0, channel 1 is constant at 0.5
+// device_args = type=enb,channel0=0,channel1=0,tx_level_cycle0=10,tx_level_adj0=-0.95,tx_level0=1.0,tx_level1=.5
+//
 // device_args = type=ue,channel0=0
 //
 // 1) sudo ./srsepc ./epc.conf
@@ -205,13 +210,15 @@ typedef struct {
    srsran_rf_info_t          rf_info;
    int                       shm_dl_fd[SRSRAN_MAX_CHANNELS];
    int                       shm_ul_fd[SRSRAN_MAX_CHANNELS];
-   void *                    shm_dl[SRSRAN_MAX_CHANNELS];        // dl shared mem
-   void *                    shm_ul[SRSRAN_MAX_CHANNELS];        // ul shared mem
-   rf_shmem_segment_t *      rx_segment[SRSRAN_MAX_CHANNELS];    // rx bins
-   rf_shmem_segment_t *      tx_segment[SRSRAN_MAX_CHANNELS];    // tx bins
-   double                    tx_level[SRSRAN_MAX_CHANNELS];      // tx level
-   uint32_t                  nof_channels;                       // num carriers/channels ???
-   char                      channels[SRSRAN_MAX_CHANNELS][256]; // shmem channel ids
+   void *                    shm_dl[SRSRAN_MAX_CHANNELS];         // dl shared mem
+   void *                    shm_ul[SRSRAN_MAX_CHANNELS];         // ul shared mem
+   rf_shmem_segment_t *      rx_segment[SRSRAN_MAX_CHANNELS];     // rx bins
+   rf_shmem_segment_t *      tx_segment[SRSRAN_MAX_CHANNELS];     // tx bins
+   double                    tx_level[SRSRAN_MAX_CHANNELS];       // tx level
+   double                    tx_level_adj[SRSRAN_MAX_CHANNELS];   // tx level adjustment
+   uint32_t                  tx_level_cycle[SRSRAN_MAX_CHANNELS]; // tx level adjustment cycle
+   uint32_t                  nof_channels;                        // num carriers/channels ???
+   char                      channels[SRSRAN_MAX_CHANNELS][256];  // shmem channel ids
 } rf_shmem_state_t;
 
 
@@ -247,33 +254,35 @@ static void rf_shmem_handle_error(void * arg, srsran_rf_error_t error)
           "unknown error");
 }
 
-static rf_shmem_state_t rf_shmem_state = { .dev_name      = "shmem",
-                                           .nodetype      = RF_SHMEM_NTYPE_NONE,
-                                           .rx_gain       = 0.0,
-                                           .tx_gain       = 0.0,
-                                           .rx_srate      = SRSRAN_CS_SAMP_FREQ,
-                                           .tx_srate      = SRSRAN_CS_SAMP_FREQ,
-                                           .rx_freq       = {0.0},
-                                           .tx_freq       = {0.0},
-                                           .clock_rate    = 0.0,
-                                           .error_handler = rf_shmem_handle_error,
-                                           .error_arg     = NULL,
-                                           .rx_stream     = false,
-                                           .tx_seqnum     = 0,
-                                           .state_lock    = PTHREAD_MUTEX_INITIALIZER,
-                                           .tv_sos        = {},
-                                           .tv_this_tti   = {},
-                                           .tv_next_tti   = {},
-                                           .tx_nof_late   = 0,
-                                           .rf_info       = {},
-                                           .shm_dl_fd     = {-1},
-                                           .shm_ul_fd     = {-1},
-                                           .shm_dl        = {NULL},
-                                           .shm_ul        = {NULL},
-                                           .rx_segment    = {NULL},
-                                           .tx_segment    = {NULL},
-                                           .tx_level      = {1.0},
-                                           .nof_channels  = 0,
+static rf_shmem_state_t rf_shmem_state = { .dev_name       = "shmem",
+                                           .nodetype       = RF_SHMEM_NTYPE_NONE,
+                                           .rx_gain        = 0.0,
+                                           .tx_gain        = 0.0,
+                                           .rx_srate       = SRSRAN_CS_SAMP_FREQ,
+                                           .tx_srate       = SRSRAN_CS_SAMP_FREQ,
+                                           .rx_freq        = {0.0},
+                                           .tx_freq        = {0.0},
+                                           .clock_rate     = 0.0,
+                                           .error_handler  = rf_shmem_handle_error,
+                                           .error_arg      = NULL,
+                                           .rx_stream      = false,
+                                           .tx_seqnum      = 0,
+                                           .state_lock     = PTHREAD_MUTEX_INITIALIZER,
+                                           .tv_sos         = {},
+                                           .tv_this_tti    = {},
+                                           .tv_next_tti    = {},
+                                           .tx_nof_late    = 0,
+                                           .rf_info        = {},
+                                           .shm_dl_fd      = {-1},
+                                           .shm_ul_fd      = {-1},
+                                           .shm_dl         = {NULL},
+                                           .shm_ul         = {NULL},
+                                           .rx_segment     = {NULL},
+                                           .tx_segment     = {NULL},
+                                           .tx_level       = {0.0},
+                                           .tx_level_adj   = {0.0},
+                                           .tx_level_cycle = {0},
+                                           .nof_channels   = 0,
                                          };
 
 #define RF_SHMEM_GET_STATE(h)  if(!h) fprintf(stderr, "NULL handle in call to %s !!!\n", __func__); \
@@ -691,8 +700,15 @@ int rf_shmem_open_multi(char *args, void **h, uint32_t nof_channels)
        {
          RF_SHMEM_INFO("found channel %u", channel);
 
-         // get optional tx level
+         // get optional tx level info
+         state->tx_level[channel] = 1.0;
          parse_double(args, "tx_level", channel, &state->tx_level[channel]);
+
+         state->tx_level_adj[channel] = 0.0;
+         parse_double(args, "tx_level_adj", channel, &state->tx_level_adj[channel]);
+
+         state->tx_level_cycle[channel] = 0;
+         parse_uint32(args, "tx_level_cycle", channel, &state->tx_level_cycle[channel]);
 
          ++num_opened_channels;
        }
@@ -1075,8 +1091,6 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
                memset(element, 0x0, sizeof(*element));
              }
 
-            cf_t * q = (cf_t*)data[channel];
-
             // is a fresh sf_bin entry
             if(element->meta.nof_sf == 0)
              {
@@ -1088,23 +1102,33 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
                element->meta.nof_bytes  = nbytes;
                element->meta.tv_tx_time = tv_now;
                element->meta.tv_tx_tti  = tv_tx_tti;
+             }
 
-               // load the bin with i/q data
-               for(int i = 0; i < nsamples; ++i)
+            // get the tx multiplier
+            double mult = _state->tx_level[channel];
+
+            if(_state->tx_level_cycle[channel] > 0)
+             {
+               const time_t ts = tv_now.tv_sec % _state->tx_level_cycle[channel];
+
+               // check the adjustment cycle
+               if(ts < _state->tx_level_cycle[channel] / 2)
                 {
-                  if(_state->tx_level[channel] > 0.0)
-                    element->iqdata[i] = (q[i] * _state->tx_level[channel]);
+                   // add adjustment to multiplier
+                   mult += _state->tx_level_adj[channel];
                 }
-              }
-             else
-              {
+             }
+
+            if(mult > 0.0)
+             {
+               cf_t * q = (cf_t*)data[channel];
+
                for(int i = 0; i < nsamples; ++i)
                 {
                   // combine the bin with i/q data
-                  if(_state->tx_level[channel] > 0.0)
-                    element->iqdata[i] += (q[i] * _state->tx_level[channel]);
+                  element->iqdata[i] += (q[i] * mult);
                 }
-              }
+             }
 
             // bump write count
             ++element->meta.nof_sf;
