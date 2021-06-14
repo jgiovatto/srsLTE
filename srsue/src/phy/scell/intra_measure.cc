@@ -166,6 +166,8 @@ void intra_measure::measure_proc()
   cells_to_measure = active_pci;
   active_pci_mutex.unlock();
 
+  fprintf(stderr, "XXX %s cells_to_measure %zu\n", __func__, cells_to_measure.size());
+
   // Read data from buffer and find cells in it
   srsran_ringbuffer_read(&ring_buffer, search_buffer, (int)intra_freq_meas_len_ms * current_sflen * sizeof(cf_t));
 
@@ -181,6 +183,7 @@ void intra_measure::measure_proc()
   // Add detected cells to the list of cells to measure
   for (const uint32_t& c : detected_cells) {
     cells_to_measure.insert(c);
+    fprintf(stderr, "XXX %s added cells_to_measure %zu\n", __func__, cells_to_measure.size());
   }
 
   // Initialise empty neighbour cell list

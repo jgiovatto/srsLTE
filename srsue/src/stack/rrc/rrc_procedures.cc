@@ -1280,6 +1280,9 @@ proc_outcome_t rrc::cell_reselection_proc::step()
 
 void rrc::cell_reselection_proc::then(const srsran::proc_state_t& result)
 {
+  fprintf(stderr, "XXX rrc::cell_reselection_proc::then, connected %d, registered %d, changed %d\n", 
+        rrc_ptr->is_connected(), rrc_ptr->nas->is_registered(), cell_sel_result == cs_result_t::changed_cell);
+
   // Schedule cell reselection periodically, while rrc is idle
   if (not rrc_ptr->is_connected() and rrc_ptr->nas->is_registered()) {
     if (cell_sel_result == cs_result_t::changed_cell) {
