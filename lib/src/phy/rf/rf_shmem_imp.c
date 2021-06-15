@@ -195,6 +195,7 @@ const char * printMsg(const rf_shmem_element_t * element, char * buff, int buff_
 typedef struct {
    const char *              dev_name;
    int                       nodetype;
+   uint32_t                  role;      // 1 enb radio must be role 1 to set up shared memory, all others 0
    double                    rx_gain;
    double                    tx_gain;
    double                    rx_srate;
@@ -260,6 +261,7 @@ static void rf_shmem_handle_error(void * arg, srsran_rf_error_t error)
 }
 
 static rf_shmem_state_t rf_shmem_state = { .dev_name       = "shmem",
+                                           .role           = 0,
                                            .nodetype       = RF_SHMEM_NTYPE_NONE,
                                            .rx_gain        = 0.0,
                                            .tx_gain        = 0.0,
@@ -303,6 +305,13 @@ static inline bool rf_shmem_is_enb(rf_shmem_state_t * state)
 {
   return (state->nodetype == RF_SHMEM_NTYPE_ENB);
 }
+
+
+static inline bool rf_shmem_is_enb_init(rf_shmem_state_t * state)
+{
+  return (state->role & rf_shmem_is_enb(state));
+}
+
 
 
 static inline void rf_shmem_tv_to_fs(const struct timeval *tv, time_t *full_secs, double *frac_secs)
@@ -351,24 +360,24 @@ static int rf_shmem_resample(double srate_in,
 
 static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t channel)
 {
-  int dl_shm_flags = 0, ul_shm_flags = 0;
+  int dl_shm_flags = O_RDWR, ul_shm_flags = O_RDWR;
 
   mode_t mode = S_IRWXU;// | S_IRWXG | S_IRWXO;
 
   if(rf_shmem_is_enb(state))
    {
      rf_shmem_node_type = 'E';
-
-     // enb create shmem segments
-     dl_shm_flags = O_CREAT | O_TRUNC | O_RDWR;
-     ul_shm_flags = O_CREAT | O_TRUNC | O_RDWR;
    }
   else
    {
      rf_shmem_node_type = 'U';
+   }
 
-     dl_shm_flags = O_RDWR;
-     ul_shm_flags = O_RDWR;
+  if(rf_shmem_is_enb_init(state))
+   {
+     // create shmem segments
+     dl_shm_flags |= (O_CREAT | O_TRUNC);
+     ul_shm_flags |= (O_CREAT | O_TRUNC);
    }
 
   // dl shm key name
@@ -384,7 +393,7 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t channel)
    }
   else
    {
-     if(rf_shmem_is_enb(state))
+     if(rf_shmem_is_enb_init(state))
       {
         ftruncate(state->shm_dl_fd[channel], RF_SHMEM_DATA_SEGMENT_SIZE);
       }
@@ -402,7 +411,7 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t channel)
    }
   else
    {
-    if(rf_shmem_is_enb(state))
+    if(rf_shmem_is_enb_init(state))
       {
         ftruncate(state->shm_ul_fd[channel], RF_SHMEM_DATA_SEGMENT_SIZE);
       }
@@ -455,11 +464,8 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t channel)
    {
      snprintf(shmem_name, sizeof(shmem_name), RF_SHMEM_SEM_FMT, state->channels[channel], sf);
 
-     if(rf_shmem_is_enb(state))
+     if(rf_shmem_is_enb_init(state))
       {
-        // cleanup any orphans
-        sem_unlink(shmem_name);
- 
         // initial value 1
         if((sem[sf] = sem_open(shmem_name, O_CREAT, 0600, 1)) == NULL)
          {
@@ -491,9 +497,12 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t channel)
       }
    }
 
-  // clear data segments
-  memset(state->shm_ul[channel], 0x0, RF_SHMEM_DATA_SEGMENT_SIZE);
-  memset(state->shm_dl[channel], 0x0, RF_SHMEM_DATA_SEGMENT_SIZE);
+  if(rf_shmem_is_enb_init(state))
+   {
+     // clear data segments
+     memset(state->shm_ul[channel], 0x0, RF_SHMEM_DATA_SEGMENT_SIZE);
+     memset(state->shm_dl[channel], 0x0, RF_SHMEM_DATA_SEGMENT_SIZE);
+   }
 
   state->active[channel] = true;
 
@@ -670,6 +679,8 @@ int rf_shmem_open_multi(char *args, void **h, uint32_t nof_channels)
           return -1;
        }
 
+      state->role = 0;
+      parse_uint32(args, "role", -1, &state->role);
     }
 
    int num_opened_channels = 0;
@@ -1061,13 +1072,13 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
       // each cc worker will map to a channel
       for(uint32_t channel = 0; channel < _state->nof_channels; ++channel)
        {
-         // have data to send, frequency is set and memory is allocated
-         if(data[channel] && _state->tx_freq[channel] && _state->active)
+         // have data to send, frequency is set and channel is active
+         if(data[channel] && _state->tx_freq[channel] && _state->active[channel])
           {
             rf_shmem_element_t * element = &_state->tx_segment[channel]->elements[sf_bin];
 
-            // first enb worker clear dl bin
-            if(rf_shmem_is_enb(_state) && (channel == 0))
+            // clear dl bin if data is stale
+            if(rf_shmem_is_enb(_state) && (channel == 0) && timercmp(&tv_tx_tti, &element->meta.tv_tx_tti, !=))
              {
                // clear dl sf_bin 
                memset(element, 0x0, sizeof(*element));
