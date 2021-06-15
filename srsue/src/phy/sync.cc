@@ -1025,8 +1025,6 @@ void sync::set_inter_frequency_measurement(uint32_t cc_idx, uint32_t earfcn_, sr
 }
 void sync::set_cells_to_meas(uint32_t earfcn_, const std::set<uint32_t>& pci)
 {
-  fprintf(stderr, "XXX sync::set_cells_to_meas list of %zd neighbour cells to measure in EARFCN %d.\n", pci.size(), current_earfcn);
-
   bool found = false;
   for (size_t i = 0; i < intra_freq_meas.size() and not found; i++) {
     if (earfcn_ == intra_freq_meas[i]->get_earfcn()) {

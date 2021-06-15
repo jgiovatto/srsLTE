@@ -263,8 +263,6 @@ void phy::configure_prach_params()
 
 void phy::set_cells_to_meas(uint32_t earfcn, const std::set<uint32_t>& pci)
 {
-  fprintf(stderr, "XXX phy::set_cells_to_meas Received list of %zd neighbour cells to measure in EARFCN %d.\n", pci.size(), earfcn);
-
   // Check if the EARFCN matches with serving cell
   uint32_t pcell_earfcn = 0;
   sfsync.get_current_cell(nullptr, &pcell_earfcn);

@@ -1066,7 +1066,7 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
           {
             rf_shmem_element_t * element = &_state->tx_segment[channel]->elements[sf_bin];
 
-            // first enb worker clear bin
+            // first enb worker clear dl bin
             if(rf_shmem_is_enb(_state) && (channel == 0))
              {
                // clear dl sf_bin 
