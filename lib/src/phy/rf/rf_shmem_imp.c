@@ -199,8 +199,8 @@ typedef struct {
    double                    tx_gain;
    double                    rx_srate;
    double                    tx_srate;
-   double                    rx_freq[SRSRAN_MAX_CHANNELS];
-   double                    tx_freq[SRSRAN_MAX_CHANNELS];
+   uint32_t                  rx_freq[SRSRAN_MAX_CHANNELS];
+   uint32_t                  tx_freq[SRSRAN_MAX_CHANNELS];
    double                    clock_rate;
    srsran_rf_error_handler_t error_handler;
    void *                    error_arg;
@@ -223,6 +223,7 @@ typedef struct {
    uint32_t                  tx_level_cycle[SRSRAN_MAX_CHANNELS]; // tx level adjustment cycle
    uint32_t                  nof_channels;                        // num channels
    char                      channels[SRSRAN_MAX_CHANNELS][256];  // shmem channel ids
+   bool                      active[SRSRAN_MAX_CHANNELS];         // channel is active
 } rf_shmem_state_t;
 
 
@@ -264,8 +265,8 @@ static rf_shmem_state_t rf_shmem_state = { .dev_name       = "shmem",
                                            .tx_gain        = 0.0,
                                            .rx_srate       = SRSRAN_CS_SAMP_FREQ,
                                            .tx_srate       = SRSRAN_CS_SAMP_FREQ,
-                                           .rx_freq        = {0.0},
-                                           .tx_freq        = {0.0},
+                                           .rx_freq        = {0},
+                                           .tx_freq        = {0},
                                            .clock_rate     = 0.0,
                                            .error_handler  = rf_shmem_handle_error,
                                            .error_arg      = NULL,
@@ -287,6 +288,7 @@ static rf_shmem_state_t rf_shmem_state = { .dev_name       = "shmem",
                                            .tx_level_adj   = {0.0},
                                            .tx_level_cycle = {0},
                                            .nof_channels   = 0,
+                                           .active         = {false} 
                                          };
 
 #define RF_SHMEM_GET_STATE(h)  if(!h) fprintf(stderr, "NULL handle in call to %s !!!\n", __func__); \
@@ -302,20 +304,19 @@ static inline bool rf_shmem_is_enb(rf_shmem_state_t * state)
   return (state->nodetype == RF_SHMEM_NTYPE_ENB);
 }
 
-// timeval to full and frac seconds
+
 static inline void rf_shmem_tv_to_fs(const struct timeval *tv, time_t *full_secs, double *frac_secs)
 {
   if(full_secs && frac_secs)
     {
       *full_secs = tv->tv_sec; 
-      *frac_secs = tv->tv_usec / 1.0e6;
+      *frac_secs = tv->tv_usec / 1e6;
     }
 }
 
-// get fractional seconds from a timeval
 static inline double rf_shmem_get_fs(const struct timeval *tv)
 {
-  return tv->tv_sec + tv->tv_usec / 1.0e6;
+  return tv->tv_sec + (tv->tv_usec / 1e6);
 }
 
 
@@ -346,7 +347,6 @@ static int rf_shmem_resample(double srate_in,
      return nbytes;
    }
 }
-
 
 
 static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t channel)
@@ -495,9 +495,10 @@ static int rf_shmem_open_ipc(rf_shmem_state_t * state, uint32_t channel)
   memset(state->shm_ul[channel], 0x0, RF_SHMEM_DATA_SEGMENT_SIZE);
   memset(state->shm_dl[channel], 0x0, RF_SHMEM_DATA_SEGMENT_SIZE);
 
+  state->active[channel] = true;
+
   return 0;
 }
-
 
 
 static void rf_shmem_wait_next_tti(void *h, struct timeval * tv_ref)
@@ -525,7 +526,6 @@ static void rf_shmem_wait_next_tti(void *h, struct timeval * tv_ref)
 
    gettimeofday(tv_ref, NULL);
 }
-
 
 
 // ************ begin RF API ************
@@ -872,12 +872,11 @@ double rf_shmem_set_rx_freq(void *h, uint32_t ch, double freq)
  {
    RF_SHMEM_GET_STATE(h);
 
-   RF_SHMEM_CONS("ch %u, freq %4.2lf MHz to %4.2lf MHz", 
-                 ch, _state->rx_freq[ch] / 1e6, freq / 1e6);
+   RF_SHMEM_CONS("ch %u, freq %u MHz to %u MHz", ch, _state->rx_freq[ch], (uint32_t)(freq / 1e6));
 
-   _state->rx_freq[ch] = freq;
+   _state->rx_freq[ch] = freq / 1e6;
 
-   return _state->rx_freq[ch];
+   return freq;
  }
 
 
@@ -885,14 +884,12 @@ double rf_shmem_set_tx_freq(void *h, uint32_t ch, double freq)
  {
    RF_SHMEM_GET_STATE(h);
 
-   RF_SHMEM_CONS("ch %u, freq %4.2lf MHz to %4.2lf MHz", 
-                 ch, _state->tx_freq[ch] / 1e6, freq / 1e6);
+   RF_SHMEM_CONS("ch %u, freq %u MHz to %u MHz", ch, _state->tx_freq[ch], (uint32_t)(freq / 1e6));
 
-   _state->tx_freq[ch] = freq;
+   _state->tx_freq[ch] = freq / 1e6;
 
-   return _state->tx_freq[ch];
+   return freq;
  }
-
 
 
 void rf_shmem_get_time(void *h, time_t *full_secs, double *frac_secs)
@@ -901,7 +898,6 @@ void rf_shmem_get_time(void *h, time_t *full_secs, double *frac_secs)
 
    rf_shmem_tv_to_fs(&_state->tv_this_tti, full_secs, frac_secs);
  }
-
 
 
 int rf_shmem_recv_with_time(void *h, void *data, uint32_t nsamples, 
@@ -918,16 +914,12 @@ int rf_shmem_recv_with_time(void *h, void *data, uint32_t nsamples,
  }
 
 
-
 int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples, 
                                   bool blocking, time_t *full_secs, double *frac_secs)
  {
    RF_SHMEM_GET_STATE(h);
 
    pthread_mutex_lock(&_state->state_lock);
-
-   // nof bytes requested
-   const uint32_t nbytes = RF_SHMEM_BYTES_X_SAMPLE(nsamples);
 
    // working in units of subframes
    const int nof_sf = (nsamples / (_state->rx_srate / 1000.0f));
@@ -960,10 +952,9 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
 
       for(uint32_t channel = 0; channel < _state->nof_channels; ++channel)
        { 
-         if(data[channel] && _state->rx_freq[channel])
+         // have data buffer, rx frequency is set and channel is active
+         if(data[channel] && _state->rx_freq[channel] && _state->active[channel])
           {
-            memset(data[channel], 0x0, nbytes);
-
             rf_shmem_element_t * element = &_state->rx_segment[channel]->elements[sf_bin];
 #if 0
             char logbuff[256] = {0};
@@ -974,18 +965,18 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
             // check current tti w/sf_bin tti 
             if(timercmp(&_state->tv_this_tti, &element->meta.tv_tx_tti, ==))
              {
-               if(element->meta.nof_bytes && (element->meta.tx_freq != (uint32_t)(_state->rx_freq[channel] / 1e6)))
+               if(element->meta.nof_bytes && (element->meta.tx_freq != _state->rx_freq[channel]))
                 {
-                   RF_SHMEM_INFO("tx_freq %u != our rx_freq %u", element->meta.tx_freq, (uint32_t)(_state->rx_freq[channel] / 1e6));
+                  RF_SHMEM_INFO("tx_freq %u != our rx_freq %u", element->meta.tx_freq, _state->rx_freq[channel]);
                 }
                else
                 {
-                 const int result = rf_shmem_resample(element->meta.tx_srate,
-                                                      _state->rx_srate,
-                                                      element->iqdata,
-                                                      ((uint8_t*)data[channel]) + offset[channel],
-                                                      element->meta.nof_bytes);
-
+                  const int result = rf_shmem_resample(element->meta.tx_srate,
+                                                       _state->rx_srate,
+                                                       element->iqdata,
+                                                       ((uint8_t*)data[channel]) + offset[channel],
+                                                       element->meta.nof_bytes);
+ 
                  offset[channel] += result;
                }
              }
@@ -1070,7 +1061,8 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
       // each cc worker will map to a channel
       for(uint32_t channel = 0; channel < _state->nof_channels; ++channel)
        {
-         if(data[channel] && _state->tx_freq[channel])
+         // have data to send, frequency is set and memory is allocated
+         if(data[channel] && _state->tx_freq[channel] && _state->active)
           {
             rf_shmem_element_t * element = &_state->tx_segment[channel]->elements[sf_bin];
 
@@ -1092,7 +1084,7 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
                element->meta.nof_bytes  = nbytes;
                element->meta.tv_tx_time = tv_now;
                element->meta.tv_tx_tti  = tv_tx_tti;
-               element->meta.tx_freq    = (uint32_t)(_state->tx_freq[channel] / 1e6);
+               element->meta.tx_freq    = _state->tx_freq[channel];
              }
 
             // get the tx multiplier
@@ -1123,13 +1115,11 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
 
             // bump write count
             ++element->meta.nof_sf;
-
 #if 0
             char logbuff[256] = {0};
             fprintf(stderr,"TX, %ld:%06ld, channel %u, sf_bin %u, %s\n", 
                     tv_now.tv_sec, tv_now.tv_usec, channel, sf_bin, printMsg(element, logbuff, sizeof(logbuff)));
 #endif
-
           }
         }
       // unlock
