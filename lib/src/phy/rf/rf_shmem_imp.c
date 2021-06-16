@@ -195,7 +195,7 @@ const char * printMsg(const rf_shmem_element_t * element, char * buff, int buff_
 typedef struct {
    const char *              dev_name;
    int                       nodetype;
-   uint32_t                  role;      // 1 enb radio must be role 1 to set up shared memory, all others 0
+   uint32_t                  role;      // first enb radio must be role 1 to set up shared memory, all others 0
    double                    rx_gain;
    double                    tx_gain;
    double                    rx_srate;
@@ -662,6 +662,8 @@ int rf_shmem_open_multi(char *args, void **h, uint32_t nof_channels)
       if(! strncmp(tmp_str, "enb", strlen("enb")))
        {
          state->nodetype = RF_SHMEM_NTYPE_ENB;
+         state->role = 1; // enb default 1, set all other enb to 0
+         parse_uint32(args, "role", -1, &state->role);
        }
       else if(! strncmp(tmp_str, "ue", strlen("ue")))
        {
@@ -678,9 +680,6 @@ int rf_shmem_open_multi(char *args, void **h, uint32_t nof_channels)
 
           return -1;
        }
-
-      state->role = 0;
-      parse_uint32(args, "role", -1, &state->role);
     }
 
    int num_opened_channels = 0;
@@ -991,12 +990,6 @@ int rf_shmem_recv_with_time_multi(void *h, void **data, uint32_t nsamples,
                  offset[channel] += result;
                }
              }
-
-            if(rf_shmem_is_enb(_state) && (channel == _state->nof_channels - 1))
-             {
-               // last enb worker clear ul sf_bin
-               memset(element, 0x0, sizeof(*element));
-             }
           }
        }
       // unlock
@@ -1078,7 +1071,7 @@ int rf_shmem_send_timed_multi(void *h, void **data, int nsamples,
             rf_shmem_element_t * element = &_state->tx_segment[channel]->elements[sf_bin];
 
             // clear dl bin if data is stale
-            if(rf_shmem_is_enb(_state) && (channel == 0) && timercmp(&tv_tx_tti, &element->meta.tv_tx_tti, !=))
+            if((channel == 0) && timercmp(&tv_tx_tti, &element->meta.tv_tx_tti, !=))
              {
                // clear dl sf_bin 
                memset(element, 0x0, sizeof(*element));
